@@ -6,9 +6,14 @@
     system-diff draw SPEC.json...                                   -> a hand-made picture beside each spec
     system-diff png [--host HOST] FILE.svg...                       -> FILE.png beside each SVG
     system-diff summarize --diff diff.json                          -> the plain-words summary alone
+    system-diff checkpoint [--ref REF]                              -> mark what you have seen
+    system-diff watch [--base checkpoint] [--port 8765]             -> a live page of the diff since then
+    system-diff setup claude [--scope user|project|local] [--undo]  -> the hook, a skill and the MCP server
+    system-diff mcp                                                 -> the MCP server (stdio)
 
 Deterministic: everything is read from git objects (no checkout) or a directory, with the standard library only.
-`--head .` diffs against the working tree, uncommitted changes included.
+`--head .` is the working tree, uncommitted and untracked files included; `--base checkpoint` is what you last marked
+as seen (HEAD until you mark something).
 """
 from __future__ import annotations
 
@@ -18,10 +23,9 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from . import __version__, config, graph, narrate, pictures, png, readme
-from .diff import diff, numstat
-from .extract import Code, extract
-from .sources import DirSource, GitSource, git, repo_root
+from . import __version__, compare, config, graph, narrate, pictures, png, readme
+from .extract import extract
+from .sources import DirSource, GitSource, repo_root
 
 
 def _write(path: Path, text: str, check: bool) -> bool:
@@ -54,31 +58,28 @@ def _map(args, root: Path) -> int:
 
 
 def _diff(args, root: Path) -> int:
-    worktree = args.head in (".", "worktree")
-    if worktree:
-        on_disk = config.load(root=root, path=args.config)
-        head_src = DirSource(root, config.segment_rx(on_disk["code"]["skip"]))
-    else:
-        head_src = GitSource(args.head, root)
-    cfg = config.load(head_src, root, args.config)  # one vocabulary for both sides
-    a, b = extract(GitSource(args.base, root), cfg), extract(head_src, cfg)
-    stat = numstat(root, args.base, None if worktree else args.head, cfg)
-    d = diff(a, b, stat, cfg.get("deploy", []), Code(cfg))
-    d["commits"] = git("log", "--format=%s%n%n%b", f"{args.base}..HEAD" if worktree else f"{args.base}..{args.head}",
-                       cwd=root)[:6000]
+    c = compare.compare(root, args.base, args.head, args.config)
+    d = c.diff
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "diff.json").write_text(json.dumps(d, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     (out / "plan.txt").write_text(d["plan"] + "\n", encoding="utf-8", newline="\n")
     (out / "headline.txt").write_text(d["headline"] + "\n", encoding="utf-8", newline="\n")
-    svg = graph.diff_svg(d, a, b, cfg)
+    svg = graph.diff_svg(d, c.before, c.after, c.cfg)
     if svg:
         pictures.write_if_changed(out / "diff.svg", svg)
     elif (out / "diff.svg").is_file():
         (out / "diff.svg").unlink()  # an older run's picture must not pass for this one
-    story = narrate.narrate(d, d["commits"], root, cfg) if args.narrate else None
+    story = narrate.narrate(d, d["commits"], root, c.cfg) if args.narrate else None
     (out / "narrative.md").write_text((story or "") + "\n", encoding="utf-8", newline="\n")
     print(d["headline"])
+    return 0
+
+
+def _checkpoint(args, root: Path) -> int:
+    sha = compare.checkpoint(root, args.ref)
+    print(f"checkpoint: {args.ref or 'the working tree'} ({sha[:9]}) is what you have seen; "
+          "`system-diff diff --base checkpoint --head .` now shows only what comes after it")
     return 0
 
 
@@ -127,7 +128,7 @@ def parser() -> argparse.ArgumentParser:
     m.add_argument("--out", default=".")
     m.add_argument("--check", action="store_true", help="write nothing; exit 1 if the files are out of date")
     d = sub.add_parser("diff", help="what a change does to the system")
-    d.add_argument("--base", required=True)
+    d.add_argument("--base", required=True, help="a commit, or checkpoint (what you last marked as seen)")
     d.add_argument("--head", default="HEAD", help="a commit, or . for the working tree (default HEAD)")
     d.add_argument("--out", default=".")
     d.add_argument("--narrate", action="store_true", help="add a plain-words summary from your LLM (narrative.md)")
@@ -143,6 +144,19 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("svgs", nargs="+")
     s = sub.add_parser("summarize", help="the plain-words summary of a diff.json")
     s.add_argument("--diff", required=True)
+    c = sub.add_parser("checkpoint", help="mark what you have seen: later diffs from `checkpoint` start here")
+    c.add_argument("--ref", help="a commit to mark instead of the working tree")
+    w = sub.add_parser("watch", help="a live local page of the diff since the checkpoint")
+    w.add_argument("--base", default="checkpoint")
+    w.add_argument("--port", type=int, default=8765)
+    w.add_argument("--interval", type=float, default=2.0, help="seconds between looks at the files")
+    sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
+    sub.add_parser("hook", help="what Claude Code's Stop hook runs: one line on what changed since the checkpoint")
+    st = sub.add_parser("setup", help="wire system-diff into an AI coding tool")
+    st.add_argument("tool", choices=["claude"])
+    st.add_argument("--scope", default="user", choices=["user", "project", "local"],
+                    help="user: every project (default); project: this repository, shared; local: this repository, you")
+    st.add_argument("--undo", action="store_true", help="remove what setup added")
     return ap
 
 
@@ -157,9 +171,33 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _readme(args, root)
     if args.cmd == "summarize":
         return _summarize(args, root)
+    if args.cmd == "checkpoint":
+        return _checkpoint(args, root)
+    if args.cmd == "watch":
+        from . import watch
+        watch.serve(root, args.base, args.port, args.config, args.interval)
+        return 0
+    if args.cmd == "hook":
+        from . import agent
+        return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
+    if args.cmd == "setup":
+        from . import agent
+        return agent.setup_claude(root, args.scope, args.undo)
+    if args.cmd == "mcp":
+        try:
+            from . import mcp_server
+        except ImportError:
+            print('system-diff: the MCP server needs its extra: pip install "system-diff[mcp]"', file=sys.stderr)
+            return 1
+        mcp_server.main()
+        return 0
     if args.cmd == "draw":
-        for out in pictures.draw_files([Path(x) for x in args.specs]):
-            print(f"drew {out}")
+        try:
+            for out in pictures.draw_files([Path(x) for x in args.specs]):
+                print(f"drew {out}")
+        except ValueError as exc:
+            print(f"system-diff: {exc}", file=sys.stderr)
+            return 1
         return 0
     if args.cmd == "png":
         try:

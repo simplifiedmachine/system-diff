@@ -21,6 +21,30 @@ kind = "interface"
 paths = ["src/system_diff/cli.py", "src/system_diff/__main__.py", "src/system_diff/__init__.py"]
 
 [[components]]
+id = "mcp"
+label = "MCP server"
+kind = "interface"
+paths = ["src/system_diff/mcp_server.py"]
+
+[[components]]
+id = "agent"
+label = "Claude Code hook and setup"
+kind = "interface"
+paths = ["src/system_diff/agent.py"]
+
+[[components]]
+id = "watch"
+label = "Live page"
+kind = "interface"
+paths = ["src/system_diff/watch.py"]
+
+[[components]]
+id = "compare"
+label = "Checkpoints and snapshots"
+kind = "logic"
+paths = ["src/system_diff/compare.py"]
+
+[[components]]
 id = "config"
 label = "Config"
 kind = "logic"

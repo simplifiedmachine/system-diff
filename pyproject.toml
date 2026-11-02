@@ -26,7 +26,8 @@ dependencies = []
 
 [project.optional-dependencies]
 png = ["playwright>=1.40"]
-dev = ["pytest>=8"]
+mcp = ["mcp>=1.10"]
+dev = ["pytest>=8", "mcp>=1.10"]
 
 [project.urls]
 Homepage = "https://github.com/simplifiedmachine/system-diff"

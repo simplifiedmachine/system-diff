@@ -1,0 +1,206 @@
+"""`system-diff mcp`: system-diff as an MCP server over stdio, for Claude Code and other MCP clients.
+
+An optional extra (`pip install "system-diff[mcp]"`): the official MCP SDK is its only dependency. The tools read the
+repository the client runs in, and write pictures under .git/system-diff/, which is never committed. They return the
+exact text (headline, plan) for the model to explain from, and the picture's path for the person.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field
+
+try:  # the MCP SDK's 2.x name; 1.x called it FastMCP, with the same constructor, decorator and run()
+    from mcp.server.mcpserver import MCPServer as Server
+except ImportError:  # pragma: no cover - mcp 1.x
+    from mcp.server.fastmcp import FastMCP as Server
+
+from . import compare as cmp
+from . import config, graph, pictures
+from .extract import extract
+from .sources import GitSource, git, repo_root
+
+INSTRUCTIONS = (
+    "system-diff shows what a change does to a system's structure: its parts, entry points, connections, outside "
+    "systems and stored data. Use system_diff after changing the code, to tell the person in plain words what changed "
+    "in the system and to point them at the picture; base 'checkpoint' is what they last marked as seen. Use "
+    "system_map for the whole system, and draw for a picture of something else (a process, a sequence). Call "
+    "checkpoint only when the person says they have seen and understood the current state."
+)
+
+
+class Code(BaseModel):
+    code: str = Field(description="shown in a monospace font, e.g. a route or a table")
+
+
+Line = Union[str, Code]
+
+
+class _Spec(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
+class Node(_Spec):
+    id: str
+    col: str = Field(description="the key of one of `columns`")
+    title: str
+    sub: str = ""
+    type: Literal["component", "store", "host"] = "component"
+    style: Literal["", "new", "legacy", "shared", "undeclared"] = ""
+    lines: List[Line] = []
+
+
+class Edge(_Spec):
+    from_: str = Field(alias="from")
+    to: str
+    kind: Literal["call", "data", "network"] = "call"
+
+
+class Stage(_Spec):
+    title: str
+    lines: List[Line] = []
+    hi: bool = Field(False, description="highlight this stage")
+
+
+class Loop(_Spec):
+    from_: int = Field(alias="from", description="index of the stage it goes back from")
+    to: int = Field(description="index of the stage it goes back to")
+    label: str = ""
+
+
+class Exit(_Spec):
+    label: str
+    note: str = ""
+
+
+class Gate(_Spec):
+    text: str = Field(description="where a person comes in, e.g. 'A person approves'")
+    from_: Optional[List[int]] = Field(None, alias="from", description="indexes of the stages that lead to it")
+
+
+class Lane(_Spec):
+    id: str
+    title: str
+    sub: str = ""
+    person: bool = False
+
+
+class Step(_Spec):
+    from_: Optional[str] = Field(None, alias="from", description="a lane id (a message step)")
+    to: Optional[str] = Field(None, description="a lane id (a message step)")
+    text: Optional[str] = Field(None, description="what is sent (a message step)")
+    kind: Optional[Literal["call", "data", "network"]] = None
+    note: Optional[str] = Field(None, description="a note across lanes instead of a message")
+    over: Optional[List[str]] = Field(None, description="the lane ids a note spans")
+
+
+class Spec(_Spec):
+    """One picture. `map` needs columns and nodes (edges optional); `stages` needs stages; `sequence` needs lanes
+    and steps."""
+    picture: Literal["map", "stages", "sequence"]
+    label: str = ""
+    columns: Optional[List[List[str]]] = Field(None, description='map: [["logic", "Logic"], ["store", "Stored data"]]')
+    nodes: Optional[List[Node]] = None
+    edges: Optional[List[Edge]] = None
+    stages: Optional[List[Stage]] = None
+    loops: Optional[List[Loop]] = None
+    exits: Optional[List[Exit]] = None
+    gate: Optional[Gate] = None
+    lanes: Optional[List[Lane]] = None
+    steps: Optional[List[Step]] = None
+
+
+def _out(root: Path, *parts: str) -> Path:
+    """A folder under .git/system-diff (the repository's own git dir, worktrees included)."""
+    gitdir = Path(git("rev-parse", "--absolute-git-dir", cwd=root).strip())
+    out = gitdir.joinpath("system-diff", *parts)
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def tool_map(root: Path, ref: str = ".") -> Dict[str, Any]:
+    sha, label = cmp.resolve(root, ref)
+    source = GitSource(sha, root)
+    cfg = config.load(source, root)
+    bp = extract(source, cfg)
+    path = _out(root, "mcp") / "system.svg"
+    pictures.write_if_changed(path, graph.system_svg(bp, cfg))
+    comps = bp["components"]
+    return {"of": label, "picture": str(path),
+            "parts": [{"id": k, "label": v["label"], "column": graph.part_kind(k, v, bp, cfg), "files": v["files"]}
+                      for k, v in sorted(comps.items(), key=lambda kv: graph.part_order(kv[1], kv[0]))],
+            "connections": [f"{comps.get(s, {}).get('label', s)} → {comps.get(t, {}).get('label', t)}"
+                            for s, t in (k.split(">") for k in bp["flows"])],
+            "entry_points": len(bp["routes"]), "tables": len(bp["tables"]),
+            "outside_systems": [v["label"] for v in bp["externals"].values()],
+            "read_but_not_deployed": [v["label"] for v in bp["dormant"].values()],
+            "undeclared_parts": sorted(k for k, v in comps.items() if not v["declared"])}
+
+
+def tool_diff(root: Path, base: str = "checkpoint", head: str = ".") -> Dict[str, Any]:
+    c = cmp.compare(root, base, head)
+    svg = graph.diff_svg(c.diff, c.before, c.after, c.cfg)
+    path = _out(root, "mcp") / "diff.svg"
+    if svg:
+        pictures.write_if_changed(path, svg)
+    elif path.is_file():
+        path.unlink()
+    return {"from": c.base, "to": c.head, "headline": c.diff["headline"], "plan": c.diff["plan"],
+            "changes": len(c.diff["changes"]), "impacts": c.diff["impacts"],
+            "picture": str(path) if svg else None,
+            "live_page": "run `system-diff watch` for a page that redraws as the code changes"}
+
+
+def tool_draw(root: Path, spec: Spec, name: str = "picture") -> Dict[str, Any]:
+    data = spec.model_dump(by_alias=True, exclude_none=True)
+    problems = pictures.check(data)
+    if problems:
+        return {"error": "the spec could not be drawn: " + "; ".join(problems), "do": "fix these and draw again"}
+    try:
+        svg = pictures.draw(data)
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        return {"error": f"the spec could not be drawn: {type(exc).__name__}: {exc}",
+                "do": "check that every edge, loop, gate and step names an id or index the spec has"}
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in name)[:60] or "picture"
+    path = _out(root, "pictures") / f"{safe}.svg"
+    pictures.write_if_changed(path, svg)
+    return {"picture": str(path)}
+
+
+def build() -> Server:
+    server = Server("system-diff", instructions=INSTRUCTIONS)
+
+    @server.tool()
+    def system_map(ref: str = ".") -> Dict[str, Any]:
+        """The system's structure: its parts by column, the connections between them, how many entry points and
+        tables, and its outside systems. `ref`: a commit, or "." for the working tree. Returns the picture's path."""
+        return tool_map(repo_root(), ref)
+
+    @server.tool()
+    def system_diff(base: str = "checkpoint", head: str = ".") -> Dict[str, Any]:
+        """What changed in the system from `base` to `head`: one sentence, the exact list (each line with its impact,
+        e.g. new-interface, breaking-interface, data-schema-change, test-gap) and a picture of only what changed.
+        `base` "checkpoint" is what the person last marked as seen (HEAD if nothing yet); `head` "." is the working
+        tree, uncommitted files included. Explain it from the plan, never beyond it."""
+        return tool_diff(repo_root(), base, head)
+
+    @server.tool()
+    def draw(spec: Spec, name: str = "picture") -> Dict[str, Any]:
+        """Draw a picture in system-diff's look: a `map` (boxes in columns), `stages` (a process left to right, with
+        loops back, exits and where a person comes in) or a `sequence` (who talks to whom, in order). Returns the
+        SVG's path, or what is wrong with the spec."""
+        return tool_draw(repo_root(), spec, name)
+
+    @server.tool()
+    def checkpoint(ref: str = "") -> Dict[str, Any]:
+        """Mark the working tree (or `ref`) as seen by the person, so the next system_diff from "checkpoint" shows
+        only what is new to them. Only when the person says they have seen and understood the current state."""
+        sha = cmp.checkpoint(repo_root(), ref or None)
+        return {"checkpoint": sha[:9], "of": ref or "the working tree"}
+
+    return server
+
+
+def main() -> None:
+    build().run("stdio")

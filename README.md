@@ -77,10 +77,25 @@ This repository runs system-diff on itself: the map above is regenerated from it
 date, and every pull request gets its system diff as a comment (`.github/workflows/system-diff.yml`, which you can
 copy).
 
-## Coming next
+## With AI coding agents
 
-A hook that redraws the diff after each change an AI coding agent makes, a live page to watch beside your editor, an MCP
-server, and `system-diff setup claude` to wire them into Claude Code in one step.
+When an agent changes the code with you, the question is what it did to the system. system-diff answers it as you go:
+
+```sh
+pipx install git+https://github.com/simplifiedmachine/system-diff
+pipx inject system-diff mcp  # the MCP server's one dependency
+system-diff setup claude     # the hook, a skill and the MCP server, in one step (--scope project, --undo)
+system-diff watch            # http://127.0.0.1:8765/ : the system diff since you last marked it seen
+```
+
+- **After every Claude Code turn**, one line says what changed in the system since your checkpoint ("Adds 1 endpoint
+  (DELETE /api/orders/{id}); changes 1 table (public.orders)."), or nothing when nothing structural did.
+- **The live page** redraws as files change. Press **Mark as seen** once you have understood it: the next diff then
+  shows only what is new to you. `system-diff checkpoint` does the same from the terminal.
+- **The MCP server** gives the agent `system_diff` (the exact plan to explain from, and the picture), `system_map`,
+  `draw` (pictures of processes and sequences in the same look) and `checkpoint`.
+- The working tree is read as a snapshot (untracked files included) without touching your index, HEAD or branches,
+  and the checkpoint lives under `refs/system-diff/`, in your clone only.
 
 ## License
 

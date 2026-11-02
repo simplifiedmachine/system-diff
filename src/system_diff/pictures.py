@@ -473,6 +473,47 @@ def _map_from_spec(spec: dict) -> dict:
             "legend": spec.get("legend", []), "footer": spec.get("footer", [])}
 
 
+def check(spec: dict) -> List[str]:
+    """What is wrong with a spec, in words; empty when it can be drawn as meant. The renderer itself tolerates a
+    dangling reference (it leaves the line out), which a person reading the picture would not notice."""
+    kind = spec.get("picture")
+    out: List[str] = []
+    if kind == "map":
+        cols = {c[0] for c in spec.get("columns") or [] if c}
+        ids = [n.get("id") for n in spec.get("nodes") or []]
+        out += [f"node {n.get('id')!r} is in column {n.get('col')!r}, which `columns` does not have"
+                for n in spec.get("nodes") or [] if n.get("col") not in cols]
+        out += [f"node id {i!r} is used twice" for i in sorted({i for i in ids if ids.count(i) > 1})]
+        out += [f"edge {e.get('from')!r} → {e.get('to')!r} names a node that does not exist"
+                for e in spec.get("edges") or [] if e.get("from") not in ids or e.get("to") not in ids]
+        if not spec.get("nodes"):
+            out.append("a map needs nodes")
+    elif kind == "stages":
+        n = len(spec.get("stages") or [])
+        bad = lambda i: not isinstance(i, int) or not 0 <= i < n  # noqa: E731
+        out += [f"loop {lp.get('from')!r} → {lp.get('to')!r}: stages are numbered 0 to {n - 1}"
+                for lp in spec.get("loops") or [] if bad(lp.get("from")) or bad(lp.get("to"))]
+        out += [f"gate from stage {i!r}: stages are numbered 0 to {n - 1}"
+                for i in (spec.get("gate") or {}).get("from") or [] if bad(i)]
+        if not n:
+            out.append("stages needs at least one stage")
+    elif kind == "sequence":
+        lanes = {ln.get("id") for ln in spec.get("lanes") or []}
+        for i, st in enumerate(spec.get("steps") or [], 1):
+            if "note" in st:
+                out += [f"step {i}: the note spans lane {x!r}, which does not exist" for x in st.get("over") or []
+                        if x not in lanes]
+            elif st.get("from") not in lanes or st.get("to") not in lanes:
+                out.append(f"step {i}: {st.get('from')!r} → {st.get('to')!r} names a lane that does not exist")
+            elif not st.get("text"):
+                out.append(f"step {i} has no text")
+        if not lanes:
+            out.append("a sequence needs lanes")
+    else:
+        out.append(f"picture must be map, stages or sequence, not {kind!r}")
+    return out
+
+
 def draw(spec: dict) -> str:
     kind, label = spec["picture"], spec.get("label") or spec["picture"]
     if kind == "map":
@@ -500,6 +541,9 @@ def draw_files(paths: List[Path]) -> List[Path]:
         spec = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(spec, dict) or "picture" not in spec:
             continue  # the config and other data beside the pictures
+        problems = check(spec)
+        if problems:
+            raise ValueError(f"{path}: " + "; ".join(problems))
         out = path.with_suffix(".svg")
         if write_if_changed(out, draw(spec)):
             drawn.append(out)
