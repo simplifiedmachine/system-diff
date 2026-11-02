@@ -139,3 +139,23 @@ def test_setup_wires_the_hook_and_the_skill_and_undo_takes_them_back(repo, tmp_p
     assert json.loads(settings.read_text()) == {"theme": "dark", "hooks": {"Stop": [{"hooks": [{"type": "command",
                                                                                                  "command": "echo mine"}]}]}}
     assert not skill.exists()
+
+
+def test_setup_registers_the_mcp_server_with_claude_code_in_the_same_scope(repo, tmp_path, monkeypatch):
+    from system_diff import agent
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    calls = []
+
+    def fake_claude(args):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 1 if args[:2] == ["mcp", "get"] else 0, "", "")
+
+    monkeypatch.setattr(agent, "_claude", fake_claude)
+    monkeypatch.setattr(agent.shutil, "which", lambda name: f"/usr/bin/{name}")   # claude and system-diff on PATH
+    agent.setup_claude(repo, "project", out=lambda s: None)
+    assert ["mcp", "add", "--scope", "project", "--transport", "stdio", "system-diff", "--", "system-diff", "mcp"] in calls
+    hook = json.loads((repo / ".claude" / "settings.json").read_text())["hooks"]["Stop"][0]["hooks"][0]
+    assert hook == {"type": "command", "command": "system-diff hook", "timeout": 30}
+    assert (repo / ".claude" / "skills" / "system-diff" / "SKILL.md").is_file()

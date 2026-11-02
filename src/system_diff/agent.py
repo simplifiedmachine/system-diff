@@ -148,7 +148,7 @@ def setup_claude(root: Path, scope: str = "user", undo: bool = False, out: Calla
                 skill_path.parent.rmdir()
             out(f"removed the skill {skill_path}")
         if has_claude and _claude(["mcp", "get", NAME]).returncode == 0:
-            got = _claude(["mcp", "remove", "--scope", scope, NAME])
+            got = _claude(["mcp", "remove", NAME, "--scope", scope])
             out(f"removed the MCP server ({scope} scope)" if got.returncode == 0 else
                 f"could not remove the MCP server: {(got.stderr or got.stdout).strip()[:200]}")
         out("system-diff is no longer wired into Claude Code" + ("" if scope == "user" else f" ({scope} scope)"))
@@ -157,7 +157,8 @@ def setup_claude(root: Path, scope: str = "user", undo: bool = False, out: Calla
     if ours:
         out(f"the Stop hook is already in {settings_path}")
     else:
-        stop.append({"hooks": [{"type": "command", "command": hook_command()}]})
+        # A timeout (seconds) so a stuck git can never hold up the end of a turn; Claude Code's default is 600.
+        stop.append({"hooks": [{"type": "command", "command": hook_command(), "timeout": 30}]})
         _save(settings_path, settings)
         out(f"added a Stop hook to {settings_path}: after each turn, one line on what changed in the system")
     skill_path.parent.mkdir(parents=True, exist_ok=True)
@@ -182,7 +183,7 @@ def setup_claude(root: Path, scope: str = "user", undo: bool = False, out: Calla
         out("the MCP server is already registered")
     else:
         server = hook_command()[: -len(" hook")]
-        got = _claude(["mcp", "add", "--scope", scope, NAME, "--", *_split(server), "mcp"])
+        got = _claude(["mcp", "add", "--scope", scope, "--transport", "stdio", NAME, "--", *_split(server), "mcp"])
         out(f"registered the MCP server ({scope} scope): system_map, system_diff, draw, checkpoint"
             if got.returncode == 0 else f"could not register the MCP server: {(got.stderr or got.stdout).strip()[:200]}")
     return 0
