@@ -82,6 +82,9 @@ class Watcher:
                                       "changes": 0, "base": base, "at": "", "error": ""}
         self.seen_key: Optional[tuple] = None
         self.stop = threading.Event()
+        # One look at the files at a time: otherwise a slow look that started before "Mark as seen" could finish
+        # after it and put the old diff back on the page.
+        self.busy = threading.Lock()
 
     def key(self) -> tuple:
         return worktree_tree(self.root), checkpoint_sha(self.root)
@@ -97,16 +100,17 @@ class Watcher:
         with self.lock:
             self.state.update(new, version=self.state["version"] + 1, at=time.strftime("%H:%M:%S"))
 
-    def tick(self) -> None:
-        try:
-            key = self.key()
-        except (OSError, subprocess.CalledProcessError) as exc:
-            with self.lock:
-                self.state.update(error=f"git: {exc}", version=self.state["version"] + 1)
-            return
-        if key != self.seen_key:
-            self.seen_key = key
-            self.refresh()
+    def tick(self, force: bool = False) -> None:
+        with self.busy:
+            try:
+                key = self.key()
+            except (OSError, subprocess.CalledProcessError) as exc:
+                with self.lock:
+                    self.state.update(error=f"git: {exc}", version=self.state["version"] + 1)
+                return
+            if force or key != self.seen_key:
+                self.seen_key = key
+                self.refresh()
 
     def loop(self) -> None:
         while not self.stop.is_set():
@@ -114,8 +118,9 @@ class Watcher:
             self.stop.wait(self.interval)
 
     def mark_seen(self) -> None:
-        checkpoint(self.root)
-        self.tick()
+        with self.busy:
+            checkpoint(self.root)
+        self.tick(force=True)  # the page's answer is the diff from the new checkpoint, never an older look
 
     def snapshot_state(self) -> Dict[str, Any]:
         with self.lock:

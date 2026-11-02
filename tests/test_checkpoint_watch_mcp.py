@@ -159,3 +159,30 @@ def test_setup_registers_the_mcp_server_with_claude_code_in_the_same_scope(repo,
     hook = json.loads((repo / ".claude" / "settings.json").read_text())["hooks"]["Stop"][0]["hooks"][0]
     assert hook == {"type": "command", "command": "system-diff hook", "timeout": 30}
     assert (repo / ".claude" / "skills" / "system-diff" / "SKILL.md").is_file()
+
+
+def test_mark_as_seen_answers_with_the_new_checkpoint_even_when_the_loop_looked_first(repo, files, monkeypatch):
+    # The Windows CI failure: the background loop saw the moved checkpoint first and was still looking, so "Mark as
+    # seen" found nothing new to do and answered with the page as it was.
+    files(repo, {"app/api/health.py": HEALTH})
+    w = watch.Watcher(repo, interval=60)
+    w.tick()
+    assert w.snapshot_state()["changes"]
+    real_checkpoint, real_compare = watch.checkpoint, watch.compare
+    looking = threading.Event()
+
+    def slow_compare(*a, **k):
+        looking.set()
+        time.sleep(0.5)
+        return real_compare(*a, **k)
+
+    def checkpoint_then_the_loop_looks(root, ref=None):
+        sha = real_checkpoint(root, ref)
+        monkeypatch.setattr(watch, "compare", slow_compare)
+        threading.Thread(target=w.tick, daemon=True).start()   # the loop's own look, just after the checkpoint moved
+        looking.wait(1.0)
+        return sha
+
+    monkeypatch.setattr(watch, "checkpoint", checkpoint_then_the_loop_looks)
+    w.mark_seen()
+    assert w.snapshot_state()["changes"] == 0
