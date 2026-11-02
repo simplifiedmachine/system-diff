@@ -1,0 +1,168 @@
+{
+ "ref": "working tree",
+ "components": {
+  "cli": {
+   "label": "Command line",
+   "layer": "",
+   "kind": "interface",
+   "order": 0,
+   "container": "",
+   "declared": true,
+   "files": 3,
+   "lines": 189,
+   "hub": false,
+   "quiet": false
+  },
+  "config": {
+   "label": "Config",
+   "layer": "",
+   "kind": "logic",
+   "order": 1,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 106,
+   "hub": false,
+   "quiet": false
+  },
+  "diff": {
+   "label": "Typed diff",
+   "layer": "",
+   "kind": "logic",
+   "order": 3,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 171,
+   "hub": false,
+   "quiet": false
+  },
+  "extract": {
+   "label": "Extraction",
+   "layer": "",
+   "kind": "logic",
+   "order": 2,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 279,
+   "hub": false,
+   "quiet": false
+  },
+  "graph": {
+   "label": "Map layout",
+   "layer": "",
+   "kind": "logic",
+   "order": 4,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 209,
+   "hub": false,
+   "quiet": false
+  },
+  "narrate": {
+   "label": "LLM summary",
+   "layer": "",
+   "kind": "logic",
+   "order": 7,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 141,
+   "hub": false,
+   "quiet": false
+  },
+  "pictures": {
+   "label": "SVG pictures",
+   "layer": "",
+   "kind": "logic",
+   "order": 5,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 506,
+   "hub": true,
+   "quiet": false
+  },
+  "png": {
+   "label": "PNG rendering",
+   "layer": "",
+   "kind": "logic",
+   "order": 8,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 121,
+   "hub": false,
+   "quiet": false
+  },
+  "readme": {
+   "label": "README section",
+   "layer": "",
+   "kind": "logic",
+   "order": 6,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 39,
+   "hub": false,
+   "quiet": false
+  },
+  "sources": {
+   "label": "Git and folder sources",
+   "layer": "",
+   "kind": "data",
+   "order": 9,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 76,
+   "hub": false,
+   "quiet": false
+  }
+ },
+ "flows": {
+  "cli>config": 2,
+  "cli>diff": 2,
+  "cli>extract": 2,
+  "cli>graph": 2,
+  "cli>narrate": 1,
+  "cli>pictures": 1,
+  "cli>png": 1,
+  "cli>readme": 1,
+  "cli>sources": 1,
+  "diff>extract": 1,
+  "diff>sources": 1,
+  "extract>config": 1,
+  "graph>diff": 1,
+  "graph>pictures": 1,
+  "readme>pictures": 1
+ },
+ "api": {},
+ "routes": {},
+ "externals": {},
+ "dormant": {
+  "chromium": {
+   "label": "Headless Chromium (Docker or Playwright)",
+   "shape": "",
+   "used_by": [
+    "png"
+   ]
+  }
+ },
+ "internal": {},
+ "env": {
+  "png": [
+   "SYSTEM_DIFF_RENDER_IMAGE"
+  ]
+ },
+ "containers": {},
+ "container_labels": {},
+ "tables": {},
+ "store": "postgres",
+ "migrations": [],
+ "tests": {
+  "tests/test_system_diff.py": 1
+ }
+}

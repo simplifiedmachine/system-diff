@@ -1,0 +1,51 @@
+name: system diff
+
+# What a pull request does to the system, as a comment on it and in the run's summary; the picture is the run's
+# "system-diff" artifact. Copy this file into another repository to get the same there.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e .
+      - name: Draw what this pull request does to the system
+        run: system-diff diff --base "origin/${{ github.base_ref }}" --head HEAD --out system-diff-out
+      - name: Write the summary
+        run: |
+          {
+            echo '<!-- system-diff -->'
+            echo '### System diff'
+            echo
+            cat system-diff-out/headline.txt
+            echo
+            echo '```'
+            cat system-diff-out/plan.txt
+            echo '```'
+            echo
+            echo "The picture: the **system-diff** artifact of [this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+          } > system-diff-out/comment.md
+          cat system-diff-out/comment.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: system-diff
+          path: system-diff-out
+      - name: Comment on the pull request
+        # A pull request from a fork gets a read-only token: it has the summary and the artifact instead.
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file system-diff-out/comment.md --edit-last \
+            || gh pr comment "${{ github.event.pull_request.number }}" --body-file system-diff-out/comment.md

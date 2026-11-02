@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="756" height="562" viewBox="0 0 756 562" role="img" aria-label="System map">
+<style>
+text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
+.bg { fill: #f8f9fb; stroke: #e1e5eb; }
+.col { font-size: 11px; font-weight: 600; letter-spacing: .05em; fill: #667385; }
+.bn .box { fill: #ffffff; stroke: #e1e5eb; stroke-width: 1.2; }
+.bn.t-store .box { fill: #e8f0fc; }
+.bn.legacy .box { fill: #f8f9fb; stroke: #c3cad4; stroke-dasharray: 5 4; }
+.bn.legacy .bn-t { fill: #3b4655; }
+.bn .band { fill: #1f5fbf; }
+.bn.undeclared .band { fill: #9a5600; }
+.bn.s-added .box { stroke: #157347; stroke-width: 1.8; } .bn.s-added .band { fill: #157347; }
+.bn.s-changed .box { stroke: #9a5600; stroke-width: 1.8; } .bn.s-changed .band { fill: #9a5600; }
+.bn.s-removed .box { stroke: #c4321c; stroke-dasharray: 5 4; fill: #fdecea; } .bn.s-removed .band { fill: #c4321c; }
+.bn-t { font-size: 13px; font-weight: 600; fill: #161c24; }
+.bn-s { font-size: 11.5px; fill: #667385; }
+.bn-p { font-size: 11.5px; fill: #3b4655; } .bn-p.code { font-family: Consolas, Inconsolata, 'DejaVu Sans Mono', monospace; } .bn-p.more { fill: #667385; }
+.bn-p.s-added { fill: #157347; font-weight: 600; } .bn-p.s-changed { fill: #9a5600; font-weight: 600; }
+.bn-p.s-removed { fill: #c4321c; text-decoration: line-through; }
+.be { fill: none; stroke: #667385; stroke-width: 1.4; opacity: .75; }
+.be.k-data { stroke: #1f5fbf; } .be.k-network { stroke: #9a5600; stroke-dasharray: 6 4; }
+.be.s-added { stroke: #157347; stroke-width: 2.2; opacity: 1; }
+.be.s-removed { stroke: #c4321c; stroke-dasharray: 5 4; opacity: 1; }
+.ar { fill: #667385; } .ar.k-data { fill: #1f5fbf; } .ar.k-network { fill: #9a5600; }
+.ar.s-added { fill: #157347; } .ar.s-removed { fill: #c4321c; } .ar.k-person { fill: #1f5fbf; }
+.halo { paint-order: stroke; stroke: #f8f9fb; stroke-width: 4px; stroke-linejoin: round; }
+.lg { font-size: 11.5px; fill: #667385; }
+.lg.s-added { fill: #157347; font-weight: 600; } .lg.s-changed { fill: #9a5600; font-weight: 600; }
+.lg.s-removed { fill: #c4321c; font-weight: 600; }
+.foot { font-size: 11.5px; fill: #3b4655; }
+.st .box { fill: #ffffff; stroke: #e1e5eb; stroke-width: 1.4; }
+.st.hi .box { fill: #e8f0fc; stroke: #1f5fbf; }
+.st-w { font-size: 13px; font-weight: 600; fill: #161c24; }
+.fl { fill: none; stroke: #667385; stroke-width: 1.4; } .fl.loop { stroke-dasharray: 4 4; }
+.fl.gate { stroke: #1f5fbf; stroke-dasharray: 2 4; opacity: .7; }
+.fl-note { font-size: 11.5px; fill: #667385; }
+.gate .box { fill: #e8f0fc; stroke: #1f5fbf; } .gate text { font-size: 12.5px; font-weight: 600; fill: #1f5fbf; }
+.exit { font-size: 12.5px; font-weight: 600; fill: #161c24; }
+.lane .box { fill: #ffffff; stroke: #e1e5eb; stroke-width: 1.2; }
+.lane.person .box { fill: #e8f0fc; stroke: #1f5fbf; }
+.life { stroke: #c9d0da; stroke-width: 1.2; stroke-dasharray: 3 4; }
+.msg { fill: none; stroke: #667385; stroke-width: 1.4; }
+.msg.frame { stroke: #1f5fbf; stroke-dasharray: 5 4; } .msg.person { stroke: #1f5fbf; stroke-width: 2; }
+.msg-t { font-size: 11.5px; fill: #3b4655; } .msg-t.frame { fill: #1f5fbf; } .msg-t.person { fill: #1f5fbf; font-weight: 600; }
+.num circle { fill: #667385; } .num.person circle { fill: #1f5fbf; }
+.num text { fill: #ffffff; font-size: 10px; font-weight: 700; }
+.note .box { fill: #fff3dd; stroke: #e9c98f; } .note text { font-size: 11.5px; fill: #9a5600; }
+</style>
+<defs><marker id="ar-call-same" class="ar k-call s-same" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+<rect class="bg" x="0.5" y="0.5" width="755" height="561" rx="10"/>
+<text class="col" x="14" y="18">ENTRY POINTS</text>
+<text class="col" x="278" y="18">LOGIC</text>
+<text class="col" x="542" y="18">DATA ACCESS</text>
+<path class="be k-call s-same" d="M214,52 C243,52 243,52 272,52" marker-end="url(#ar-call-same)"><title>cli → config</title></path>
+<path class="be k-call s-same" d="M214,52 C243,52 243,172 272,172" marker-end="url(#ar-call-same)"><title>cli → diff</title></path>
+<path class="be k-call s-same" d="M214,52 C243,52 243,112 272,112" marker-end="url(#ar-call-same)"><title>cli → extract</title></path>
+<path class="be k-call s-same" d="M214,52 C243,52 243,232 272,232" marker-end="url(#ar-call-same)"><title>cli → graph</title></path>
+<path class="be k-call s-same" d="M214,52 C243,52 243,412 272,412" marker-end="url(#ar-call-same)"><title>cli → narrate</title></path>
+<path class="be k-call s-same" d="M214,52 C243,52 243,472 272,472" marker-end="url(#ar-call-same)"><title>cli → png</title></path>
+<path class="be k-call s-same" d="M214,52 C243,52 243,352 272,352" marker-end="url(#ar-call-same)"><title>cli → readme</title></path>
+<path class="be k-call s-same" d="M214,52 C246,52 246,83 278,83 L478,83 C507,83 507,52 536,52" marker-end="url(#ar-call-same)"><title>cli → sources</title></path>
+<path class="be k-call s-same" d="M478,172 C514,172 514,112 484,112" marker-end="url(#ar-call-same)"><title>diff → extract</title></path>
+<path class="be k-call s-same" d="M478,172 C507,172 507,52 536,52" marker-end="url(#ar-call-same)"><title>diff → sources</title></path>
+<path class="be k-call s-same" d="M478,112 C514,112 514,52 484,52" marker-end="url(#ar-call-same)"><title>extract → config</title></path>
+<path class="be k-call s-same" d="M478,232 C514,232 514,172 484,172" marker-end="url(#ar-call-same)"><title>graph → diff</title></path>
+<g class="bn t-component s-same" transform="translate(14,30)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Command line</text><text x="12" y="35" class="bn-s">3 files</text><title>Command line</title></g>
+<g class="bn t-component s-same" transform="translate(278,30)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Config</text><text x="12" y="35" class="bn-s">1 file</text><title>Config</title></g>
+<g class="bn t-component s-same" transform="translate(278,90)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Extraction</text><text x="12" y="35" class="bn-s">1 file</text><title>Extraction</title></g>
+<g class="bn t-component s-same" transform="translate(278,150)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Typed diff</text><text x="12" y="35" class="bn-s">1 file</text><title>Typed diff</title></g>
+<g class="bn t-component s-same" transform="translate(278,210)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Map layout</text><text x="12" y="35" class="bn-s">1 file</text><title>Map layout</title></g>
+<g class="bn t-component s-same" transform="translate(278,270)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">SVG pictures</text><text x="12" y="35" class="bn-s">used across the code</text><title>SVG pictures</title></g>
+<g class="bn t-component s-same" transform="translate(278,330)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">README section</text><text x="12" y="35" class="bn-s">1 file</text><title>README section</title></g>
+<g class="bn t-component s-same" transform="translate(278,390)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">LLM summary</text><text x="12" y="35" class="bn-s">1 file</text><title>LLM summary</title></g>
+<g class="bn t-component s-same" transform="translate(278,450)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">PNG rendering</text><text x="12" y="35" class="bn-s">1 file</text><title>PNG rendering</title></g>
+<g class="bn t-component s-same" transform="translate(542,30)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Git and folder sources</text><text x="12" y="35" class="bn-s">1 file</text><title>Git and folder sources</title></g>
+<path class="be k-call" d="M16,536 L36,536" style="opacity:1"/>
+<text x="42" y="540" class="lg">calls</text>
+</svg>

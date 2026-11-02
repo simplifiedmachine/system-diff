@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "system-diff"
+version = "0.1.0.dev0"
+description = "Draws your system from its code (parts, entry points, data, outside systems) and what each change adds, changes or removes. No dependencies; SVG pictures for PRs and READMEs."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "simplifiedmachine" }]
+keywords = ["architecture", "system-design", "diagrams", "code-visualization", "code-review", "pull-requests", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.optional-dependencies]
+png = ["playwright>=1.40"]
+dev = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/simplifiedmachine/system-diff"
+Documentation = "https://github.com/simplifiedmachine/system-diff/wiki"
+Issues = "https://github.com/simplifiedmachine/system-diff/issues"
+
+[project.scripts]
+system-diff = "system_diff.cli:main"
+sysdiff = "system_diff.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/system_diff"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

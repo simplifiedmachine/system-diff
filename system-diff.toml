@@ -1,0 +1,81 @@
+# system-diff describing itself: its README map and the system diff on every pull request are drawn from this.
+# Every key is optional; see the wiki's Configuration page for all of them.
+
+tests = ["tests/**"]
+deploy = ["pyproject.toml", ".github/workflows/*.yml"]
+
+[code]
+roots = ["src/"]
+extensions = [".py"]
+
+[picture]
+top_flows = 10                 # a small tool: draw every connection
+
+[readme]
+image = "docs/diagrams/system.svg"
+
+[[components]]
+id = "cli"
+label = "Command line"
+kind = "interface"
+paths = ["src/system_diff/cli.py", "src/system_diff/__main__.py", "src/system_diff/__init__.py"]
+
+[[components]]
+id = "config"
+label = "Config"
+kind = "logic"
+paths = ["src/system_diff/config.py"]
+
+[[components]]
+id = "extract"
+label = "Extraction"
+kind = "logic"
+paths = ["src/system_diff/extract.py"]
+
+[[components]]
+id = "diff"
+label = "Typed diff"
+kind = "logic"
+paths = ["src/system_diff/diff.py"]
+
+[[components]]
+id = "graph"
+label = "Map layout"
+kind = "logic"
+paths = ["src/system_diff/graph.py"]
+
+[[components]]
+id = "pictures"
+label = "SVG pictures"
+kind = "logic"
+hub = true
+paths = ["src/system_diff/pictures.py"]
+
+[[components]]
+id = "readme"
+label = "README section"
+kind = "logic"
+paths = ["src/system_diff/readme.py"]
+
+[[components]]
+id = "narrate"
+label = "LLM summary"
+kind = "logic"
+paths = ["src/system_diff/narrate.py"]
+
+[[components]]
+id = "png"
+label = "PNG rendering"
+kind = "logic"
+paths = ["src/system_diff/png.py"]
+
+[[components]]
+id = "sources"
+label = "Git and folder sources"
+kind = "data"
+paths = ["src/system_diff/sources.py"]
+
+[[externals]]
+id = "chromium"
+label = "Headless Chromium (Docker or Playwright)"
+env = ["SYSTEM_DIFF_RENDER_IMAGE"]
