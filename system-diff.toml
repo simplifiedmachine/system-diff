@@ -12,7 +12,7 @@ extensions = [".py"]
 top_flows = 10                 # a small tool: draw every connection
 
 [readme]
-image = "docs/diagrams/system.svg"
+image = "https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg"  # shows on PyPI too
 
 [[components]]
 id = "cli"

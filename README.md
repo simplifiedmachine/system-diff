@@ -4,7 +4,7 @@ Draws your system from its code (parts, entry points, data, outside systems) and
 removes. No dependencies; SVG pictures for PRs and READMEs.
 
 <!-- system-map:begin -->
-![System map, generated from the code](docs/diagrams/system.svg)
+![System map, generated from the code](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg)
 
 <details><summary>How this map is made</summary>
 
@@ -32,7 +32,7 @@ Deterministic: the same code gives the same picture, byte for byte, and a part t
 ## Install
 
 ```sh
-pipx install git+https://github.com/simplifiedmachine/system-diff   # until the first release on PyPI
+pipx install system-diff
 ```
 
 Python 3.11 or newer, nothing else. `pip install "system-diff[png]"` adds PNG output through Playwright; `system-diff
@@ -82,7 +82,7 @@ copy).
 When an agent changes the code with you, the question is what it did to the system. system-diff answers it as you go:
 
 ```sh
-pipx install git+https://github.com/simplifiedmachine/system-diff
+pipx install system-diff
 pipx inject system-diff mcp  # the MCP server's one dependency
 system-diff setup claude     # the hook, a skill and the MCP server, in one step (--scope project, --undo)
 system-diff watch            # http://127.0.0.1:8765/ : the system diff since you last marked it seen
