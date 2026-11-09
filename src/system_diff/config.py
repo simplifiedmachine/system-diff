@@ -18,23 +18,35 @@ FILE = "system-diff.toml"
 DEFAULTS: Dict[str, Any] = {
     "code": {
         "roots": [""],                       # path prefixes that hold code; "" is the whole repository
-        "extensions": [".py", ".ts", ".tsx", ".js", ".jsx"],
-        "skip": ["node_modules", "__pycache__", "dist", "build", ".venv*", "venv", ".git"],
+        "extensions": [".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte"],
+        "skip": ["node_modules", "__pycache__", "dist", "build", ".venv*", "venv", ".git", ".next", ".nuxt",
+                 ".svelte-kit", ".turbo", "coverage"],
         "aliases": {},                       # import prefix -> repository path, e.g. {"@/": "web/src/"}
-        "python_paths": ["", "src/"],        # where `import a.b` is looked up
+        "python_paths": ["", "src/"],        # where `import a.b` is looked up (and every folder holding a package)
         "group": {"default": 2},             # a part nobody declared is named by its first N path segments
+        "split": ["app", "src", "lib"],      # ... one more under a folder that only wraps the code: backend/app/api
         "strip": None,                       # suffixes dropped from such a name; None: the code extensions
+        "tooling": [                         # build, release and migration tooling: no part unless declared
+            "**/*.config.js", "**/*.config.ts", "**/*.config.mjs", "**/*.config.cjs", "**/*.config.mts",
+            "**/*.config.cts", "**/*.d.ts", "**/*.stories.*", "**/alembic/**", "**/migrations/**", "scripts/**",
+            "hooks/*_gen_project.py", "setup.py", "noxfile.py", "fabfile.py",
+        ],
     },
     "components": [],    # [{id, label, kind, layer, container, paths, hub, quiet}]
     "externals": [],     # [{id, label, shape, env}]: an outside system, known by the settings that reach it
-    "api": [],           # [{prefix, component}]: who serves a URL the front end calls
+    "api": [],           # [{prefix, component}]: who serves a URL the front end calls (none: the routes say)
     "containers": {},    # container name -> label
     "internal_env": {},  # setting -> container it points at
-    "migrations": {},    # {glob, schemas: [[from, to, schema]], store}
-    "tests": [],         # globs of test files
+    "migrations": {},    # {glob, schemas: [[from, to, schema]], store}; none: migrations/*.sql, Alembic, ORM models
+    "tests": ["**/tests/**", "**/__tests__/**", "**/e2e/**", "**/test_*.py", "**/*_test.py", "**/conftest.py",
+              "**/*.test.*", "**/*.spec.*"],   # globs of test files
     "deploy": [],        # globs of files whose change changes what is deployed
-    "compose": "docker-compose.yml",
-    "config_files": ["docker-compose*.yml", "docker-compose*.yaml", "compose*.yml", "compose*.yaml", ".env.*example"],
+    "compose": "docker-compose.yml",         # absent: compose.yml, compose.yaml or docker-compose.yaml
+    "config_files": ["docker-compose*.yml", "docker-compose*.yaml", "compose*.yml", "compose*.yaml", ".env.*example",
+                     ".env"],
+    "detect": {
+        "externals": "auto",                 # outside systems from compose images and client libraries: "auto" when
+    },                                       # the config declares none, true beside the declared ones, false never
     "picture": {
         "columns": [["ui", "What people use"], ["interface", "Entry points"], ["logic", "Logic"],
                     ["data", "Data access"], ["store", "Stored data"], ["external", "Outside the system"]],

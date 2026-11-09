@@ -21,7 +21,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import config
 from .diff import diff, numstat
-from .extract import Code, extract
+from .extract import EXTRACT_VERSION, Code, extract
 from .sources import GitSource, git, git_dir
 
 CHECKPOINT_REF = "refs/worktree/system-diff/checkpoint"
@@ -121,7 +121,7 @@ class Comparison:
 
 
 # A commit reads the same every time: the live page, the terminal view and the hook compare the working tree with the
-# same checkpoint again and again, so its blueprint is read once. Keyed by commit and config; the last few only.
+# same checkpoint again and again, so its blueprint is read once. Keyed by commit, config and extractor; the last few.
 _BLUEPRINTS: Dict[Tuple[str, str], dict] = {}
 _KEEP = 8
 _LOCK = threading.Lock()
@@ -130,7 +130,7 @@ _LOCK = threading.Lock()
 def _blueprint(sha: str, cfg: Dict[str, Any], source, keep_in: Optional[Path] = None) -> dict:
     """The blueprint of a commit, read once per process; with `keep_in` (a repository) also kept on disk, for the
     hooks, each its own process, that compare the working tree with the same turn and checkpoint again and again."""
-    key = (sha, json.dumps(cfg, sort_keys=True, default=str))
+    key = (sha, json.dumps(cfg, sort_keys=True, default=str) + EXTRACT_VERSION)  # a newer extractor reads it again
     with _LOCK:
         bp = _BLUEPRINTS.get(key)
     path = None
