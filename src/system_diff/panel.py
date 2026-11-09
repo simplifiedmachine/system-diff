@@ -1,5 +1,5 @@
 """`system-diff panel`: what a pane beside the agent shows, as JSON for whatever draws it (the Claude Code mod in
-mods/system-diff-pane): rows of (text, style) runs, the styles textmap's, and the parts the person can pick there.
+mods/system-diff): rows of (text, style) runs, the styles textmap's, and the parts the person can pick there.
 
 Four views, as in the terminal view:
   now      what the agent is doing and what that part is, what this turn did to the system and why it matters, the

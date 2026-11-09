@@ -25,7 +25,7 @@ from .sources import git
 
 NAME = "system-diff"
 SKILL_MARK = "<!-- written by system-diff setup claude -->"
-# The skill is named apart from the tool: `/system-diff` is the System diff pane's command (mods/system-diff-pane).
+# The skill is named apart from the tool: `/system-diff` is the System diff pane's command (mods/system-diff).
 SKILL_NAME, OLD_SKILL_NAME = "system-diff-explain", "system-diff"
 SKILL = f"""---
 name: system-diff-explain

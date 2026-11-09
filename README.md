@@ -30,11 +30,13 @@ Then, in Claude Code, the System diff pane:
 
 ```
 /plugin marketplace add simplifiedmachine/system-diff
-/plugin install system-diff-pane@system-diff
+/plugin install system-diff
 ```
 
 Python 3.11 or newer. Claude Code opens the pane by itself when the terminal is wide enough; `/system-diff` opens
-it again after you close it. From a clone, `claude --plugin-dir mods/system-diff-pane` loads it for one launch.
+it again after you close it. (Should another marketplace you added also have a plugin called system-diff,
+`/plugin install system-diff@system-diff` names this one.) From a clone, `claude --plugin-dir mods/system-diff`
+loads it for one launch.
 
 ### The System diff pane
 

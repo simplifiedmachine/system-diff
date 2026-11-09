@@ -15,16 +15,16 @@ const PANE = 'system-diff'
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['map', 'Map', 'm'], ['changes', 'Changes', 'c'], ['topics', 'Topics', 't']] as const
 
-const head = atom({ plugin: 'system-diff-pane', key: 'head' } as const, [] as Row[], { shape: 'head-1' })
-const diagram = atom({ plugin: 'system-diff-pane', key: 'diagram' } as const, null as Diagram | null,
+const head = atom({ plugin: 'system-diff', key: 'head' } as const, [] as Row[], { shape: 'head-1' })
+const diagram = atom({ plugin: 'system-diff', key: 'diagram' } as const, null as Diagram | null,
   { shape: 'diagram-1' })
-const rows = atom({ plugin: 'system-diff-pane', key: 'rows' } as const, [] as Row[], { shape: 'rows-1' })
-const picks = atom({ plugin: 'system-diff-pane', key: 'picks' } as const, [] as Pick[], { shape: 'picks-1' })
-const shown = atom({ plugin: 'system-diff-pane', key: 'shown' } as const, '', { shape: 'shown-1' })
-const view = atom({ plugin: 'system-diff-pane', key: 'view' } as const, 'now', { shape: 'view-1' })
-const part = atom({ plugin: 'system-diff-pane', key: 'part' } as const, '', { shape: 'part-1' })
-const back = atom({ plugin: 'system-diff-pane', key: 'back' } as const, [] as string[], { shape: 'back-1' })
-const note = atom({ plugin: 'system-diff-pane', key: 'note' } as const, 'Reading the system…', { shape: 'note-1' })
+const rows = atom({ plugin: 'system-diff', key: 'rows' } as const, [] as Row[], { shape: 'rows-1' })
+const picks = atom({ plugin: 'system-diff', key: 'picks' } as const, [] as Pick[], { shape: 'picks-1' })
+const shown = atom({ plugin: 'system-diff', key: 'shown' } as const, '', { shape: 'shown-1' })
+const view = atom({ plugin: 'system-diff', key: 'view' } as const, 'now', { shape: 'view-1' })
+const part = atom({ plugin: 'system-diff', key: 'part' } as const, '', { shape: 'part-1' })
+const back = atom({ plugin: 'system-diff', key: 'back' } as const, [] as string[], { shape: 'back-1' })
+const note = atom({ plugin: 'system-diff', key: 'note' } as const, 'Reading the system…', { shape: 'note-1' })
 
 // How to run system-diff: the repository's own virtualenv first, then whatever is on PATH.
 const RUNNERS: string[][] = [['.venv/bin/python', '-m', 'system_diff'], ['system-diff'], ['python3', '-m', 'system_diff']]

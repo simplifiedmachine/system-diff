@@ -487,7 +487,7 @@ def test_setup_moves_an_older_skill_out_of_the_way_of_the_panes_command(repo, tm
 def test_the_pane_plugin_ships_with_the_package_at_the_same_version():
     import system_diff
     root = Path(__file__).resolve().parent.parent
-    plugin = json.loads((root / "mods/system-diff-pane/.claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    plugin = json.loads((root / "mods/system-diff/.claude-plugin/plugin.json").read_text(encoding="utf-8"))
     market = json.loads((root / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
     assert plugin["version"] == system_diff.__version__        # a release bumps both: Claude Code sees the update
-    assert [(p["name"], p["source"]) for p in market["plugins"]] == [("system-diff-pane", "./mods/system-diff-pane")]
+    assert [(p["name"], p["source"]) for p in market["plugins"]] == [("system-diff", "./mods/system-diff")]

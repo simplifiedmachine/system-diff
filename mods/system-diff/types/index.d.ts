@@ -18,7 +18,7 @@ export type Diagram =
 
 declare module 'claude-code' {
   interface PluginState {
-    'system-diff-pane': {
+    'system-diff': {
       head: Shaped<Row[]>
       diagram: Shaped<Diagram | null>
       rows: Shaped<Row[]>

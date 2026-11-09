@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 const PANE = {
-  plugin: 'system-diff-pane',
+  plugin: 'system-diff',
   component: 'Pane',
   requestId: 'system-diff',
   props: {
