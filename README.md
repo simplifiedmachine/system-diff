@@ -36,7 +36,8 @@ Then, in Claude Code, the System diff pane:
 Python 3.11 or newer. Claude Code opens the pane by itself when the terminal is wide enough; `/system-diff` opens
 it again after you close it. (Should another marketplace you added also have a plugin called system-diff,
 `/plugin install system-diff@system-diff` names this one.) From a clone, `claude --plugin-dir mods/system-diff`
-loads it for one launch.
+loads it for one launch. Upgrading from an earlier version: run `system-diff setup claude` again; it updates the
+hooks it added before, and frees `/system-diff` for the pane.
 
 ### The System diff pane
 
@@ -61,7 +62,8 @@ A tab beside Claude Code's own file diff: the *system* diff, live, in four views
     coupling…), in plain words.
 - **Map**: the whole system, a row of blocks per column (what people use, entry points, logic, data access, stored
   data, outside systems); the same keys pick and zoom in.
-- **Changes**: exactly what changed since your checkpoint, and this turn.
+- **Changes**: exactly what changed since your checkpoint, and this turn. Once you have understood it, tell Claude
+  "mark it as seen" (or run `system-diff checkpoint`): from then on you see only what is new to you.
 - **Topics**: everything the system is built with, and which parts use each.
 
 One meaning per colour, so your eye goes where it should: **blue** is where Claude is and what you picked, **yellow**
@@ -80,10 +82,11 @@ click): `n` `m` `c` `t` switch views.
   only), `system_map`, `draw` (pictures of a process or a sequence of calls) and `checkpoint` (mark what you have
   seen, so the next diff shows only what is new to you).
 
-Nothing leaves your machine: the working tree is read as a snapshot (untracked files included) without touching your
-index, HEAD or branches; the checkpoint and the start of each turn live under `refs/worktree/system-diff/` (each
-worktree its own, for Claude sessions in parallel), and what the hooks note under `.git/system-diff/`. Never pushed,
-never sent anywhere.
+The pane and the hooks send nothing anywhere: the working tree is read as a snapshot (untracked files included)
+without touching your index, HEAD or branches; the checkpoint and the start of each turn live under
+`refs/worktree/system-diff/` (each worktree its own, for Claude sessions in parallel), and what the hooks note under
+`.git/system-diff/`, never pushed. Only the optional lessons you ask an LLM for (`e` in the terminal view, `diff
+--narrate`) go to your own LLM, and they carry the structure, never the code.
 
 ## Configuration
 
