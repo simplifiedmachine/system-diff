@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from . import activity, companion, config, learn
+from . import activity, companion, config, design, learn
 from .compare import compare_worktree, mark_turn, turn_sha
 from .extract import Code
 from .sources import git
@@ -122,6 +122,10 @@ def on_start(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[st
 
 
 def on_prompt(root: Path, payload: Dict[str, Any]) -> None:
+    """The person sent a prompt: a new turn starts. A notice Claude Code sends as a prompt (a background task done)
+    is not one: the turn goes on."""
+    if activity.is_system(payload.get("prompt") or ""):
+        return
     mark_turn(root)
     activity.new_turn(root)
     activity.record(root, {"event": activity.PROMPT, "text": _clip(payload.get("prompt"), 300),
@@ -155,8 +159,23 @@ def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[str]:
         last = activity.read_state(root).get("turn") or {}
         before = last.get("told") or [s["text"] for s in last.get("story") or []]
         since, turn = compare_worktree(root, ["checkpoint", "turn"])
-        activity.write_state(root, since.diff, since.base, turn.diff)
+        notes = design.Reading(turn).notes()
+        record_step(root, path, part, last.get("noted") or [], notes)
+        activity.write_state(root, since.diff, since.base, turn.diff, noted=[n["text"] for n in notes])
         return step_message(before, learn.story(turn.diff))
+
+
+def record_step(root: Path, path: str, part: str, before: Iterable[str], notes: List[Dict[str, Any]]) -> None:
+    """What one edit did to the system's design, kept as a step of what just happened: each change it made, said as
+    a design note with why it matters, and each change of the turn it undid."""
+    had = set(before)
+    now = {n["text"] for n in notes}
+    items = [{"text": n["text"], "why": n["why"], "sign": n["sign"], "status": n["status"]}
+             for n in notes if n["text"] not in had]
+    items += [{"text": t, "why": "undone: the turn no longer makes this change", "sign": "↺", "status": "muted"}
+              for t in sorted(had - now)]
+    if items:
+        activity.record(root, {"event": "change", "path": path, "part": part, "items": items, "source": "hook"})
 
 
 def on_stop(root: Path, payload: Dict[str, Any]) -> Optional[str]:

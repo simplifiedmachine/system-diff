@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 302,
+   "lines": 313,
    "hub": false,
    "quiet": false
   },
@@ -17,11 +17,11 @@
    "label": "Agent activity",
    "layer": "",
    "kind": "data",
-   "order": 20,
+   "order": 23,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 247,
+   "lines": 259,
    "hub": false,
    "quiet": false
   },
@@ -33,7 +33,31 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 417,
+   "lines": 436,
+   "hub": false,
+   "quiet": false
+  },
+  "architecture": {
+   "label": "System diagram",
+   "layer": "",
+   "kind": "logic",
+   "order": 13,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 324,
+   "hub": false,
+   "quiet": false
+  },
+  "canvas": {
+   "label": "Pane pictures",
+   "layer": "",
+   "kind": "logic",
+   "order": 15,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 521,
    "hub": false,
    "quiet": false
   },
@@ -41,7 +65,7 @@
    "label": "Panes beside the agent",
    "layer": "",
    "kind": "logic",
-   "order": 17,
+   "order": 20,
    "container": "",
    "declared": true,
    "files": 1,
@@ -69,7 +93,19 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 115,
+   "lines": 127,
+   "hub": false,
+   "quiet": false
+  },
+  "design": {
+   "label": "Design notes",
+   "layer": "",
+   "kind": "logic",
+   "order": 14,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 410,
    "hub": false,
    "quiet": false
   },
@@ -93,7 +129,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 307,
+   "lines": 1048,
    "hub": false,
    "quiet": false
   },
@@ -113,11 +149,11 @@
    "label": "Lessons and topics",
    "layer": "",
    "kind": "logic",
-   "order": 15,
+   "order": 18,
    "container": "",
    "declared": true,
-   "files": 2,
-   "lines": 669,
+   "files": 3,
+   "lines": 741,
    "hub": false,
    "quiet": false
   },
@@ -137,7 +173,7 @@
    "label": "LLM summary",
    "layer": "",
    "kind": "logic",
-   "order": 14,
+   "order": 17,
    "container": "",
    "declared": true,
    "files": 1,
@@ -152,8 +188,8 @@
    "order": 5,
    "container": "",
    "declared": true,
-   "files": 1,
-   "lines": 247,
+   "files": 2,
+   "lines": 603,
    "hub": false,
    "quiet": false
   },
@@ -173,7 +209,7 @@
    "label": "PNG rendering",
    "layer": "",
    "kind": "logic",
-   "order": 18,
+   "order": 21,
    "container": "",
    "declared": true,
    "files": 1,
@@ -185,7 +221,7 @@
    "label": "README section",
    "layer": "",
    "kind": "logic",
-   "order": 13,
+   "order": 16,
    "container": "",
    "declared": true,
    "files": 1,
@@ -197,7 +233,7 @@
    "label": "Git and folder sources",
    "layer": "",
    "kind": "data",
-   "order": 19,
+   "order": 22,
    "container": "",
    "declared": true,
    "files": 1,
@@ -221,7 +257,7 @@
    "label": "Terminal pictures",
    "layer": "",
    "kind": "logic",
-   "order": 16,
+   "order": 19,
    "container": "",
    "declared": true,
    "files": 1,
@@ -263,9 +299,13 @@
   "agent>companion": 1,
   "agent>compare": 1,
   "agent>config": 1,
+  "agent>design": 1,
   "agent>extract": 1,
   "agent>learn": 1,
   "agent>sources": 1,
+  "architecture>design": 1,
+  "architecture>graph": 1,
+  "canvas>pictures": 1,
   "cli>activity": 1,
   "cli>agent": 2,
   "cli>companion": 1,
@@ -274,7 +314,7 @@
   "cli>diff": 1,
   "cli>extract": 2,
   "cli>graph": 2,
-  "cli>learn": 1,
+  "cli>learn": 2,
   "cli>mcp": 1,
   "cli>narrate": 1,
   "cli>panel": 1,
@@ -291,6 +331,7 @@
   "compare>diff": 1,
   "compare>extract": 1,
   "compare>sources": 1,
+  "design>graph": 1,
   "diff>extract": 1,
   "diff>sources": 1,
   "extract>config": 1,
@@ -311,13 +352,16 @@
   "mcp>pictures": 1,
   "mcp>sources": 1,
   "mcp>textmap": 1,
-  "panel>activity": 1,
-  "panel>compare": 1,
-  "panel>config": 1,
-  "panel>extract": 1,
-  "panel>graph": 1,
-  "panel>learn": 1,
-  "panel>sources": 1,
+  "panel>activity": 2,
+  "panel>architecture": 1,
+  "panel>canvas": 1,
+  "panel>compare": 2,
+  "panel>config": 2,
+  "panel>design": 1,
+  "panel>extract": 2,
+  "panel>graph": 2,
+  "panel>learn": 4,
+  "panel>sources": 2,
   "panel>textmap": 1,
   "readme>pictures": 1,
   "statusline>activity": 1,
@@ -344,6 +388,424 @@
   "watch>sources": 1
  },
  "api": {},
+ "uses": {
+  "activity>diff": [
+   "short"
+  ],
+  "activity>extract": [
+   "Code"
+  ],
+  "activity>learn": [
+   "story"
+  ],
+  "activity>sources": [
+   "git_dir"
+  ],
+  "agent>activity": [
+   "record",
+   "EDIT",
+   "PROMPT",
+   "part_of",
+   "write_state",
+   "READ"
+  ],
+  "agent>companion": [
+   "add_vscode_task",
+   "open_beside",
+   "watched",
+   "where"
+  ],
+  "agent>compare": [
+   "compare_worktree",
+   "mark_turn",
+   "turn_sha"
+  ],
+  "agent>config": [
+   "lenient"
+  ],
+  "agent>design": [
+   "Reading"
+  ],
+  "agent>extract": [
+   "Code"
+  ],
+  "agent>learn": [
+   "story",
+   "and_list",
+   "brief",
+   "one_line"
+  ],
+  "agent>sources": [
+   "git"
+  ],
+  "architecture>design": [
+   "kinds"
+  ],
+  "architecture>graph": [
+   "files_word",
+   "change_marks",
+   "connections",
+   "part_order"
+  ],
+  "canvas>pictures": [
+   "OP"
+  ],
+  "cli>activity": [
+   "after_checkpoint"
+  ],
+  "cli>agent": [
+   "run_hook",
+   "setup_claude"
+  ],
+  "cli>companion": [
+   "running",
+   "TASK",
+   "open_beside",
+   "where"
+  ],
+  "cli>compare": [
+   "compare",
+   "checkpoint"
+  ],
+  "cli>config": [
+   "load",
+   "segment_rx"
+  ],
+  "cli>diff": [
+   "diff"
+  ],
+  "cli>extract": [
+   "extract"
+  ],
+  "cli>graph": [
+   "system_svg",
+   "change_marks",
+   "diff_svg",
+   "neighbourhood",
+   "overview"
+  ],
+  "cli>learn": [
+   "find_part",
+   "lesson",
+   "load",
+   "to_markdown",
+   "toggle"
+  ],
+  "cli>mcp": [
+   "main"
+  ],
+  "cli>narrate": [
+   "narrate"
+  ],
+  "cli>panel": [
+   "main"
+  ],
+  "cli>pictures": [
+   "write_if_changed",
+   "draw_files"
+  ],
+  "cli>png": [
+   "render"
+  ],
+  "cli>readme": [
+   "readme_section",
+   "update_readme"
+  ],
+  "cli>sources": [
+   "DirSource",
+   "GitSource",
+   "repo_root"
+  ],
+  "cli>statusline": [
+   "statusline"
+  ],
+  "cli>textmap": [
+   "ansi",
+   "plain",
+   "render_map",
+   "render_zoom"
+  ],
+  "cli>tui": [
+   "run"
+  ],
+  "cli>watch": [
+   "serve"
+  ],
+  "companion>sources": [
+   "git",
+   "git_dir"
+  ],
+  "compare>config": [
+   "load"
+  ],
+  "compare>diff": [
+   "diff",
+   "numstat"
+  ],
+  "compare>extract": [
+   "Code",
+   "EXTRACT_VERSION",
+   "extract"
+  ],
+  "compare>sources": [
+   "GitSource",
+   "git",
+   "git_dir"
+  ],
+  "design>graph": [
+   "connections",
+   "part_kind"
+  ],
+  "diff>extract": [
+   "Code",
+   "matches"
+  ],
+  "diff>sources": [
+   "git"
+  ],
+  "extract>config": [
+   "segment_rx"
+  ],
+  "graph>diff": [
+   "files_word"
+  ],
+  "graph>pictures": [
+   "map_svg",
+   "MAP_LEGEND"
+  ],
+  "learn>activity": [
+   "relative"
+  ],
+  "learn>diff": [
+   "NOUNS",
+   "SIGNS"
+  ],
+  "learn>extract": [
+   "Code",
+   "first_party",
+   "outside_imports"
+  ],
+  "learn>graph": [
+   "change_marks",
+   "neighbourhood",
+   "part_kind"
+  ],
+  "learn>narrate": [
+   "complete"
+  ],
+  "learn>sources": [
+   "git"
+  ],
+  "mcp>activity": [
+   "events",
+   "now"
+  ],
+  "mcp>compare": [
+   "compare",
+   "checkpoint",
+   "resolve"
+  ],
+  "mcp>config": [
+   "load"
+  ],
+  "mcp>extract": [
+   "Code",
+   "extract"
+  ],
+  "mcp>graph": [
+   "change_marks",
+   "diff_graph",
+   "neighbourhood",
+   "overview",
+   "part_kind",
+   "part_order"
+  ],
+  "mcp>learn": [
+   "find_part",
+   "lesson"
+  ],
+  "mcp>pictures": [
+   "write_if_changed",
+   "check",
+   "draw",
+   "map_svg"
+  ],
+  "mcp>sources": [
+   "GitSource",
+   "git_dir",
+   "repo_root"
+  ],
+  "mcp>textmap": [
+   "plain",
+   "render_map",
+   "render_zoom"
+  ],
+  "panel>activity": [
+   "events",
+   "now",
+   "label",
+   "EDIT",
+   "PROMPT",
+   "STOP"
+  ],
+  "panel>architecture": [
+   "system",
+   "container"
+  ],
+  "panel>canvas": [
+   "Page",
+   "cut",
+   "detail_rows",
+   "Grid",
+   "chips",
+   "layered"
+  ],
+  "panel>compare": [
+   "compare",
+   "turn_sha"
+  ],
+  "panel>config": [
+   "lenient"
+  ],
+  "panel>design": [
+   "and_list",
+   "Reading",
+   "ATTENTION",
+   "kinds",
+   "name_of"
+  ],
+  "panel>extract": [
+   "Code",
+   "first_party",
+   "outside_imports"
+  ],
+  "panel>graph": [
+   "change_marks",
+   "neighbourhood",
+   "connections",
+   "overview"
+  ],
+  "panel>learn": [
+   "learning",
+   "story",
+   "BASIC",
+   "ROLE_OF",
+   "STDLIB",
+   "TECH"
+  ],
+  "panel>sources": [
+   "GitSource"
+  ],
+  "panel>textmap": [
+   "Line"
+  ],
+  "readme>pictures": [
+   "write_if_changed"
+  ],
+  "statusline>activity": [
+   "now",
+   "read_state",
+   "events",
+   "label",
+   "load_brief"
+  ],
+  "statusline>config": [
+   "lenient"
+  ],
+  "statusline>extract": [
+   "Code"
+  ],
+  "statusline>sources": [
+   "git"
+  ],
+  "statusline>textmap": [
+   "Line",
+   "ansi",
+   "plain"
+  ],
+  "textmap>pictures": [
+   "OP",
+   "cut",
+   "cut_code"
+  ],
+  "tui>activity": [
+   "ago",
+   "label"
+  ],
+  "tui>companion": [
+   "BEAT",
+   "beat",
+   "gone"
+  ],
+  "tui>graph": [
+   "change_marks",
+   "neighbourhood",
+   "overview"
+  ],
+  "tui>learn": [
+   "ask_llm",
+   "lesson",
+   "system_markdown",
+   "system_topics",
+   "to_markdown"
+  ],
+  "tui>pictures": [
+   "write_if_changed"
+  ],
+  "tui>sources": [
+   "git_dir"
+  ],
+  "tui>textmap": [
+   "Line",
+   "render_map",
+   "render_zoom",
+   "rich_style"
+  ],
+  "tui>watch": [
+   "View",
+   "Watcher"
+  ],
+  "watch>activity": [
+   "now",
+   "EDIT",
+   "LOG",
+   "events",
+   "feed",
+   "label"
+  ],
+  "watch>compare": [
+   "Comparison",
+   "checkpoint",
+   "checkpoint_sha",
+   "compare_worktree",
+   "turn_sha",
+   "worktree_tree"
+  ],
+  "watch>diff": [
+   "diff"
+  ],
+  "watch>extract": [
+   "Code"
+  ],
+  "watch>graph": [
+   "change_marks",
+   "diff_svg",
+   "neighbourhood"
+  ],
+  "watch>learn": [
+   "story",
+   "lesson",
+   "one_line"
+  ],
+  "watch>pictures": [
+   "map_svg"
+  ],
+  "watch>sources": [
+   "GitSource",
+   "git",
+   "git_dir"
+  ]
+ },
  "routes": {},
  "externals": {},
  "dormant": {
@@ -360,9 +822,200 @@
   "cli": [
    "NO_COLOR"
   ],
+  "learn": [
+   "XDG_CONFIG_HOME"
+  ],
   "png": [
    "SYSTEM_DIFF_RENDER_IMAGE"
   ]
+ },
+ "configured": [],
+ "stack": {
+  "activity": {
+   "contextlib": 1,
+   "hashlib": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "time": 1,
+   "typing": 1
+  },
+  "agent": {
+   "json": 1,
+   "mcp": 1,
+   "os": 1,
+   "pathlib": 1,
+   "shutil": 1,
+   "subprocess": 1,
+   "sys": 1,
+   "typing": 1
+  },
+  "architecture": {
+   "collections": 1,
+   "typing": 1
+  },
+  "canvas": {
+   "collections": 1,
+   "textwrap": 1,
+   "typing": 1
+  },
+  "cli": {
+   "sys": 2,
+   "argparse": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "shutil": 1,
+   "typing": 1
+  },
+  "companion": {
+   "importlib": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "shlex": 1,
+   "shutil": 1,
+   "subprocess": 1,
+   "sys": 1,
+   "time": 1,
+   "typing": 1
+  },
+  "compare": {
+   "dataclasses": 1,
+   "hashlib": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "subprocess": 1,
+   "tempfile": 1,
+   "threading": 1,
+   "typing": 1
+  },
+  "config": {
+   "copy": 1,
+   "json": 1,
+   "pathlib": 1,
+   "re": 1,
+   "tomllib": 1,
+   "typing": 1
+  },
+  "design": {
+   "collections": 1,
+   "typing": 1
+  },
+  "diff": {
+   "collections": 1,
+   "pathlib": 1,
+   "re": 1,
+   "typing": 1
+  },
+  "extract": {
+   "collections": 1,
+   "json": 1,
+   "os": 1,
+   "paths": 1,
+   "re": 1,
+   "typing": 1
+  },
+  "graph": {
+   "collections": 1,
+   "typing": 1
+  },
+  "learn": {
+   "typing": 3,
+   "pathlib": 2,
+   "collections": 1,
+   "json": 1,
+   "os": 1,
+   "sys": 1
+  },
+  "mcp": {
+   "mcp": 1,
+   "pathlib": 1,
+   "pydantic": 1,
+   "typing": 1
+  },
+  "narrate": {
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "socket": 1,
+   "ssl": 1,
+   "sys": 1,
+   "typing": 1,
+   "urllib": 1
+  },
+  "panel": {
+   "pathlib": 2,
+   "time": 2,
+   "typing": 2,
+   "collections": 1,
+   "json": 1,
+   "re": 1,
+   "textwrap": 1
+  },
+  "pictures": {
+   "html": 1,
+   "json": 1,
+   "pathlib": 1,
+   "typing": 1
+  },
+  "png": {
+   "io": 1,
+   "os": 1,
+   "pathlib": 1,
+   "playwright": 1,
+   "re": 1,
+   "shutil": 1,
+   "subprocess": 1,
+   "sys": 1,
+   "tarfile": 1,
+   "tempfile": 1,
+   "typing": 1
+  },
+  "readme": {
+   "pathlib": 1,
+   "typing": 1
+  },
+  "sources": {
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "subprocess": 1,
+   "typing": 1
+  },
+  "statusline": {
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "subprocess": 1,
+   "time": 1,
+   "typing": 1
+  },
+  "textmap": {
+   "textwrap": 1,
+   "typing": 1
+  },
+  "tui": {
+   "pathlib": 1,
+   "rich": 1,
+   "textual": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1
+  },
+  "watch": {
+   "dataclasses": 1,
+   "http": 1,
+   "json": 1,
+   "pathlib": 1,
+   "secrets": 1,
+   "subprocess": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1
+  }
  },
  "containers": {},
  "container_labels": {},
@@ -371,7 +1024,9 @@
  "migrations": [],
  "tests": {
   "tests/conftest.py": 1,
+  "tests/test_capture.py": 1,
   "tests/test_checkpoint_watch_mcp.py": 1,
+  "tests/test_design_and_pane.py": 1,
   "tests/test_system_diff.py": 1,
   "tests/test_terminal_and_learning.py": 1
  }

@@ -25,6 +25,15 @@ MAX_BYTES, KEEP = 256 * 1024, 400   # past MAX_BYTES, only the newest KEEP event
 EDIT, READ, PROMPT, STOP = "edit", "read", "prompt", "stop"
 
 
+SYSTEM_PROMPTS = ("<task-notification", "<command-name", "<command-message", "<local-command", "<system-reminder",
+                  "<bash-input", "<bash-stdout", "<user-memory-input")
+
+
+def is_system(text: str) -> bool:
+    """A prompt the person did not type: a background task's notice, a slash command's echo, a reminder."""
+    return (text or "").lstrip().startswith(SYSTEM_PROMPTS)
+
+
 def record(root: Path, event: Dict[str, Any]) -> None:
     """Add one event, e.g. {"event": "edit", "path": "app/api/routes.py"}, stamped with the time."""
     path = git_dir(root) / LOG
@@ -75,7 +84,7 @@ def now(evs: Iterable[dict], code: Code) -> Dict[str, Any]:
     touched = []
     for e in evs:
         kind = e.get("event")
-        if kind == PROMPT:
+        if kind == PROMPT and not is_system(e.get("text", "")):
             start, out["prompt"], out["working"] = e["at"], e.get("text", ""), True
         elif kind == STOP:
             out["said"], out["working"] = e.get("text", ""), False
@@ -107,7 +116,7 @@ def feed(evs: Iterable[dict], code: Code, cfg: Dict[str, Any], most: int = 14) -
     out: List[Dict[str, Any]] = []
     for e in sorted(evs, key=lambda e: e["at"]):
         kind, path = e.get("event"), e.get("path", "")
-        if kind == PROMPT:
+        if kind == PROMPT and not is_system(e.get("text", "")):
             out.append({"at": e["at"], "kind": kind, "text": f"You asked: {e.get('text', '')}"})
         elif kind in (READ, EDIT) and path and e.get("source") != "files":
             part = part_of(path, code)
@@ -196,9 +205,10 @@ def ago(at: float, clock: Optional[float] = None) -> str:
 
 # ── state.json: the latest diff in a few words ───────────────────────────────
 
-def write_state(root: Path, since: Optional[dict], label_since: str = "checkpoint", turn: Optional[dict] = None) -> None:
+def write_state(root: Path, since: Optional[dict], label_since: str = "checkpoint", turn: Optional[dict] = None,
+                noted: Optional[List[str]] = None) -> None:
     """Keep the diff since the checkpoint, and this turn's, in a few words and as sentences (learn.story); None for
-    nothing new."""
+    nothing new. `noted`: the turn's design notes (design.py) by their text, for telling what the next edit adds."""
     from .learn import story
 
     def brief(d: Optional[dict]) -> Dict[str, Any]:
@@ -208,6 +218,8 @@ def write_state(root: Path, since: Optional[dict], label_since: str = "checkpoin
                 "told": [t["text"] for t in told][:500],   # every sentence, for telling what the next edit adds
                 "headline": (d or {}).get("headline", "No change to the system's structure.")}
     state = {"at": round(time.time(), 3), "since": label_since, **brief(since), "turn": brief(turn) if turn else None}
+    if state["turn"] is not None:
+        state["turn"]["noted"] = list(noted or [])[:500]
     _replace(git_dir(root) / STATE, json.dumps(state, ensure_ascii=False) + "\n")
 
 
@@ -215,7 +227,7 @@ def new_turn(root: Path) -> None:
     """A prompt was sent: the turn has changed nothing yet."""
     state = read_state(root)
     if state:
-        state["turn"] = {"changes": 0, "short": "", "story": [], "count": 0, "told": [],
+        state["turn"] = {"changes": 0, "short": "", "story": [], "count": 0, "told": [], "noted": [],
                          "headline": "No change to the system's structure."}
         _replace(git_dir(root) / STATE, json.dumps(state, ensure_ascii=False) + "\n")
 

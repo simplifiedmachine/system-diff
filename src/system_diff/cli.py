@@ -195,6 +195,9 @@ def parser() -> argparse.ArgumentParser:
     pn.add_argument("--width", type=int, default=80)
     pn.add_argument("--view", default="now", choices=["now", "map", "changes", "topics"])
     pn.add_argument("--part", default="", help="the part to zoom in on (default: the one the agent works on)")
+    pn.add_argument("--protocol", type=int, default=1, help="2: a page of runs and pickable blocks (the mod's painter)")
+    pf = sub.add_parser("profile", help="what you want explained: technologies marked new to you")
+    pf.add_argument("--learn", metavar="TECH", help="mark a technology new to you, or unmark it")
     sub.add_parser("statusline", help="what Claude Code's status line runs: the part being worked on, the diff in brief")
     st = sub.add_parser("setup", help="wire system-diff into an AI coding tool")
     st.add_argument("tool", choices=["claude"])
@@ -251,7 +254,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
     if args.cmd == "panel":
         from . import panel
-        return panel.main(root, args.width, args.view, args.part)
+        return panel.main(root, args.width, args.view, args.part, args.protocol)
+    if args.cmd == "profile":
+        from . import profile
+        if args.learn:
+            on = profile.toggle(args.learn)
+            print(f"{args.learn}: {'new to you, explained' if on else 'known, not explained'}")
+        else:
+            print(json.dumps(profile.load()))
+        return 0
     if args.cmd == "statusline":
         from . import statusline
         return statusline.statusline(sys.stdin.read() if not sys.stdin.isatty() else "")

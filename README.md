@@ -41,35 +41,50 @@ hooks it added before, and frees `/system-diff` for the pane.
 
 ### The System diff pane
 
-A tab beside Claude Code's own file diff: the *system* diff, live, in four views.
+A tab beside Claude Code's own file diff: your system drawn the way a system designer draws it, live, with what
+Claude is changing in it. It opens as wide as Claude Code docks a pane (45% of the terminal); drag its edge to narrow
+it.
 
-- **Now** follows Claude, top to bottom in the order your attention needs it:
-  - **What Claude is doing** and what that part is: "● Claude is working ✎ Editing API · an entry point: where
-    people, other programs or AI tools reach the system", and what you asked.
-  - **▲ Needs your attention**, only when something does: an endpoint removed or added, stored data changed, a new
-    outside system, a part removed. Each with why it matters ("whatever called it now gets an error"). The moment to
-    ask Claude why, or steer it.
-  - **This turn**: every change to the system as a sentence ("API now uses Billing") with its reason in gray ("a
-    change in Billing can now break API").
-  - **The part, zoomed in on**: a diagram of what calls it and what it calls, its own endpoints and settings, what
-    changed marked. **Click it, then ← ↑ ↓ → pick a block and Enter zooms in on it**, as far as you want to walk the
-    system; `b` goes back, `f` follows Claude again, Esc hands the keys back.
-  - **About the part**: what it is and does, what is changing in it and why that matters.
-  - **What just happened**: › what you asked, ◎ what Claude read, ✎ what it edited, ▲ what each step did to the
-    system, ✓ when it finished.
-  - **Learn**: a topic behind the part, a new one every 20 seconds: the technologies its code imports (FastAPI,
-    SQLAlchemy, React, subprocesses, threads…) and the ideas behind its role (entry points, layers, migrations,
-    coupling…), in plain words.
-- **Map**: the whole system, a row of blocks per column (what people use, entry points, logic, data access, stored
-  data, outside systems); the same keys pick and zoom in.
-- **Changes**: exactly what changed since your checkpoint, and this turn. Once you have understood it, tell Claude
-  "mark it as seen" (or run `system-diff checkpoint`): from then on you see only what is new to you.
-- **Topics**: everything the system is built with, and which parts use each.
+- **Now** follows Claude, in the order your attention needs it:
+  - **What Claude is doing** ("● Claude is working ✎ Editing API") and what you asked.
+  - **▲ Needs your attention**, only when something does. That means: an endpoint removed that a page still calls, a
+    new way to change state, a dependency cycle, a dependency pointing up the layers, a new outside system inside a
+    request, a table dropped, or a setting no deploy sets. Each comes with what it trades off and the question to ask
+    Claude before it goes on.
+  - **The system diagram**:
+    - What it draws: who uses the system (people, programs, AI agents), where they come in, the containers that do
+      the work with their components inside, and the data and outside systems it relies on. Flows join them, named
+      for what they carry (HTTPS, MCP, SQL, a terminal).
+    - Colours: Claude's component is lit in blue; what this turn added is green, changed yellow, removed red.
+    - **Pick:** click the diagram, then ← ↑ ↓ → picks a box. Its flows in and out light up with the boxes at their
+      other ends, and a line says what it uses and what uses it.
+    - **Zoom:** Enter (or a second click) zooms in on a container's components, with the lines between them. `b` goes
+      back, `f` follows Claude again.
+    - **Scroll:** `[` `]` or shift ← → scroll a wide diagram across; shift ↑ ↓, Page Up/Down or the wheel scroll a
+      tall one.
+  - **This turn**: each change to the design, and what it trades off.
+  - **Learn**: how the part Claude works on is designed.
+    - The principle its place calls for: an edge of the system, an adapter, a shared foundation, a coordinator.
+    - Where it sits, and what to watch, such as cycles and layering.
+    - The basics of a technology only where it is new: new to the system this turn, or one you marked new to you.
+  - **What just happened**: the system diff, step by step. Each change an edit made is said in plain words, with why
+    it matters and the file it came from. Edits that changed no structure are told once.
+- **Map**: the system diagram since your checkpoint, every box to pick and zoom into.
+- **Changes**: every change since your checkpoint, and this turn, read for design. Once you have understood it, tell
+  Claude "mark it as seen" (or run `system-diff checkpoint`): from then on you see only what is new to you.
+- **Topics**: the stack, technology by technology. Pick one and the parts that use it light up in the diagram; space
+  marks it new to you, so Learn explains its basics.
 
-One meaning per colour, so your eye goes where it should: **blue** is where Claude is and what you picked, **yellow**
-what changed and what needs you, **green** what is new, done or to learn, **white** what to read, **gray** the
-background (why, when, labels), **red** only what was taken away. Keys while the pane has the focus (ctrl+x tab, or a
-click): `n` `m` `c` `t` switch views.
+One meaning per colour, so your eye goes where it should:
+
+- **Blue:** where Claude is and what you picked.
+- **Yellow:** what changed and what needs you.
+- **Green:** what is new, done or to learn.
+- **White:** what to read.
+- **Gray:** the background (why, when, labels).
+- **Red:** only what was taken away.
+
+`n` `m` `c` `t` switch views.
 
 ### In the conversation
 
@@ -90,8 +105,16 @@ without touching your index, HEAD or branches; the checkpoint and the start of e
 
 ## Configuration
 
-With no config, every folder of code is a part named by its path. A `system-diff.toml` at the repository root names the
-parts and says what is what:
+With no config, system-diff makes a first picture from the code:
+
+- **Parts:** every folder of code is a part named by its path; tests and build tooling are left out.
+- **Front end:** a front end goes under What people use, and the paths it calls are matched to the endpoints that
+  answer them.
+- **Data and outside systems:** databases and outside services are found from the compose file and the client
+  libraries the code imports; tables from the migrations and the models.
+- **Who uses it:** a front end's people, an API's callers, an MCP server's AI agents, a command line's developer.
+
+A `system-diff.toml` at the repository root names the parts and says what is what:
 
 ```toml
 tests = ["tests/**"]
@@ -99,10 +122,17 @@ tests = ["tests/**"]
 [code]
 roots = ["app/", "web/src/"]
 
+[[actors]]                  # who uses the system, drawn first
+id = "customers"
+label = "Customers"
+uses = ["web:browser"]      # part: what the flow carries
+
 [[components]]
 id = "api"
 label = "API"
 kind = "interface"          # ui | interface | logic | data: the column it is drawn in
+group = "Backend"           # the container it is drawn in, with the others of its group
+about = "orders and payments"
 paths = ["app/api/**"]
 
 [[externals]]

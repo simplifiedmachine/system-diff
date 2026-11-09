@@ -5,4 +5,4 @@
     bp = extract.extract(DirSource(Path(".")), cfg)
     svg = graph.system_svg(bp, cfg)
 """
-__version__ = "0.2.0"
+__version__ = "0.3.0"

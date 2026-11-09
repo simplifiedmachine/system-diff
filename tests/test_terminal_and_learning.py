@@ -39,8 +39,9 @@ def test_the_hooks_follow_a_turn_and_say_only_what_it_changed(repo, files):
     _hook(repo, said, "PostToolUse", tool_name="Read", tool_input={"file_path": str(repo.parent / "x.py")})  # outside
     events = activity.events(repo)
     assert [(e["event"], e.get("path")) for e in events] == [
-        ("prompt", None), ("edit", "app/api/health.py"), ("read", "app/core/rules.py")]
+        ("prompt", None), ("edit", "app/api/health.py"), ("change", "app/api/health.py"), ("read", "app/core/rules.py")]
     assert events[0]["text"] == "Add a health check"
+    assert [i["text"] for i in events[2]["items"]] == ["API now answers GET /health"]   # what the edit did, as a step
     now = activity.now(events, Code(config.load(root=repo)))
     assert (now["part"], now["doing"], now["working"]) == ("api", "editing", True)   # the edit, not the later read
 
@@ -285,7 +286,7 @@ def test_the_pane_beside_the_chat_gets_its_rows_as_json(repo, files, capsys):
         return out, ["".join(run[0] for run in row) for row in out["head"] + out["rows"]]
     now, text = view("--part", "core")                                     # zoomed in where the person picked
     assert now["part"] == "core" and {p["id"] for p in now["picks"]} == {"api", "store", "app/jobs"}
-    assert "ZOOMED IN ON CORE  (you picked it)" in text and any(t.startswith("Core is logic") for t in text)
+    assert "ZOOMED IN ON CORE  (you picked it)" in text and not any(t.startswith("ABOUT") for t in text)
     the_map, text = view("--view", "map")
     assert {p["id"] for p in the_map["picks"]} >= {"api", "core", "store", "web"}
     assert the_map["diagram"]["columns"][0]["heading"] == "What people use"

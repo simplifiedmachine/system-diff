@@ -228,3 +228,34 @@ def tech_key(name: str) -> Optional[str]:
             return key
         parts.pop()
     return None
+
+
+# What a technology does in a system's design, in a phrase: the role it plays, not what it is.
+_ROLES = {
+    "the HTTP layer of an entry point: routing, request parsing and validation": (
+        "fastapi", "starlette", "flask", "django", "express", "fastify", "aiohttp"),
+    "the server process that runs the web app (ASGI/WSGI)": ("uvicorn", "gunicorn"),
+    "data contracts: checks what crosses a boundary": ("pydantic", "zod"),
+    "data access: maps code to the database and back": ("sqlalchemy", "@prisma/client", "mongoose", "pg", "psycopg",
+                                                        "asyncpg", "pymongo", "sqlite3"),
+    "schema migrations: versioned changes to stored data": ("alembic",),
+    "shared state outside the process: cache, locks, queues": ("redis",),
+    "asynchronous work: queues and workers off the request path": ("celery", "kafka", "pika"),
+    "outbound calls to other services over HTTP": ("requests", "httpx", "axios", "urllib.request"),
+    "the UI layer: components and rendering": ("react", "vue", "svelte", "@angular/core", "next"),
+    "client-side routing between screens": ("react-router",),
+    "client-side data: fetching, caching, state": ("@tanstack/react-query", "redux"),
+    "identity and secrets: tokens, hashes, keys": ("jwt", "jsonwebtoken", "bcrypt", "cryptography", "secrets"),
+    "a process boundary: runs other programs, with their own failures and latency": ("subprocess",),
+    "the concurrency model: what runs at the same time, and what they share": (
+        "threading", "asyncio", "multiprocessing", "concurrent.futures"),
+    "a network interface others call": ("http.server", "websockets", "socket.io", "grpc", "graphql", "socket"),
+    "a tool interface for AI agents": ("mcp",),
+    "the terminal interface: commands, screens, output": ("textual", "rich", "click", "typer", "argparse"),
+    "tests: what checks the system keeps working": ("pytest", "unittest", "playwright"),
+    "an outside service's client: a runtime dependency with its own limits and costs": (
+        "stripe", "anthropic", "openai", "boto3", "google.cloud"),
+    "containers: how the system is packaged and run": ("docker",),
+    "configuration: read at start, set where the system runs": ("tomllib", "yaml"),
+}
+ROLE_OF: Dict[str, str] = {key: role for role, keys in _ROLES.items() for key in keys}

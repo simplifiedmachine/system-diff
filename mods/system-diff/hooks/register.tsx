@@ -1,12 +1,14 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Diagram, Pick, Row } from '../types'
+import type { Act, Page, Row } from '../types'
 
-// System diff, in a pane beside the chat: what Claude is doing to your system as it works, and what it all means.
-// Tabs: Now (what Claude is doing, what needs your attention, the part zoomed in on, what just happened, a topic to
-// learn), Map, Changes, Topics. The diagram (diagram.tsx) takes the keys once clicked: ← ↑ ↓ → pick a block, Enter
-// zooms in on it, b goes back, f follows Claude again. Content: `system-diff panel`.
+// System diff, in a pane beside the chat: the system as a system designer draws it (who uses it, its entry points,
+// its containers and their components, its data and the systems outside it, joined by named flows) with Claude's
+// component lit and this turn's changes coloured; what needs your attention; what the turn did to the design; how
+// the part is designed; what just happened. Tabs: Now, Map, Changes, Topics. The page (page.tsx) takes the keys once
+// clicked: ← ↑ ↓ → pick a block and light its flows, Enter zooms in, b back, f follows Claude. Content: `system-diff
+// panel --protocol 2`, laid out for the pane's own width.
 //
 // One meaning per colour: blue is where Claude is and what you picked, yellow what changed and what needs you,
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
@@ -14,67 +16,73 @@ import type { Diagram, Pick, Row } from '../types'
 const PANE = 'system-diff'
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['map', 'Map', 'm'], ['changes', 'Changes', 'c'], ['topics', 'Topics', 't']] as const
+const WIDEST = 999 // as wide as Claude Code docks a pane (it caps a dock at 45% of the terminal)
 
-const head = atom({ plugin: 'system-diff', key: 'head' } as const, [] as Row[], { shape: 'head-1' })
-const diagram = atom({ plugin: 'system-diff', key: 'diagram' } as const, null as Diagram | null,
-  { shape: 'diagram-1' })
-const rows = atom({ plugin: 'system-diff', key: 'rows' } as const, [] as Row[], { shape: 'rows-1' })
-const picks = atom({ plugin: 'system-diff', key: 'picks' } as const, [] as Pick[], { shape: 'picks-1' })
-const shown = atom({ plugin: 'system-diff', key: 'shown' } as const, '', { shape: 'shown-1' })
+const page = atom({ plugin: 'system-diff', key: 'page' } as const, null as Page | null, { shape: 'page-2' })
 const view = atom({ plugin: 'system-diff', key: 'view' } as const, 'now', { shape: 'view-1' })
 const part = atom({ plugin: 'system-diff', key: 'part' } as const, '', { shape: 'part-1' })
-const back = atom({ plugin: 'system-diff', key: 'back' } as const, [] as string[], { shape: 'back-1' })
+const back = atom({ plugin: 'system-diff', key: 'back' } as const, [] as string[], { shape: 'back-2' })
 const note = atom({ plugin: 'system-diff', key: 'note' } as const, 'Reading the system…', { shape: 'note-1' })
 
 // How to run system-diff: the repository's own virtualenv first, then whatever is on PATH.
-const RUNNERS: string[][] = [['.venv/bin/python', '-m', 'system_diff'], ['system-diff'], ['python3', '-m', 'system_diff']]
-
+const RUNNERS: string[][] = [
+  ['.venv/bin/python', '-m', 'system_diff'], ['.venv/Scripts/python.exe', '-m', 'system_diff'], ['system-diff'],
+  ['python3', '-m', 'system_diff'], ['python', '-m', 'system_diff'],
+]
 const COLORS: Record<string, string> = {
-  accent: 'blue', focus: 'blue', near: 'blue', data: 'blue',
-  attention: 'yellow', changed: 'yellow',
-  good: 'green', added: 'green',
+  accent: 'blue', focus: 'blue', attention: 'yellow', changed: 'yellow', good: 'green', added: 'green',
   removed: 'red', network: 'magenta',
 }
 
 let runner: string[] | undefined
 let busy = false
 let again = false
-let columns = 80 // the pane's width, as last drawn: drawing may not write state, so it is kept here
+let columns = 100 // the pane's body width, as last drawn or reported by the page: drawing may not write state
+let last = '' // the last page drawn, so an unchanged look redraws nothing
+let regionTop = 1 // rows above the page in the pane's body: the tabs, and a note while there is one
+let windowAt = 0 // the pane's scroll: its first row showing, and how many show
+let windowRows = 40
+let wantOffset: number | null = null
+
+async function run($: EngineInterface, argv: string[]): Promise<{ out: string; old: boolean } | null> {
+  for (const how of runner ? [runner] : RUNNERS) {
+    try {
+      const got = await $.process.run([...how, ...argv], { timeoutMs: 20000 })
+      if (got.exitCode === 0) {
+        runner = how
+        return { out: got.stdout, old: false }
+      }
+      if (/unrecognized arguments|invalid choice/.test(got.stderr)) return { out: '', old: true }
+    } catch {
+      // not this way: try the next
+    }
+  }
+  return null
+}
 
 async function refresh($: EngineInterface): Promise<void> {
   if (busy) {
-    again = true // a press while a look runs: look again right after
+    again = true // asked while a look runs: look again right after
     return
   }
   busy = true
   try {
     do {
       again = false
-      const argv = ['panel', '--width', String(columns), '--view', await read($, view), '--part', await read($, part)]
-      let done = false
-      for (const run of runner ? [runner] : RUNNERS) {
-        try {
-          const got = await $.process.run([...run, ...argv], { timeoutMs: 20000 })
-          if (got.exitCode !== 0) continue
-          const data = JSON.parse(got.stdout) as
-            { head?: Row[]; diagram?: Diagram | null; rows: Row[]; picks?: Pick[]; part?: string }
-          runner = run
-          const choices = data.picks ?? []
-          await update($, head, () => data.head ?? [])
-          await update($, diagram, () => data.diagram ?? null)
-          await update($, rows, () => data.rows)
-          await update($, picks, () => choices)
-          await update($, shown, () => data.part ?? '')
-          await update($, note, () => '')
-          done = true
-          break
-        } catch {
-          // not this way: try the next
+      const argv = ['panel', '--protocol', '2', '--width', String(columns), '--view', await read($, view),
+                    '--part', await read($, part)]
+      const got = await run($, argv)
+      if (got && !got.old) {
+        if (got.out !== last) {
+          last = got.out
+          const data = JSON.parse(got.out) as Page
+          await update($, page, () => data)
         }
-      }
-      if (!done) {
-        await update($, note, () =>
-          'system-diff is not installed here: pipx install "system-diff[mcp,tui]", then system-diff setup claude')
+        if ((await read($, note)) !== '') await update($, note, () => '')
+      } else {
+        await update($, note, () => got?.old
+          ? 'This pane needs a newer system-diff: pipx upgrade system-diff'
+          : 'system-diff is not installed here: pipx install "system-diff[mcp,tui]", then system-diff setup claude')
       }
     } while (again)
   } finally {
@@ -93,8 +101,8 @@ async function choose($: EngineInterface, next: string): Promise<void> {
 }
 
 async function zoom($: EngineInterface, id: string): Promise<void> {
-  const from = await read($, shown)
-  if (from && from !== id) await update($, back, list => [...list, from].slice(-20))
+  const from = await read($, part)
+  if (from !== id) await update($, back, list => [...list, from].slice(-20))
   await update($, part, () => id)
   await update($, view, () => 'now')
   await refresh($)
@@ -115,11 +123,42 @@ async function follow($: EngineInterface): Promise<void> {
   await refresh($)
 }
 
+async function learn($: EngineInterface, key: string): Promise<void> {
+  await run($, ['profile', '--learn', key])
+  await refresh($)
+}
+
+// Bring a row of the page into view when the keys pick a block below or above the pane's window.
+async function reveal($: EngineInterface, y: number): Promise<void> {
+  const row = regionTop + y
+  if (row >= windowAt && row < windowAt + windowRows - 1) return
+  wantOffset = Math.max(0, row - Math.floor(windowRows / 3))
+  try {
+    await $.ui.scroll({ to: 'start', in: PANE })
+  } catch {
+    wantOffset = null
+  }
+}
+
+// Scroll the pane by rows, for the keys of a page that has them (shift ↑ ↓, Page Up and Down).
+async function scrollBy($: EngineInterface, rows: number): Promise<void> {
+  const by = Math.abs(rows) >= 1000 ? Math.sign(rows) * Math.max(1, windowRows - 2) : rows
+  wantOffset = Math.max(0, windowAt + by)
+  try {
+    await $.ui.scroll({ to: 'start', in: PANE })
+  } catch {
+    wantOffset = null
+  }
+}
+
+function open($: EngineInterface) {
+  return $.ui.open({ id: PANE, title: 'System diff', columns: WIDEST })
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    void $.ui.open({ id: PANE, title: 'System diff' })
-    // `/system-diff` opens it; `/system-diff-pane` too, the name it had first. A name someone else holds (an older
-    // setup's skill held /system-diff) is skipped: the pane still opens, and the other name still works.
+    void open($)
+    // `/system-diff` opens it; `/system-diff-pane` too, the name it had first. A name someone else holds is skipped.
     for (const name of COMMANDS) {
       try {
         await $.command.register({ name, description: 'Show the System diff pane beside the chat' })
@@ -135,7 +174,7 @@ export const register: Register = on => {
   for (const command of COMMANDS) {
     on('command.run', { command }, async $ => {
       await refresh($)
-      await $.ui.open({ id: PANE, title: 'System diff' })
+      await open($)
       return { text: 'System diff pane opened.' }
     })
   }
@@ -149,10 +188,30 @@ export const register: Register = on => {
     return ran
   })
 
-  // What the diagram (diagram.tsx) asks for: zoom in on a block, go back, follow Claude, another tab.
+  // The pane's own scroll: kept, and moved where a reveal asked.
+  on('ui.scroll', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
+    windowRows = e.bodyRows
+    if (wantOffset !== null && e.origin.kind === 'plugin') {
+      const offset = wantOffset
+      wantOffset = null
+      windowAt = offset
+      return next({ ...e, offset })
+    }
+    windowAt = e.offset
+    return next(e)
+  }).catch(($, e, next) => next(e)) // a failure here must never hold the person's own scrolling
+
+  // What the page (page.tsx) asks for.
   on('ui.message', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const data = (e.data ?? {}) as { zoom?: string; back?: boolean; follow?: boolean; view?: string }
-    if (typeof data.zoom === 'string') await zoom($, data.zoom)
+    const data = (e.data ?? {}) as Act & { back?: boolean; follow?: boolean; width?: number; reveal?: number;
+                                             scrollBy?: number }
+    if (typeof data.width === 'number' && data.width > 0 && data.width !== columns) {
+      columns = data.width
+      await refresh($)
+    } else if (typeof data.reveal === 'number') await reveal($, data.reveal)
+    else if (typeof data.scrollBy === 'number') await scrollBy($, data.scrollBy)
+    else if (typeof data.zoom === 'string') await zoom($, data.zoom)
+    else if (typeof data.learn === 'string') await learn($, data.learn)
     else if (data.back) await goBack($)
     else if (data.follow) await follow($)
     else if (typeof data.view === 'string') await choose($, data.view)
@@ -162,18 +221,19 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
     const { Box, Text, Button } = elements
-    // A surface that draws a module's region (the terminal) gets the diagram with the keys; any other, its blocks
-    // as buttons to press.
-    const Client = 'Client' in elements ? elements.Client : undefined
-    const picks_ = await read($, picks)
-    columns = e.viewport?.columns ?? columns // the next look draws for it
-    const top = await read($, head)
-    const drawing = await read($, diagram)
-    const list = await read($, rows)
+    // A surface that draws a module's region (the terminal, desktop) gets the page with keys and clicks; any other
+    // its rows as text and its blocks as buttons.
+    const Client = (e.surface === 'terminal' || e.surface === 'desktop') && 'Client' in elements
+      ? elements.Client : undefined
+    columns = e.props.bodyColumns || columns // the next look is laid out for it
+    windowAt = e.props.scroll.offset
+    windowRows = e.props.scroll.bodyRows
+    const drawn = await read($, page)
     const said = await read($, note)
     const now = await read($, view)
-    const picked = await read($, part)
+    const zoomed = await read($, part)
     const behind = await read($, back)
+    regionTop = 1 + (said !== '' ? 1 : 0)
 
     const line = (row: Row, i: number) =>
       row.length === 0 ? (
@@ -184,12 +244,8 @@ export const register: Register = on => {
             const words = style.split(' ')
             const color = words.map(w => COLORS[w]).find(Boolean)
             return (
-              <Text
-                color={color}
-                bold={['bold', 'focus', 'heading', 'attention'].some(w => words.includes(w))}
-                dimColor={(words.includes('muted') || words.includes('heading')) && !color}
-                inverse={words.includes('picked')}
-              >
+              <Text color={color} bold={['bold', 'heading', 'attention'].some(w => words.includes(w))}
+                    dimColor={(words.includes('muted') || words.includes('heading')) && !color}>
                 {text}
               </Text>
             )
@@ -205,7 +261,7 @@ export const register: Register = on => {
               {now === id ? <Text color="blue" bold underline>{label}</Text> : <Text dimColor>{label}</Text>}
             </Button>
           ))}
-          {picked !== '' && (
+          {zoomed !== '' && (
             <Button key="follow" hotkey="f" plain onPress={() => void follow($)}>
               <Text color="blue">● Follow Claude</Text>
             </Button>
@@ -215,18 +271,19 @@ export const register: Register = on => {
           )}
         </Box>
         {said !== '' && <Text dimColor>{said}</Text>}
-        {top.map(line)}
-        {drawing !== null && Client !== undefined && (
-          <Client key="diagram" module="./diagram.tsx" props={{ diagram: drawing, canGoBack: behind.length > 0 }} />
+        {drawn !== null && Client !== undefined && (
+          <Client key="page" module="./page.tsx" width="100%" props={{ page: drawn, canGoBack: behind.length > 0 }} />
         )}
-        {drawing !== null && Client === undefined && (
+        {drawn !== null && Client === undefined && drawn.rows.map(line)}
+        {drawn !== null && Client === undefined && (
           <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-            {picks_.map(c => (
-              <Button key={`block-${c.id}`} plain onPress={() => void zoom($, c.id)}>{c.title}</Button>
+            {drawn.blocks.filter(b => b.enter?.zoom).slice(0, 40).map(b => (
+              <Button key={`block-${b.id}`} plain onPress={() => void zoom($, b.enter?.zoom ?? '')}>
+                {b.id.replace(/^b:(g:)?/, '')}
+              </Button>
             ))}
           </Box>
         )}
-        {list.map(line)}
       </Box>
     )
   })

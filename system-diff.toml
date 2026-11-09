@@ -14,76 +14,114 @@ top_flows = 10                 # a small tool: draw every connection
 [readme]
 image = "https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg"  # shows on PyPI too
 
+# Who uses it, and how they come in: the system diagram's first column.
+[[actors]]
+id = "developer"
+label = "Developer"
+kind = "person"
+uses = ["cli:terminal", "tui:terminal", "watch:browser"]
+
+[[actors]]
+id = "claude"
+label = "Claude Code"
+kind = "program"
+uses = ["agent:hooks", "mcp:MCP", "panel:pane", "statusline:status line"]
+
+[[actors]]
+id = "ci"
+label = "GitHub Actions"
+kind = "program"
+uses = ["cli:PR check"]
+
 [[components]]
 id = "cli"
 label = "Command line"
 kind = "interface"
+about = "system-diff <command>"
+group = "From the terminal"
 paths = ["src/system_diff/cli.py", "src/system_diff/__main__.py", "src/system_diff/__init__.py"]
 
 [[components]]
 id = "mcp"
 label = "MCP server"
 kind = "interface"
+about = "tools for AI agents"
+group = "In Claude Code"
 paths = ["src/system_diff/mcp_server.py"]
 
 [[components]]
 id = "agent"
 label = "Claude Code hook and setup"
 kind = "interface"
+about = "prompt, read, edit, stop"
+group = "In Claude Code"
 paths = ["src/system_diff/agent.py"]
 
 [[components]]
 id = "watch"
 label = "Live page"
 kind = "interface"
+about = "a page on localhost"
+group = "From the terminal"
 paths = ["src/system_diff/watch.py"]
 
 [[components]]
 id = "tui"
 label = "Terminal view"
 kind = "interface"
+about = "full-screen terminal app"
+group = "From the terminal"
 paths = ["src/system_diff/tui.py"]
 
 [[components]]
 id = "panel"
 label = "Pane beside the chat"
 kind = "interface"
-paths = ["src/system_diff/panel.py"]
+about = "beside the chat"
+group = "In Claude Code"
+paths = ["src/system_diff/panel.py", "src/system_diff/pane.py"]
 
 [[components]]
 id = "statusline"
 label = "Status line"
 kind = "interface"
+about = "lines under the prompt"
+group = "In Claude Code"
 paths = ["src/system_diff/statusline.py"]
 
 [[components]]
 id = "compare"
 label = "Checkpoints and snapshots"
 kind = "logic"
+group = "Engine"
 paths = ["src/system_diff/compare.py"]
 
 [[components]]
 id = "config"
 label = "Config"
 kind = "logic"
+group = "Engine"
 paths = ["src/system_diff/config.py"]
 
 [[components]]
 id = "extract"
 label = "Extraction"
 kind = "logic"
+group = "Engine"
 paths = ["src/system_diff/extract.py"]
 
 [[components]]
 id = "diff"
 label = "Typed diff"
 kind = "logic"
+group = "Engine"
 paths = ["src/system_diff/diff.py"]
 
 [[components]]
 id = "graph"
 label = "Map layout"
 kind = "logic"
+group = "Engine"
 paths = ["src/system_diff/graph.py"]
 
 [[components]]
@@ -91,30 +129,56 @@ id = "pictures"
 label = "SVG pictures"
 kind = "logic"
 hub = true
+group = "Pictures"
 paths = ["src/system_diff/pictures.py"]
+
+[[components]]
+id = "architecture"
+label = "System diagram"
+kind = "logic"
+group = "Engine"
+paths = ["src/system_diff/architecture.py"]
+
+[[components]]
+id = "design"
+label = "Design notes"
+kind = "logic"
+group = "Explaining"
+paths = ["src/system_diff/design.py"]
+
+[[components]]
+id = "canvas"
+label = "Pane pictures"
+kind = "logic"
+group = "Pictures"
+paths = ["src/system_diff/canvas.py"]
 
 [[components]]
 id = "readme"
 label = "README section"
 kind = "logic"
+group = "Pictures"
 paths = ["src/system_diff/readme.py"]
 
 [[components]]
 id = "narrate"
 label = "LLM summary"
 kind = "logic"
+group = "Explaining"
 paths = ["src/system_diff/narrate.py"]
 
 [[components]]
 id = "learn"
 label = "Lessons and topics"
 kind = "logic"
-paths = ["src/system_diff/learn.py", "src/system_diff/topics.py"]
+group = "Explaining"
+paths = ["src/system_diff/learn.py", "src/system_diff/topics.py", "src/system_diff/profile.py"]
 
 [[components]]
 id = "textmap"
 label = "Terminal pictures"
 kind = "logic"
+group = "Pictures"
 paths = ["src/system_diff/textmap.py"]
 
 [[components]]
@@ -127,6 +191,7 @@ paths = ["src/system_diff/companion.py"]
 id = "png"
 label = "PNG rendering"
 kind = "logic"
+group = "Pictures"
 paths = ["src/system_diff/png.py"]
 
 [[components]]
@@ -145,3 +210,30 @@ paths = ["src/system_diff/activity.py"]
 id = "chromium"
 label = "Headless Chromium (Docker or Playwright)"
 env = ["SYSTEM_DIFF_RENDER_IMAGE"]
+
+# What it keeps and reads, named by the parts that reach them (no setting names them).
+[[externals]]
+id = "repo"
+env = []                    # no setting names it: the parts below reach it
+label = "Git repository"
+shape = "db"
+about = "the code, every commit"
+used_by = ["sources"]
+via = "git"
+
+[[externals]]
+id = "state"
+env = []
+label = ".git/system-diff"
+shape = "files"
+about = "activity, checkpoints"
+used_by = ["activity"]
+via = "files"
+
+[[externals]]
+id = "llm"
+env = []
+label = "Your LLM"
+about = "optional summaries"
+used_by = ["narrate"]
+via = "HTTPS"

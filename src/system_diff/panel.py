@@ -129,13 +129,6 @@ def view_now(root: Path, width: int, part: Optional[str]) -> Dict[str, Any]:
             diagram = zoom_diagram(hood, now["part"])
             picks = [{"id": b["id"], "title": b["title"], "status": b["status"]}
                      for b in diagram["callers"] + diagram["callees"]]
-            les = learn.lesson(c, shown, GitSource(c.head_sha, root))
-            if les:
-                out += _section(f"ABOUT {title.upper()}")
-                out += [[(piece, "")] for piece in _wrap(" ".join(les["what"]), width)]
-                for change in les["changing"]:
-                    out += _told({"text": change["text"].lstrip("+~−! "), "why": change["why"],
-                                  "impact": change["impact"]}, width, style="")
 
     # 4. What just happened, newest first.
     feed = activity.feed(events, code, cfg, most=8)
@@ -239,7 +232,11 @@ def rows(root: Path, width: int = 80) -> List[textmap.Line]:
     return got["head"] + got["rows"]
 
 
-def main(root: Path, width: int, view: str = "now", part: Optional[str] = None) -> int:
+def main(root: Path, width: int, view: str = "now", part: Optional[str] = None, protocol: int = 1) -> int:
+    if protocol >= 2:
+        from . import pane
+        print(json.dumps(pane.show(root, width, view, part or None), ensure_ascii=False))
+        return 0
     got = show(root, width, view, part or None)
     for key in ("head", "rows"):
         got[key] = [[list(run) for run in line] for line in got[key]]
