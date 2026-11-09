@@ -4,9 +4,9 @@ import type { Page, PageBlock, Row, Run } from '../types'
 
 // The page `system-diff panel` lays out, painted cell for cell, in its own region of the pane so it gets the keys and
 // the clicks: ← ↑ ↓ → pick a block (a box of the system diagram, a component in a container, a technology), Enter
-// or a second click zooms in on it, space marks a technology new to you, [ and ] (or shift ← →) scroll a picture
-// wider than the pane, shift ↑ ↓ and Page Up/Down scroll a tall one (as the wheel does), b goes back, f follows
-// Claude, n m c t switch tabs, Esc hands the keys back.
+// or a second click zooms in on it, space marks a technology new to you, [ and ] scroll a picture wider than the
+// pane, shift ↑ ↓ and Page Up/Down scroll a tall one (as the wheel does), b goes back, f follows Claude, n m c t
+// switch tabs, Esc hands the keys back. Shift ← → are left to Claude Code, which resizes the pane with them.
 //
 // A picked block is blue; what it connects to (its lines, in and out, and the blocks at their other ends) is lit;
 // the rest keeps its colours: yellow what changed, green what is new, red what went, gray the background.
@@ -123,15 +123,12 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
     } else if (e.key === 'pageup' || e.key === 'pagedown') {
       surface.post({ scrollBy: e.key === 'pageup' ? -1000 : 1000 }) // a window's worth
     } else if ((e.key === 'left' || e.key === 'right') && e.shift) {
-      surface.setState({ sel, sx: across(page, cols, sx + (e.key === 'left' ? -STEP : STEP), undefined), mine: true,
-                         ticking: true })
+      // shift+← → are Claude Code's, to resize the pane: nothing here
     } else if (['up', 'down', 'left', 'right'].includes(e.key)) {
       pick(move(page.blocks, picked, e.key))
     } else if (e.key === '[' || e.key === ']') {
       surface.setState({ sel, sx: across(page, cols, sx + (e.key === '[' ? -STEP : STEP), undefined), mine: true,
                          ticking: true })
-    } else if (e.key === '<' || e.key === '>' || e.key === ',' || e.key === '.') {
-      surface.post({ resize: e.key === '<' || e.key === ',' ? STEP : -STEP }) // the pane: wider, or narrower
     } else if (e.key === 'return') {
       act(picked, 'enter')
     } else if (e.key === ' ') {
@@ -198,7 +195,7 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
       {wide && (
         <Text dimColor wrap="truncate-end">
           {`${sx > 0 ? '◂ ' : '  '}columns ${sx + 1}–${Math.min(page.wide, sx + cols)} of ${page.wide}` +
-            ` · [ ] or shift ← → scroll${sx + cols < page.wide ? ' ▸' : ''}`}
+            ` · [ ] scroll across${sx + cols < page.wide ? ' ▸' : ''}`}
         </Text>
       )}
       {rows.map((row, y) => {
@@ -210,7 +207,7 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
         )
       })}
       <Text dimColor wrap="truncate-end">
-        {'click here, then ← ↑ ↓ → pick · ↵ zoom in · shift+arrows scroll · < > width' + (canGoBack ? ' · b back' : '') + ' · f follow · Esc leaves'}
+        {'click here, then ← ↑ ↓ → pick · ↵ zoom in · [ ] shift+↑ ↓ scroll' + (canGoBack ? ' · b back' : '') + ' · f follow · Esc leaves'}
       </Text>
     </Box>
   )

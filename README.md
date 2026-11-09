@@ -42,8 +42,10 @@ hooks it added before, and frees `/system-diff` for the pane.
 ### The System diff pane
 
 A tab beside Claude Code's own file diff: your system drawn the way a system designer draws it, live, with what
-Claude is changing in it. It opens as wide as Claude Code docks a pane (45% of the terminal); drag its edge to narrow
-it.
+Claude is changing in it. It opens as wide as Claude Code docks a pane (45% of the terminal). To resize it, give it
+the keys (ctrl+x tab, or a click) and press ctrl+x ← to widen or ctrl+x → to narrow; to use shift+← → instead, add
+`{"context": "Pane", "bindings": {"shift+left": "pane:grow", "shift+right": "pane:shrink"}}` to the `bindings` in
+`~/.claude/keybindings.json`.
 
 - **Now** follows Claude, in the order your attention needs it:
   - **What Claude is doing** ("● Claude is working ✎ Editing API") and what you asked.
@@ -60,8 +62,7 @@ it.
       other ends, and a line says what it uses and what uses it.
     - **Zoom:** Enter (or a second click) zooms in on a container's components, with the lines between them. `b` goes
       back, `f` follows Claude again.
-    - **Scroll:** `[` `]` or shift ← → scroll a wide diagram across; shift ↑ ↓, Page Up/Down or the wheel scroll a
-      tall one.
+    - **Scroll:** `[` `]` scroll a wide diagram across; shift ↑ ↓, Page Up/Down or the wheel scroll a tall one.
   - **This turn**: each change to the design, and what it trades off.
   - **Learn**: how the part Claude works on is designed.
     - The principle its place calls for: an edge of the system, an adapter, a shared foundation, a coordinator.

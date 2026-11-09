@@ -169,15 +169,3 @@ test('/system-diff and /system-diff-pane both open it, as wide as a dock goes', 
   }
   expect(opened.every(o => (o.columns ?? 0) >= 200)).toBe(true)
 })
-
-test('the width buttons ask Claude Code for a wider or narrower pane', async ($, on) => {
-  const opened: Array<{ columns?: number }> = []
-  answer(on, [], 0, '', opened)
-  await $.command.run(RUN)
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'narrower' })
-  expect(opened[opened.length - 1]?.columns).toBe(100)   // the body's 110, less 10
-  await ui.post({ resize: 8 }, { in: 'page' })            // `<` on the page
-  expect(opened[opened.length - 1]?.columns).toBe(118)
-  await ui.unmount()
-})

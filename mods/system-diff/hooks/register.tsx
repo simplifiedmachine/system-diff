@@ -151,14 +151,10 @@ async function scrollBy($: EngineInterface, rows: number): Promise<void> {
   }
 }
 
-function open($: EngineInterface, columns = WIDEST) {
-  return $.ui.open({ id: PANE, title: 'System diff', columns })
-}
-
-// Wider or narrower: the pane asks Claude Code for a width, which docks it at most at 45% of the terminal (a width
-// the person dragged this session wins over the ask).
-async function resize($: EngineInterface, by: number): Promise<void> {
-  await open($, Math.max(24, columns + by))
+// As wide as Claude Code docks a pane, the first time: a width the person set (dragged, or with the pane's keys:
+// ctrl+x ← →, or shift+← → where bound) is theirs from then on.
+function open($: EngineInterface) {
+  return $.ui.open({ id: PANE, title: 'System diff', columns: WIDEST })
 }
 
 export const register: Register = on => {
@@ -210,13 +206,12 @@ export const register: Register = on => {
   // What the page (page.tsx) asks for.
   on('ui.message', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const data = (e.data ?? {}) as Act & { back?: boolean; follow?: boolean; width?: number; reveal?: number;
-                                             scrollBy?: number; resize?: number }
+                                             scrollBy?: number }
     if (typeof data.width === 'number' && data.width > 0 && data.width !== columns) {
       columns = data.width
       await refresh($)
     } else if (typeof data.reveal === 'number') await reveal($, data.reveal)
     else if (typeof data.scrollBy === 'number') await scrollBy($, data.scrollBy)
-    else if (typeof data.resize === 'number') await resize($, data.resize)
     else if (typeof data.zoom === 'string') await zoom($, data.zoom)
     else if (typeof data.learn === 'string') await learn($, data.learn)
     else if (data.back) await goBack($)
@@ -276,8 +271,7 @@ export const register: Register = on => {
           {behind.length > 0 && (
             <Button key="back" hotkey="b" plain onPress={() => void goBack($)}><Text dimColor>← Back</Text></Button>
           )}
-          <Button key="wider" plain onPress={() => void resize($, 10)}><Text dimColor>◂ wider</Text></Button>
-          <Button key="narrower" plain onPress={() => void resize($, -10)}><Text dimColor>narrower ▸</Text></Button>
+          <Text dimColor>⇆ resize: shift+← → (or ctrl+x ← →)</Text>
         </Box>
         {said !== '' && <Text dimColor>{said}</Text>}
         {drawn !== null && Client !== undefined && (
