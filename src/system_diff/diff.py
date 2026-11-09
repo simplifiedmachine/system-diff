@@ -135,6 +135,8 @@ NOUNS = {"deploy": ("deployment file", "deployment files"), "component": ("part"
          "external": ("outside connection", "outside connections"), "container": ("container", "containers"),
          "table": ("table", "tables"), "migration": ("migration", "migrations"), "flow": ("connection", "connections"),
          "settings": ("set of settings", "sets of settings")}
+ENTITIES = ("component", "route", "table", "migration", "external", "container", "deploy", "flow", "settings")
+SIGNS = {"add": "+", "change": "~", "remove": "−"}
 
 
 def headline(changes: List[dict]) -> str:
@@ -142,7 +144,7 @@ def headline(changes: List[dict]) -> str:
     parts = []
     for op, verb in (("add", "adds"), ("change", "changes"), ("remove", "removes")):
         phrases = []
-        for entity in ("component", "route", "table", "migration", "external", "container", "deploy", "flow", "settings"):
+        for entity in ENTITIES:
             items = [c for c in changes if c["op"] == op and c["entity"] == entity]
             if items:
                 one, many = NOUNS[entity]
@@ -155,6 +157,19 @@ def headline(changes: List[dict]) -> str:
         return "No change to the system's structure."
     s = "; ".join(parts)
     return s[0].upper() + s[1:] + "."
+
+
+def short(changes: List[dict], most: int = 3) -> str:
+    """The diff in a few words, for a status line: `+1 endpoint ~1 table`."""
+    counts = Counter((c["op"], c["entity"]) for c in changes)
+    words = []
+    for op in ("add", "change", "remove"):
+        for entity in ENTITIES:
+            n = counts.get((op, entity))
+            if n:
+                one, many = NOUNS[entity]
+                words.append(f"{SIGNS[op]}{n} {one if n == 1 else many}")
+    return " ".join(words[:most]) + (" …" if len(words) > most else "")
 
 
 def plan(changes: List[dict], impacts: Counter) -> str:

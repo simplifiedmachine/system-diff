@@ -107,6 +107,34 @@ def ts_targets(path: str, text: str, files: set, aliases: Optional[Dict[str, str
     return out
 
 
+def first_party(files: Iterable[str], python_paths: Iterable[str] = ("",)) -> set:
+    """The top-level Python names this repository's own files answer to (`app`, `system_diff`)."""
+    out = set()
+    for f in files:
+        if f.endswith(".py"):
+            for base in python_paths:
+                if f.startswith(base):
+                    out.add(f[len(base):].split("/")[0].removesuffix(".py"))
+    return out
+
+
+def outside_imports(path: str, text: str, own: set, aliases: Optional[Dict[str, str]] = None) -> List[str]:
+    """What a file imports from outside the repository: packages and the standard library, by the name it imports
+    them by (`http.server`, `fastapi.responses`, `@prisma/client`). `own`: first_party's names."""
+    found = set()
+    if path.endswith(".py"):
+        names = [mod for dots, mod, _ in PY_FROM.findall(text) if mod and not dots]
+        names += [m.strip() for mods in PY_IMPORT.findall(text) for m in mods.split(",")]
+        found = {n for n in names if n and n.split(".")[0] not in own and n != "__future__"}
+    else:
+        for spec in TS_IMPORT.findall(text):
+            if spec.startswith(".") or any(spec.startswith(a) for a in (aliases or {})):
+                continue
+            parts = spec.split("/")
+            found.add("/".join(parts[:2]) if spec.startswith("@") else parts[0])
+    return sorted(found)
+
+
 def compose_services(text: str) -> Dict[str, dict]:
     """The services of a compose file: just enough YAML to see what changed in the deployment."""
     services: Dict[str, dict] = {}

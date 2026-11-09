@@ -1,7 +1,11 @@
 # system-diff
 
-Draws your system from its code (parts, entry points, data, outside systems) and what each change adds, changes or
-removes. No dependencies; SVG pictures for PRs and READMEs.
+**See what Claude Code is doing to your system while it works, and learn your system as it goes.**
+
+Claude Code edits files; system-diff tells you what those edits do to the *system*: which part Claude is working on
+and what that part is, the endpoints, connections, stored data and outside systems it adds, changes or removes, why
+each of those matters, and when one needs you to look before Claude goes on. Right in Claude Code, beside the chat.
+So you follow what is happening, learn the parts and the technology behind them, and steer Claude well when it asks.
 
 <!-- system-map:begin -->
 ![System map, generated from the code](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg)
@@ -15,37 +19,71 @@ Read by the code but set by no deploy configuration, so not drawn: Headless Chro
 </details>
 <!-- system-map:end -->
 
-## What it does
-
-- **`map`**: reads a commit straight from git (no checkout) or a folder, and writes `system.json` (everything it
-  found) and `system.svg` (the picture): a column per role, from what people use through entry points, logic and data
-  access to stored data and outside systems.
-- **`diff`**: the typed difference between two commits, or a commit and your working tree: parts, endpoints,
-  connections, outside systems, tables, settings and deployment files added, changed or removed. One sentence
-  (`headline.txt`), the exact list (`plan.txt`, like `terraform plan`), and a picture of only what changed, with the
-  parts it touches beside it (`diff.svg`). `--narrate` adds a plain-words summary from your own LLM.
-- **`readme`**: keeps a generated system map in your README, between two markers.
-- **`draw`**: hand-made pictures in the same look, from small JSON specs: maps, stages of a process, sequences.
-
-Deterministic: the same code gives the same picture, byte for byte, and a part that did not change keeps its place.
-
-## Install
+## In Claude Code
 
 ```sh
-pipx install system-diff
+pipx install "system-diff[mcp,tui]"
+system-diff setup claude --no-status-line   # the hooks, a skill and the MCP server (--scope project, --undo)
 ```
 
-Python 3.11 or newer, nothing else. `pip install "system-diff[png]"` adds PNG output through Playwright; `system-diff
-png` also uses Docker when it is there.
+Then, in Claude Code, the System diff pane:
 
-## Use
-
-```sh
-system-diff map --dir . --out docs/diagrams          # the system as it is now
-system-diff diff --base origin/main --out out        # what this branch does to it
-system-diff diff --base HEAD --head . --out out      # what your uncommitted work does to it
-system-diff readme --json docs/diagrams/system.json  # refresh the map in README.md
 ```
+/plugin marketplace add simplifiedmachine/system-diff
+/plugin install system-diff-pane@system-diff
+```
+
+Python 3.11 or newer. Claude Code opens the pane by itself when the terminal is wide enough; `/system-diff` opens
+it again after you close it. From a clone, `claude --plugin-dir mods/system-diff-pane` loads it for one launch.
+
+### The System diff pane
+
+A tab beside Claude Code's own file diff: the *system* diff, live, in four views.
+
+- **Now** follows Claude, top to bottom in the order your attention needs it:
+  - **What Claude is doing** and what that part is: "● Claude is working ✎ Editing API · an entry point: where
+    people, other programs or AI tools reach the system", and what you asked.
+  - **▲ Needs your attention**, only when something does: an endpoint removed or added, stored data changed, a new
+    outside system, a part removed. Each with why it matters ("whatever called it now gets an error"). The moment to
+    ask Claude why, or steer it.
+  - **This turn**: every change to the system as a sentence ("API now uses Billing") with its reason in gray ("a
+    change in Billing can now break API").
+  - **The part, zoomed in on**: a diagram of what calls it and what it calls, its own endpoints and settings, what
+    changed marked. **Click it, then ← ↑ ↓ → pick a block and Enter zooms in on it**, as far as you want to walk the
+    system; `b` goes back, `f` follows Claude again, Esc hands the keys back.
+  - **About the part**: what it is and does, what is changing in it and why that matters.
+  - **What just happened**: › what you asked, ◎ what Claude read, ✎ what it edited, ▲ what each step did to the
+    system, ✓ when it finished.
+  - **Learn**: a topic behind the part, a new one every 20 seconds: the technologies its code imports (FastAPI,
+    SQLAlchemy, React, subprocesses, threads…) and the ideas behind its role (entry points, layers, migrations,
+    coupling…), in plain words.
+- **Map**: the whole system, a row of blocks per column (what people use, entry points, logic, data access, stored
+  data, outside systems); the same keys pick and zoom in.
+- **Changes**: exactly what changed since your checkpoint, and this turn.
+- **Topics**: everything the system is built with, and which parts use each.
+
+One meaning per colour, so your eye goes where it should: **blue** is where Claude is and what you picked, **yellow**
+what changed and what needs you, **green** what is new, done or to learn, **white** what to read, **gray** the
+background (why, when, labels), **red** only what was taken away. Keys while the pane has the focus (ctrl+x tab, or a
+click): `n` `m` `c` `t` switch views.
+
+### In the conversation
+
+- **After an edit that changes the system's structure**, one line under it: "System diff: API now answers GET
+  /health · a new way in: it needs the same checks as the others". Edits that change no structure stay quiet.
+- **At the end of each turn**, one line on what the turn did to the system, or which parts it edited when the
+  structure stayed the same; nothing for a turn that only talked.
+- **Ask Claude** "what is the API part?" or "what does this change do?": the MCP server gives it `explain` (the facts
+  to teach from, and a diagram to show you), `system_diff` (the exact list of changes; `base: turn` for this turn
+  only), `system_map`, `draw` (pictures of a process or a sequence of calls) and `checkpoint` (mark what you have
+  seen, so the next diff shows only what is new to you).
+
+Nothing leaves your machine: the working tree is read as a snapshot (untracked files included) without touching your
+index, HEAD or branches; the checkpoint and the start of each turn live under `refs/worktree/system-diff/` (each
+worktree its own, for Claude sessions in parallel), and what the hooks note under `.git/system-diff/`. Never pushed,
+never sent anywhere.
+
+## Configuration
 
 With no config, every folder of code is a part named by its path. A `system-diff.toml` at the repository root names the
 parts and says what is what:
@@ -71,31 +109,29 @@ env = ["DATABASE_URL"]      # the settings that reach it
 
 Every key, and how the code is read: [the wiki](https://github.com/simplifiedmachine/system-diff/wiki).
 
-## In pull requests
+## Add-ons
 
-This repository runs system-diff on itself: the map above is regenerated from its own code, CI fails when it is out of
-date, and every pull request gets its system diff as a comment (`.github/workflows/system-diff.yml`, which you can
-copy).
+The same engine, outside the pane. Deterministic: the same code gives the same picture, byte for byte, and a part
+that did not change keeps its place.
 
-## With AI coding agents
-
-When an agent changes the code with you, the question is what it did to the system. system-diff answers it as you go:
-
-```sh
-pipx install system-diff
-pipx inject system-diff mcp  # the MCP server's one dependency
-system-diff setup claude     # the hook, a skill and the MCP server, in one step (--scope project, --undo)
-system-diff watch            # http://127.0.0.1:8765/ : the system diff since you last marked it seen
-```
-
-- **After every Claude Code turn**, one line says what changed in the system since your checkpoint ("Adds 1 endpoint
-  (DELETE /api/orders/{id}); changes 1 table (public.orders)."), or nothing when nothing structural did.
-- **The live page** redraws as files change. Press **Mark as seen** once you have understood it: the next diff then
-  shows only what is new to you. `system-diff checkpoint` does the same from the terminal.
-- **The MCP server** gives the agent `system_diff` (the exact plan to explain from, and the picture), `system_map`,
-  `draw` (pictures of processes and sequences in the same look) and `checkpoint`.
-- The working tree is read as a snapshot (untracked files included) without touching your index, HEAD or branches,
-  and the checkpoint lives under `refs/system-diff/`, in your clone only.
+- **Pull requests:** every pull request gets its system diff as a comment, and CI fails when the README's map is out
+  of date (`.github/workflows/system-diff.yml`, which you can copy). This repository runs it on itself.
+- **Command line:**
+  ```sh
+  system-diff map --dir . --out docs/diagrams          # the system as it is now: system.json, system.svg
+  system-diff diff --base origin/main --out out        # what this branch does to it: headline, plan, diff.svg
+  system-diff diff --base HEAD --head . --out out      # what your uncommitted work does to it
+  system-diff readme --json docs/diagrams/system.json  # keep the map in README.md current
+  system-diff show API                                 # one part zoomed in, and what it is, in any terminal
+  system-diff draw SPEC.json                           # hand-made pictures in the same look
+  ```
+  `diff --narrate` adds a plain-words summary from your own LLM; `[png]` adds PNG output.
+- **Terminal view** (`system-diff tui`): the pane's views as a full-screen terminal app, for a terminal beside any
+  agent. It opens by itself next to Claude Code in tmux, zellij, WezTerm, kitty and Windows Terminal; in VS Code,
+  setup adds a task that opens it with the folder.
+- **Status line** (`system-diff setup claude` without `--no-status-line`): the pane's first lines under Claude Code's
+  prompt, for when the pane is not open.
+- **Browser page** (`system-diff watch`): the same with the SVG pictures, at http://127.0.0.1:8765/.
 
 ## License
 

@@ -88,7 +88,7 @@ def test_the_mcp_tools_answer_with_the_plan_and_the_picture(repo, files, monkeyp
     monkeypatch.chdir(repo)
     files(repo, {"app/api/health.py": HEALTH})
     names = {t.name for t in asyncio.run(mcp_server.build().list_tools())}
-    assert names == {"system_map", "system_diff", "draw", "checkpoint"}
+    assert names == {"system_map", "system_diff", "explain", "draw", "checkpoint"}
     d = mcp_server.tool_diff(repo)
     assert "GET /health" in d["plan"] and Path(d["picture"]).is_file() and ".git" in Path(d["picture"]).parts
     m = mcp_server.tool_map(repo)
@@ -101,7 +101,7 @@ def test_the_mcp_tools_answer_with_the_plan_and_the_picture(repo, files, monkeyp
     assert "could not be drawn" in mcp_server.tool_draw(repo, broken)["error"]
 
 
-def test_the_hook_says_in_one_line_what_changed_and_never_fails(repo, files, tmp_path):
+def test_the_hook_says_in_one_line_what_changed_and_never_fails(repo, files, tmp_path, monkeypatch):
     from system_diff import agent
     said = []
     assert agent.run_hook(json.dumps({"cwd": str(repo)}), said.append) == 0 and said == []   # nothing changed yet
@@ -112,7 +112,8 @@ def test_the_hook_says_in_one_line_what_changed_and_never_fails(repo, files, tmp
     outside = tmp_path / "not-a-repo"
     outside.mkdir()
     assert agent.run_hook(json.dumps({"cwd": str(outside)}), said.append) == 0 and len(said) == 1
-    assert agent.run_hook("not json", said.append) == 0
+    monkeypatch.chdir(outside)                      # with no cwd given, the hook looks where it runs: not a repo here
+    assert agent.run_hook("not json", said.append) == 0 and len(said) == 1
 
 
 def test_setup_wires_the_hook_and_the_skill_and_undo_takes_them_back(repo, tmp_path, monkeypatch):
@@ -130,8 +131,8 @@ def test_setup_wires_the_hook_and_the_skill_and_undo_takes_them_back(repo, tmp_p
     data = json.loads(settings.read_text())
     commands = [h["command"] for e in data["hooks"]["Stop"] for h in e["hooks"]]
     assert data["theme"] == "dark" and commands[0] == "echo mine" and commands[1].endswith("-m system_diff hook")
-    skill = home / ".claude" / "skills" / "system-diff" / "SKILL.md"
-    assert skill.read_text().startswith("---\nname: system-diff\n")
+    skill = home / ".claude" / "skills" / "system-diff-explain" / "SKILL.md"
+    assert skill.read_text().startswith("---\nname: system-diff-explain\n")
     assert any("not on PATH" in s for s in said)
     agent.setup_claude(repo, "user", out=said.append)                     # twice changes nothing
     assert len(json.loads(settings.read_text())["hooks"]["Stop"]) == 2
@@ -158,7 +159,7 @@ def test_setup_registers_the_mcp_server_with_claude_code_in_the_same_scope(repo,
     assert ["mcp", "add", "--scope", "project", "--transport", "stdio", "system-diff", "--", "system-diff", "mcp"] in calls
     hook = json.loads((repo / ".claude" / "settings.json").read_text())["hooks"]["Stop"][0]["hooks"][0]
     assert hook == {"type": "command", "command": "system-diff hook", "timeout": 30}
-    assert (repo / ".claude" / "skills" / "system-diff" / "SKILL.md").is_file()
+    assert (repo / ".claude" / "skills" / "system-diff-explain" / "SKILL.md").is_file()
 
 
 def test_mark_as_seen_answers_with_the_new_checkpoint_even_when_the_loop_looked_first(repo, files, monkeypatch):
@@ -168,7 +169,7 @@ def test_mark_as_seen_answers_with_the_new_checkpoint_even_when_the_loop_looked_
     w = watch.Watcher(repo, interval=60)
     w.tick()
     assert w.snapshot_state()["changes"]
-    real_checkpoint, real_compare = watch.checkpoint, watch.compare
+    real_checkpoint, real_compare = watch.checkpoint, watch.compare_worktree
     looking = threading.Event()
 
     def slow_compare(*a, **k):
@@ -178,7 +179,7 @@ def test_mark_as_seen_answers_with_the_new_checkpoint_even_when_the_loop_looked_
 
     def checkpoint_then_the_loop_looks(root, ref=None):
         sha = real_checkpoint(root, ref)
-        monkeypatch.setattr(watch, "compare", slow_compare)
+        monkeypatch.setattr(watch, "compare_worktree", slow_compare)
         threading.Thread(target=w.tick, daemon=True).start()   # the loop's own look, just after the checkpoint moved
         looking.wait(1.0)
         return sha

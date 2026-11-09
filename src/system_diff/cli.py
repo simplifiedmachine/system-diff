@@ -7,23 +7,27 @@
     system-diff png [--host HOST] FILE.svg...                       -> FILE.png beside each SVG
     system-diff summarize --diff diff.json                          -> the plain-words summary alone
     system-diff checkpoint [--ref REF]                              -> mark what you have seen
+    system-diff show [PART] [--base checkpoint]                     -> the map, or one part zoomed in, in the terminal
+    system-diff tui [--base checkpoint]                             -> a live terminal view that follows the agent
     system-diff watch [--base checkpoint] [--port 8765]             -> a live page of the diff since then
-    system-diff setup claude [--scope user|project|local] [--undo]  -> the hook, a skill and the MCP server
+    system-diff setup claude [--scope user|project|local] [--undo]  -> the hooks, status line, a skill, the MCP server
     system-diff mcp                                                 -> the MCP server (stdio)
 
 Deterministic: everything is read from git objects (no checkout) or a directory, with the standard library only.
 `--head .` is the working tree, uncommitted and untracked files included; `--base checkpoint` is what you last marked
-as seen (HEAD until you mark something).
+as seen (HEAD until you mark something); `--base turn` is the working tree when you last sent Claude Code a prompt.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import sys
 from pathlib import Path
 from typing import List, Optional
 
-from . import __version__, compare, config, graph, narrate, pictures, png, readme
+from . import __version__, activity, compare, config, graph, narrate, pictures, png, readme
 from .extract import extract
 from .sources import DirSource, GitSource, repo_root
 
@@ -78,6 +82,7 @@ def _diff(args, root: Path) -> int:
 
 def _checkpoint(args, root: Path) -> int:
     sha = compare.checkpoint(root, args.ref)
+    activity.after_checkpoint(root, args.ref)
     print(f"checkpoint: {args.ref or 'the working tree'} ({sha[:9]}) is what you have seen; "
           "`system-diff diff --base checkpoint --head .` now shows only what comes after it")
     return 0
@@ -100,6 +105,29 @@ def _readme(args, root: Path) -> int:
         return 0 if current else 1
     changed = readme.update_readme(path, dormant, cfg, stale)
     print("README system map " + ("updated" if changed else "already current"))
+    return 0
+
+
+def _show(args, root: Path) -> int:
+    from . import learn, textmap
+    c = compare.compare(root, args.base, ".", args.config)
+    marks = graph.change_marks(c.diff, c.before, c.after)
+    width = args.width or shutil.get_terminal_size((100, 24)).columns
+    color = not args.plain and sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    render = textmap.ansi if color else textmap.plain
+    if not args.part:
+        print(render(textmap.render_map(graph.overview(c.after, c.cfg, marks, c.before), width)))
+        print(f"\nSince {c.base}: {c.diff['headline']}")
+        return 0
+    part = learn.find_part(c, args.part, root)
+    if part is None:
+        names = ", ".join(sorted(v["label"] for v in c.after["components"].values()))
+        print(f"system-diff: no part called {args.part!r}; the parts: {names}", file=sys.stderr)
+        return 1
+    hood = graph.neighbourhood(c.after, c.cfg, part, marks, c.before)
+    print(render(textmap.render_zoom(hood, width)))
+    print()
+    print(learn.to_markdown(learn.lesson(c, part, GitSource(c.head_sha, root))))
     return 0
 
 
@@ -146,17 +174,35 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--diff", required=True)
     c = sub.add_parser("checkpoint", help="mark what you have seen: later diffs from `checkpoint` start here")
     c.add_argument("--ref", help="a commit to mark instead of the working tree")
+    sh = sub.add_parser("show", help="the system map, or one part zoomed in with what it is, in the terminal")
+    sh.add_argument("part", nargs="?", help="a part's id or name, an outside system's name, or a file in the part")
+    sh.add_argument("--base", default="checkpoint", help="marks changes since this point (default checkpoint)")
+    sh.add_argument("--width", type=int, default=0, help="columns to fit (default: the terminal's)")
+    sh.add_argument("--plain", action="store_true", help="no colours")
+    t = sub.add_parser("tui", help="a live terminal view that follows the part being worked on (needs the [tui] extra)")
+    t.add_argument("--base", default="checkpoint")
+    t.add_argument("--interval", type=float, default=2.0, help="seconds between looks at the files")
+    t.add_argument("--pane", action="store_true", help="open it in a new pane beside this terminal instead "
+                                                       "(tmux, zellij, WezTerm, kitty, Windows Terminal)")
     w = sub.add_parser("watch", help="a live local page of the diff since the checkpoint")
     w.add_argument("--base", default="checkpoint")
     w.add_argument("--port", type=int, default=8765)
     w.add_argument("--interval", type=float, default=2.0, help="seconds between looks at the files")
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
-    sub.add_parser("hook", help="what Claude Code's Stop hook runs: one line on what changed since the checkpoint")
+    sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
+                                "the end of a turn one line on what it changed in the system")
+    pn = sub.add_parser("panel", help="what a pane beside the agent shows, as JSON (for the Claude Code mod)")
+    pn.add_argument("--width", type=int, default=80)
+    pn.add_argument("--view", default="now", choices=["now", "map", "changes", "topics"])
+    pn.add_argument("--part", default="", help="the part to zoom in on (default: the one the agent works on)")
+    sub.add_parser("statusline", help="what Claude Code's status line runs: the part being worked on, the diff in brief")
     st = sub.add_parser("setup", help="wire system-diff into an AI coding tool")
     st.add_argument("tool", choices=["claude"])
     st.add_argument("--scope", default="user", choices=["user", "project", "local"],
                     help="user: every project (default); project: this repository, shared; local: this repository, you")
     st.add_argument("--undo", action="store_true", help="remove what setup added")
+    st.add_argument("--no-status-line", action="store_true",
+                    help="no status line (and remove system-diff's): for when the pane beside the chat shows it")
     return ap
 
 
@@ -173,6 +219,29 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _summarize(args, root)
     if args.cmd == "checkpoint":
         return _checkpoint(args, root)
+    if args.cmd == "show":
+        try:
+            return _show(args, root)
+        except ValueError as exc:
+            print(f"system-diff: {exc}", file=sys.stderr)
+            return 1
+    if args.cmd == "tui":
+        try:
+            from . import tui
+        except ImportError as exc:
+            print(f'system-diff: the terminal view needs its extra: pip install "system-diff[tui]" ({exc})',
+                  file=sys.stderr)
+            return 1
+        if args.pane:
+            from . import companion
+            said = companion.open_beside(root)
+            vscode = (f'; in VS Code: Tasks: Run Task, then "{companion.TASK}" (setup adds it)'
+                      if companion.where() == "vscode" else "")
+            print(said or ("system-diff: the terminal view is already open" if companion.running(root) else
+                           "system-diff: this terminal cannot open a pane from a command (tmux, zellij, WezTerm, kitty "
+                           f"and Windows Terminal can); run `system-diff tui` in a second terminal{vscode}"))
+            return 0 if said or companion.running(root) else 1
+        return tui.run(root, args.base, args.config, args.interval)
     if args.cmd == "watch":
         from . import watch
         watch.serve(root, args.base, args.port, args.config, args.interval)
@@ -180,9 +249,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "hook":
         from . import agent
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
+    if args.cmd == "panel":
+        from . import panel
+        return panel.main(root, args.width, args.view, args.part)
+    if args.cmd == "statusline":
+        from . import statusline
+        return statusline.statusline(sys.stdin.read() if not sys.stdin.isatty() else "")
     if args.cmd == "setup":
         from . import agent
-        return agent.setup_claude(root, args.scope, args.undo)
+        return agent.setup_claude(root, args.scope, args.undo, status_line=not args.no_status_line)
     if args.cmd == "mcp":
         try:
             from . import mcp_server

@@ -131,8 +131,10 @@ def system_svg(bp: dict, cfg: Dict[str, Any]) -> str:
     return pictures.map_svg(system_graph(bp, cfg), label="System map")
 
 
-def diff_graph(d: dict, a: dict, b: dict, cfg: Dict[str, Any]) -> Optional[dict]:
-    """Only what changed, lit, with the parts it touches beside it for context; None when nothing structural changed."""
+def change_marks(d: dict, a: dict, b: dict) -> dict:
+    """What a diff from blueprint `a` to `b` does to each box, line and connection of a picture: {"status": {node id:
+    added|changed|removed}, "lines": {node id: [{text, code, status}]}, "subs": {node id: detail}, "edges": {(from, to):
+    (kind, added|removed)}, "store": the stored data's node id}."""
     status: Dict[str, str] = {}
     lines: Dict[str, List[dict]] = defaultdict(list)
     subs: Dict[str, str] = {}
@@ -168,6 +170,14 @@ def diff_graph(d: dict, a: dict, b: dict, cfg: Dict[str, Any]) -> Optional[dict]
             status[store] = "changed"
     for ext in set(a["externals"]) ^ set(b["externals"]):
         status["x:" + ext] = "added" if ext in b["externals"] else "removed"
+    return {"status": status, "lines": lines, "subs": subs, "edges": changed, "store": store}
+
+
+def diff_graph(d: dict, a: dict, b: dict, cfg: Dict[str, Any]) -> Optional[dict]:
+    """Only what changed, lit, with the parts it touches beside it for context; None when nothing structural changed."""
+    marks = change_marks(d, a, b)
+    status, lines, subs, changed, store = (marks[k] for k in ("status", "lines", "subs", "edges", "store"))
+    comps = {**a["components"], **b["components"]}
     hot = set(status) | {end for pair in changed for end in pair}
     if not hot:
         return None
@@ -207,3 +217,119 @@ def diff_graph(d: dict, a: dict, b: dict, cfg: Dict[str, Any]) -> Optional[dict]
 def diff_svg(d: dict, a: dict, b: dict, cfg: Dict[str, Any]) -> Optional[str]:
     graph = diff_graph(d, a, b, cfg)
     return pictures.map_svg(graph, diff=True, label="System diff") if graph else None
+
+
+# ── zoomed in: one part and everything it connects to ─────────────────────────
+
+NO_MARKS: Dict[str, Any] = {"status": {}, "lines": {}, "subs": {}, "edges": {}, "store": ""}
+
+
+def connections(bp: dict) -> Dict[tuple, tuple]:
+    """Every connection a blueprint has, drawn on the map or not: (from, to) -> (kind, weight), the weight being how
+    many import sites or API calls make it. An outside system is x:<id>, as on the map."""
+    comps = bp["components"]
+    out: Dict[tuple, tuple] = {}
+    for table in ("flows", "api"):
+        for key, n in bp[table].items():
+            src, dst = key.split(">")
+            out[(src, dst)] = ("call", out.get((src, dst), ("call", 0))[1] + n)
+    for key, n in bp["internal"].items():
+        src, container = key.split(">")
+        for cid in sorted(comps):
+            if comps[cid].get("container") == container and cid != src:
+                out[(src, cid)] = ("call", out.get((src, cid), ("call", 0))[1] + n)
+    for ext_id, e in bp["externals"].items():
+        kind = "data" if e.get("shape") == "db" else "network"
+        for user in e["used_by"]:
+            out[(user, "x:" + ext_id)] = (kind, 1)
+    return out
+
+
+def node_of(nid: str, bp: dict, before: Optional[dict], cfg: Dict[str, Any]) -> Optional[dict]:
+    """The box of a part, or of an outside system (x:<id>), from the newest blueprint that has it."""
+    for side in (bp, before):
+        if not side:
+            continue
+        if nid.startswith("x:") and nid[2:] in side["externals"]:
+            return outside_node(nid[2:], side["externals"][nid[2:]], side)
+        if nid in side["components"]:
+            return part_node(nid, side["components"][nid], side, cfg)
+    return None
+
+
+def own_lines(bp: dict, part: str, marks: Dict[str, Any]) -> List[dict]:
+    """What a part itself has, what the diff changed first: its endpoints and the settings it reads; for the stored
+    data, its tables."""
+    marked = list(marks["lines"].get(part, []))
+    seen = {line["text"] for line in marked}
+    if part.startswith("x:"):
+        rest = [{"text": t, "code": True} for t in bp["tables"]] if part == "x:" + bp.get("store", "postgres") else []
+        return marked + [r for r in rest if not any(s.startswith(r["text"]) for s in seen)]
+    rest = [{"text": r, "code": True} for r, owner in bp["routes"].items() if owner == part and r not in seen]
+    new = {v for line in marked if line["text"].startswith("reads ") for v in line["text"][6:].split(", ")}
+    settings = [v for v in bp["env"].get(part, []) if v not in new]
+    if settings:
+        rest.append({"text": "reads " + ", ".join(settings), "code": True})
+    return marked + rest
+
+
+def neighbourhood(bp: dict, cfg: Dict[str, Any], part: str, marks: Optional[dict] = None,
+                  before: Optional[dict] = None) -> Optional[dict]:
+    """One part zoomed in on: who calls it, what it calls and which outside systems it uses (every connection, not
+    only the strongest few the map draws), its box listing its endpoints and settings, with a diff's marks when given
+    (`before`: the blueprint the diff started from, for what it removed). "callers" and "callees" list the ids on
+    each side, strongest first. None for a part neither blueprint has."""
+    marks = marks or NO_MARKS
+    focus = node_of(part, bp, before, cfg)
+    if focus is None:
+        return None
+    now = connections(bp)
+    gone = {pair: (kind, 0) for pair, (kind, st) in marks["edges"].items() if st == "removed" and pair not in now}
+    nodes, edges, weight = {part: focus}, [], {}
+    for (src, dst), (kind, n) in sorted({**now, **gone}.items()):
+        other = dst if src == part else src if dst == part else None
+        if other is None or src == dst:
+            continue
+        if other not in nodes:
+            box = node_of(other, bp, before, cfg)
+            if box is None:
+                continue
+            nodes[other] = box
+        edges.append({"from": src, "to": dst, "kind": kind, "status": marks["edges"].get((src, dst), (kind, "same"))[1]})
+        weight[(src, dst)] = n
+    for nid, n in nodes.items():
+        n.update(status=marks["status"].get(nid, "same"), sub=marks["subs"].get(nid, n["sub"]),
+                 lines=own_lines(bp, nid, marks) if nid == part else list(marks["lines"].get(nid, [])))
+    comp = bp["components"].get(part) or (before or {}).get("components", {}).get(part)
+    if comp and focus["status"] != "changed" and not comp.get("hub"):  # a change's own size says more than its whole
+        focus["sub"] = f"{files_word(comp['files'])} · {comp['lines']} lines"
+    by_name = lambda nid: (nodes[nid]["title"].lower(), nid)  # noqa: E731
+    callers = sorted({e["from"] for e in edges if e["to"] == part}, key=lambda s: (-weight[(s, part)], by_name(s)))
+    callees = sorted({e["to"] for e in edges if e["from"] == part},
+                     key=lambda t: (t.startswith("x:"), -weight[(part, t)], by_name(t)))
+    order = [part] + [n for n in nodes if n != part]
+    return {"columns": cfg["picture"]["columns"], "nodes": [nodes[n] for n in order], "edges": edges,
+            "focus": part, "callers": callers, "callees": callees}
+
+
+def overview(bp: dict, cfg: Dict[str, Any], marks: Optional[dict] = None, before: Optional[dict] = None) -> dict:
+    """The whole system for the terminal: every part and outside system in its column, with a diff's marks (what it
+    removed included), and every connection, for the terminal to show a part's own when it is picked."""
+    marks = marks or NO_MARKS
+    g = system_graph(bp, cfg)
+    nodes = g["nodes"]
+    if before:
+        ids = {n["id"] for n in nodes}
+        gone = before["components"]
+        nodes += [part_node(cid, gone[cid], before, cfg) for cid in sorted(gone, key=lambda k: part_order(gone[k], k))
+                  if cid not in ids]
+        nodes += [outside_node(x, e, before) for x, e in before["externals"].items() if "x:" + x not in ids]
+    for n in nodes:
+        n.update(status=marks["status"].get(n["id"], "same"), sub=marks["subs"].get(n["id"], n["sub"]),
+                 lines=list(marks["lines"].get(n["id"], [])))
+    now = connections(bp)
+    edges = [{"from": s, "to": t, "kind": k, "status": marks["edges"].get((s, t), (k, "same"))[1]}
+             for (s, t), (k, _n) in sorted(now.items())]
+    edges += [{"from": s, "to": t, "kind": k, "status": st}
+              for (s, t), (k, st) in sorted(marks["edges"].items()) if st == "removed" and (s, t) not in now]
+    return {"columns": g["columns"], "nodes": nodes, "edges": edges}

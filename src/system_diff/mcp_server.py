@@ -16,18 +16,22 @@ try:  # the MCP SDK's 2.x name; 1.x called it FastMCP, with the same constructor
 except ImportError:  # pragma: no cover - mcp 1.x
     from mcp.server.fastmcp import FastMCP as Server
 
+from . import activity, config, graph, learn, pictures, textmap
 from . import compare as cmp
-from . import config, graph, pictures
+from .extract import Code as CodeOf  # the spec's own Code, below, is a line of a picture
 from .extract import extract
-from .sources import GitSource, git, repo_root
+from .sources import GitSource, git_dir, repo_root
 
 INSTRUCTIONS = (
     "system-diff shows what a change does to a system's structure: its parts, entry points, connections, outside "
     "systems and stored data. Use system_diff after changing the code, to tell the person in plain words what changed "
-    "in the system and to point them at the picture; base 'checkpoint' is what they last marked as seen. Use "
-    "system_map for the whole system, and draw for a picture of something else (a process, a sequence). Call "
-    "checkpoint only when the person says they have seen and understood the current state."
+    "in the system and to point them at the picture; base 'checkpoint' is what they last marked as seen, 'turn' what "
+    "this turn changed. Use explain when the person asks what a part is or does, or about a technology in it: it "
+    "gives the facts to teach from and a diagram to paste in a code block. Use system_map for the whole system, and "
+    "draw for a picture of something else (a process, a sequence). Call checkpoint only when the person says they "
+    "have seen and understood the current state."
 )
+WIDTH = 100  # the columns a diagram is drawn for
 
 
 class Code(BaseModel):
@@ -113,13 +117,10 @@ class Spec(_Spec):
 
 def _out(root: Path, *parts: str) -> Path:
     """A folder under .git/system-diff (the repository's own git dir, worktrees included)."""
-    gitdir = Path(git("rev-parse", "--absolute-git-dir", cwd=root).strip())
-    out = gitdir.joinpath("system-diff", *parts)
-    out.mkdir(parents=True, exist_ok=True)
-    return out
+    return git_dir(root, *parts)
 
 
-def tool_map(root: Path, ref: str = ".") -> Dict[str, Any]:
+def tool_map(root: Path, ref: str = ".", diagram: bool = False) -> Dict[str, Any]:
     sha, label = cmp.resolve(root, ref)
     source = GitSource(sha, root)
     cfg = config.load(source, root)
@@ -127,7 +128,8 @@ def tool_map(root: Path, ref: str = ".") -> Dict[str, Any]:
     path = _out(root, "mcp") / "system.svg"
     pictures.write_if_changed(path, graph.system_svg(bp, cfg))
     comps = bp["components"]
-    return {"of": label, "picture": str(path),
+    extra = {"diagram": textmap.plain(textmap.render_map(graph.overview(bp, cfg), WIDTH))} if diagram else {}
+    return {"of": label, "picture": str(path), **extra,
             "parts": [{"id": k, "label": v["label"], "column": graph.part_kind(k, v, bp, cfg), "files": v["files"]}
                       for k, v in sorted(comps.items(), key=lambda kv: graph.part_order(kv[1], kv[0]))],
             "connections": [f"{comps.get(s, {}).get('label', s)} → {comps.get(t, {}).get('label', t)}"
@@ -138,18 +140,40 @@ def tool_map(root: Path, ref: str = ".") -> Dict[str, Any]:
             "undeclared_parts": sorted(k for k, v in comps.items() if not v["declared"])}
 
 
-def tool_diff(root: Path, base: str = "checkpoint", head: str = ".") -> Dict[str, Any]:
+def tool_diff(root: Path, base: str = "checkpoint", head: str = ".", diagram: bool = False) -> Dict[str, Any]:
     c = cmp.compare(root, base, head)
-    svg = graph.diff_svg(c.diff, c.before, c.after, c.cfg)
+    picture = graph.diff_graph(c.diff, c.before, c.after, c.cfg)
+    svg = pictures.map_svg(picture, diff=True, label="System diff") if picture else None
     path = _out(root, "mcp") / "diff.svg"
     if svg:
         pictures.write_if_changed(path, svg)
     elif path.is_file():
         path.unlink()
+    extra = {"diagram": textmap.plain(textmap.render_map(picture, WIDTH))} if diagram and picture else {}
     return {"from": c.base, "to": c.head, "headline": c.diff["headline"], "plan": c.diff["plan"],
             "changes": len(c.diff["changes"]), "impacts": c.diff["impacts"],
-            "picture": str(path) if svg else None,
-            "live_page": "run `system-diff watch` for a page that redraws as the code changes"}
+            "picture": str(path) if svg else None, **extra,
+            "live": "`system-diff tui` (in the terminal) or `system-diff watch` (a page) redraw as the code changes"}
+
+
+def tool_explain(root: Path, part: str = "", base: str = "checkpoint") -> Dict[str, Any]:
+    c = cmp.compare(root, base, ".")
+    parts = sorted(v["label"] for v in c.after["components"].values())
+    if part:
+        found = learn.find_part(c, part, root)
+        if found is None:
+            return {"error": f"no part called {part!r}", "parts": parts}
+    else:
+        found = activity.now(activity.events(root), CodeOf(c.cfg))["part"]
+        if found is None:
+            return {"error": "no part has been read or edited yet: name one", "parts": parts}
+    les = learn.lesson(c, found, GitSource(c.head_sha, root))
+    hood = graph.neighbourhood(c.after, c.cfg, found, graph.change_marks(c.diff, c.before, c.after), c.before)
+    return {"part": les["title"], "column": les["column"], "what": " ".join(les["what"]),
+            "changing": [{"change": x["text"], "why": x["why"]} for x in les["changing"]],
+            "topics": [{k: t[k] for k in ("title", "kind", "what", "here", "link")} for t in les["topics"]],
+            "more_topics": les["more_topics"] + les["other_imports"], "since": c.base,
+            "diagram": textmap.plain(textmap.render_zoom(hood, WIDTH))}
 
 
 def tool_draw(root: Path, spec: Spec, name: str = "picture") -> Dict[str, Any]:
@@ -172,18 +196,28 @@ def build() -> Server:
     server = Server("system-diff", instructions=INSTRUCTIONS)
 
     @server.tool()
-    def system_map(ref: str = ".") -> Dict[str, Any]:
+    def system_map(ref: str = ".", diagram: bool = False) -> Dict[str, Any]:
         """The system's structure: its parts by column, the connections between them, how many entry points and
-        tables, and its outside systems. `ref`: a commit, or "." for the working tree. Returns the picture's path."""
-        return tool_map(repo_root(), ref)
+        tables, and its outside systems. `ref`: a commit, or "." for the working tree. Returns the picture's path;
+        with `diagram`, also the map as text to show the person in a code block."""
+        return tool_map(repo_root(), ref, diagram)
 
     @server.tool()
-    def system_diff(base: str = "checkpoint", head: str = ".") -> Dict[str, Any]:
+    def system_diff(base: str = "checkpoint", head: str = ".", diagram: bool = False) -> Dict[str, Any]:
         """What changed in the system from `base` to `head`: one sentence, the exact list (each line with its impact,
         e.g. new-interface, breaking-interface, data-schema-change, test-gap) and a picture of only what changed.
-        `base` "checkpoint" is what the person last marked as seen (HEAD if nothing yet); `head` "." is the working
-        tree, uncommitted files included. Explain it from the plan, never beyond it."""
-        return tool_diff(repo_root(), base, head)
+        `base` "checkpoint" is what the person last marked as seen (HEAD if nothing yet), "turn" the working tree
+        when they sent their last prompt; `head` "." is the working tree, uncommitted files included. With
+        `diagram`, also the picture as text for a code block. Explain it from the plan, never beyond it."""
+        return tool_diff(repo_root(), base, head, diagram)
+
+    @server.tool()
+    def explain(part: str = "", base: str = "checkpoint") -> Dict[str, Any]:
+        """Facts to teach the person one part of their system from: what it is and does, how it connects, what is
+        changing in it since `base` and why that matters, topics worth knowing (the technologies its code imports
+        and the ideas behind it, each with a link), and a diagram of the part zoomed in, to paste in a code block.
+        `part`: its name or id, an outside system's name, or a file in it; empty for the part being worked on."""
+        return tool_explain(repo_root(), part, base)
 
     @server.tool()
     def draw(spec: Spec, name: str = "picture") -> Dict[str, Any]:

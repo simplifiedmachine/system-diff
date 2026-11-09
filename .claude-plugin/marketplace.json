@@ -1,0 +1,16 @@
+{
+  "name": "system-diff",
+  "owner": {
+    "name": "simplifiedmachine"
+  },
+  "metadata": {
+    "description": "system-diff for Claude Code: see what Claude is doing to your system as it works, and learn it as you go."
+  },
+  "plugins": [
+    {
+      "name": "system-diff-pane",
+      "source": "./mods/system-diff-pane",
+      "description": "A System diff pane beside the chat: what Claude is doing to your system as it works, what needs your attention, a diagram to walk with the arrow keys, and topics to learn."
+    }
+  ]
+}

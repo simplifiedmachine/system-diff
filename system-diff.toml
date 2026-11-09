@@ -39,6 +39,24 @@ kind = "interface"
 paths = ["src/system_diff/watch.py"]
 
 [[components]]
+id = "tui"
+label = "Terminal view"
+kind = "interface"
+paths = ["src/system_diff/tui.py"]
+
+[[components]]
+id = "panel"
+label = "Pane beside the chat"
+kind = "interface"
+paths = ["src/system_diff/panel.py"]
+
+[[components]]
+id = "statusline"
+label = "Status line"
+kind = "interface"
+paths = ["src/system_diff/statusline.py"]
+
+[[components]]
 id = "compare"
 label = "Checkpoints and snapshots"
 kind = "logic"
@@ -88,6 +106,24 @@ kind = "logic"
 paths = ["src/system_diff/narrate.py"]
 
 [[components]]
+id = "learn"
+label = "Lessons and topics"
+kind = "logic"
+paths = ["src/system_diff/learn.py", "src/system_diff/topics.py"]
+
+[[components]]
+id = "textmap"
+label = "Terminal pictures"
+kind = "logic"
+paths = ["src/system_diff/textmap.py"]
+
+[[components]]
+id = "companion"
+label = "Panes beside the agent"
+kind = "logic"
+paths = ["src/system_diff/companion.py"]
+
+[[components]]
 id = "png"
 label = "PNG rendering"
 kind = "logic"
@@ -98,6 +134,12 @@ id = "sources"
 label = "Git and folder sources"
 kind = "data"
 paths = ["src/system_diff/sources.py"]
+
+[[components]]
+id = "activity"
+label = "Agent activity"
+kind = "data"
+paths = ["src/system_diff/activity.py"]
 
 [[externals]]
 id = "chromium"

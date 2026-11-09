@@ -100,6 +100,15 @@ def load(source=None, root: Optional[Path] = None, path: Optional[str] = None) -
     return deepcopy(DEFAULTS)
 
 
+def lenient(root: Path) -> Dict[str, Any]:
+    """The project's settings, or the defaults when its config does not parse: a hook or a status line must never
+    fail on a typo (each part is then named by its folder)."""
+    try:
+        return load(root=root)
+    except ValueError:
+        return load()
+
+
 def segment_rx(names: Iterable[str]) -> re.Pattern:
     """A path containing a directory named like one of `names` (`*` within a name)."""
     alts = "|".join(re.escape(n).replace(r"\*", "[^/]*") for n in names)

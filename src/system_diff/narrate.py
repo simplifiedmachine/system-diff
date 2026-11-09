@@ -77,16 +77,16 @@ def shell_llm() -> Optional[Dict[str, Any]]:
     return None
 
 
-def ask(s: Dict[str, Any], user: str, max_tokens: int, timeout: int) -> str:
+def ask(s: Dict[str, Any], user: str, max_tokens: int, timeout: int, system: str = SYSTEM) -> str:
     """One tool-less completion, OpenAI-compatible or Anthropic Messages."""
     if s.get("kind") == "openai":
         url = s["base_url"] + "/chat/completions"
         body: Dict[str, Any] = {"model": s["model"], "max_tokens": max_tokens,
-                                "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]}
+                                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
         headers = {"content-type": "application/json", "authorization": "Bearer " + s["token"]}
     else:
         url = s["base_url"] + "/v1/messages"
-        body = {"model": s["model"], "max_tokens": max_tokens, "system": SYSTEM,
+        body = {"model": s["model"], "max_tokens": max_tokens, "system": system,
                 "messages": [{"role": "user", "content": user}]}
         if s.get("thinking"):
             # A reasoning model given no thinking budget can think until max_tokens and return no text at all.
@@ -110,12 +110,19 @@ def ask(s: Dict[str, Any], user: str, max_tokens: int, timeout: int) -> str:
 def narrate(d: dict, commits: str, root: Path, cfg: Dict[str, Any], timeout: int = 120) -> Optional[str]:
     """The summary, naming the model that wrote it; None when no LLM answers from here."""
     user = f"Headline: {d['headline']}\n\nStructural diff (exact):\n{d['plan']}\n\nCommit messages:\n{commits[:4000]}"
+    got = complete(user, SYSTEM, root, cfg, timeout)
+    return f"{got[0]}\n\n_Summary written by {got[1]} from the exact diff below._" if got else None
+
+
+def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: int = 120,
+             limit: int = 1500) -> Optional[Tuple[str, str]]:
+    """The first answer an LLM gives from here, and who gave it: (text, "model (where it is set)"); else None."""
     claude = claude_llm(root, cfg.get("narrate", {}).get("settings", []))
     if claude:
         # With a thinking budget first (some gateways' reasoning models need one); without it if refused.
         for attempt in ({**claude, "thinking": 4000}, claude):
             try:
-                text = ask(attempt, user, 12000, timeout)
+                text = ask(attempt, user, 12000, timeout, system)
             except urllib.error.HTTPError as exc:
                 if exc.code == 400 and attempt.get("thinking"):
                     continue  # this model or gateway takes no thinking parameter
@@ -126,16 +133,16 @@ def narrate(d: dict, commits: str, root: Path, cfg: Dict[str, Any], timeout: int
                       file=sys.stderr)
                 break
             if text:
-                return f"{text[:1500]}\n\n_Summary written by {claude['model']} ({claude['source']}) from the exact diff below._"
+                return text[:limit], f"{claude['model']} ({claude['source']})"
     shell = shell_llm()
     if shell:
         for tokens in (2500, 12000):
             try:
-                text = ask(shell, user, tokens, timeout)
+                text = ask(shell, user, tokens, timeout, system)
             except (OSError, ValueError) as exc:
                 print(f"system-diff: {shell['model']} via {shell['base_url']}: {type(exc).__name__}: {str(exc)[:120]}",
                       file=sys.stderr)
                 break
             if text:
-                return f"{text[:1500]}\n\n_Summary written by {shell['model']} (an LLM set in this shell) from the exact diff below._"
+                return text[:limit], f"{shell['model']} (an LLM set in this shell)"
     return None

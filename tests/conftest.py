@@ -115,3 +115,11 @@ def repo(tmp_path: Path) -> Path:
 def files():
     """Write files into a folder: files(folder, {path: text})."""
     return write
+
+
+@pytest.fixture(autouse=True)
+def plain_terminal(monkeypatch):
+    """No test sees the terminal it runs in (VS Code, tmux…), so none opens a real pane or depends on where it runs."""
+    for var in ("TMUX", "ZELLIJ", "WEZTERM_PANE", "KITTY_WINDOW_ID", "WT_SESSION", "TERM_PROGRAM",
+                "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ATTENDED"):
+        monkeypatch.delenv(var, raising=False)

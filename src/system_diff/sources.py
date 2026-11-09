@@ -22,6 +22,14 @@ def repo_root(start: Optional[Path] = None) -> Path:
         return here
 
 
+def git_dir(root: Path, *parts: str) -> Path:
+    """A folder under the repository's own git dir (a linked worktree's own, so each worktree keeps its own), made if
+    missing: system-diff keeps what it writes there, where it is never committed."""
+    out = Path(git("rev-parse", "--absolute-git-dir", cwd=root).strip()).joinpath("system-diff", *parts)
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
 class GitSource:
     """The files of a commit."""
 

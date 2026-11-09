@@ -1,0 +1,11 @@
+{
+  "name": "system-diff-pane",
+  "version": "0.1.0",
+  "description": "A pane beside the chat: what Claude is working on in your system, zoomed in, what just happened and why it matters, and a topic to learn (system-diff)",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "simplifiedmachine"
+  },
+  "homepage": "https://github.com/simplifiedmachine/system-diff",
+  "license": "MIT"
+}
