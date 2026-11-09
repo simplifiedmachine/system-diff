@@ -326,6 +326,7 @@ class Reading:
                     self.part(c) if entity == "component" else self.settings(c) if entity == "settings" else
                     self.container(c) if entity == "container" else None)
             if note:
+                note["change"] = {k: c[k] for k in ("op", "entity", "id", "label", "detail")}
                 out.append(note)
         return sorted(out, key=lambda n: -n["weight"])
 
@@ -408,3 +409,78 @@ class Reading:
 
 def notes(cmp) -> List[Dict[str, Any]]:
     return Reading(cmp).notes()
+
+
+# ── many changes, said as a few ──────────────────────────────────────────────
+
+CLAUSES = (("new", ""), ("gone", ""), ("uses", "now uses"), ("unuses", "no longer uses"),
+           ("answers", "now answers"), ("unanswers", "no longer answers"), ("talks", "now talks to"),
+           ("stops", "stops using"), ("reads", "now reads"), ("table+", "new table"), ("table-", "drops table"),
+           ("table~", ""), ("migration", "migration"), ("container", ""))
+
+
+def _clause(ch: Dict[str, Any]) -> Tuple[str, str, str]:
+    """(who it is about, what kind of change, its object), from the change a note was made from."""
+    op, entity, label, detail = ch["op"], ch["entity"], ch["label"], ch.get("detail") or []
+    a, _, b = label.partition(" → ")
+    if entity == "flow":
+        return a, "uses" if op == "add" else "unuses", b
+    if entity == "route":
+        return (detail[0] if detail else "The system"), "answers" if op == "add" else "unanswers", label
+    if entity == "external":
+        return a, "talks" if op == "add" else "stops", b
+    if entity == "component":
+        return label, {"add": "new", "remove": "gone"}.get(op, "changed"), ""
+    if entity == "settings":
+        return label, "reads", detail[0] if detail else ""
+    if entity == "table":
+        return "Stored data", {"add": "table+", "remove": "table-"}.get(op, "table~"), (
+            label + " gains " + ", ".join(x.replace("+ column ", "") for x in detail) if op == "change" else label)
+    if entity == "migration":
+        return "Stored data", "migration", label
+    return "Deployment", "container", {"add": "new container ", "remove": "drops container "}.get(op, "changes ") + label
+
+
+def summarize(notes: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Design notes said a part at a time, the way a person tells it: "New part Billing, using Orders and Store",
+    "API now answers POST /refund; now talks to Stripe", each with the weightiest note's why and question, the
+    weightiest part first. A note without its change is kept as it is."""
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for n in notes:
+        key = _clause(n["change"])[0] if n.get("change") else "\0" + n["text"]
+        groups.setdefault(key, []).append(n)
+    out = []
+    for who, ns in groups.items():
+        top = max(ns, key=lambda n: n["weight"])
+        if who.startswith("\0"):
+            out.append({**top, "count": 1})
+            continue
+        found: Dict[str, List[str]] = {}
+        for n in ns:
+            _who, kind, obj = _clause(n["change"])
+            if obj and obj not in found.setdefault(kind, []):
+                found[kind].append(obj)
+            found.setdefault(kind, [])
+        clauses = []
+        for kind, verb in CLAUSES:
+            if kind in found and kind not in ("new", "gone"):
+                objs = found[kind]
+                most = 2 if kind in ("answers", "unanswers") else 3
+                clauses.append((verb + " " if verb else "") + and_list(objs, most) if objs else verb)
+        if "new" in found:
+            text = f"New part {who}" + (", using " + and_list(found.get("uses", []), 3) if found.get("uses") else "")
+            rest = [c for c in clauses if not c.startswith("now uses")]
+            text += ("; " + "; ".join(rest)) if rest else ""
+        elif "gone" in found:
+            text = f"{who} is gone"
+        elif who in ("Stored data", "Deployment"):
+            text = f"{who}: " + "; ".join(clauses)
+        else:
+            text = f"{who} " + "; ".join(clauses)
+        statuses = {n["status"] for n in ns}
+        status = ("warn" if "warn" in statuses else "added" if statuses <= {"added"} else
+                  "removed" if statuses <= {"removed"} else "changed")
+        out.append({"sign": {"added": "+", "removed": "−", "warn": "▲"}.get(status, "~"), "status": status,
+                    "text": text, "why": top["why"], "ask": top.get("ask", ""), "weight": top["weight"],
+                    "count": len(ns), "parts": top.get("parts", [])})
+    return sorted(out, key=lambda n: -n["weight"])

@@ -170,8 +170,8 @@ def record_step(root: Path, path: str, part: str, before: Iterable[str], notes: 
     a design note with why it matters, and each change of the turn it undid."""
     had = set(before)
     now = {n["text"] for n in notes}
-    items = [{"text": n["text"], "why": n["why"], "sign": n["sign"], "status": n["status"]}
-             for n in notes if n["text"] not in had]
+    items = [{"text": n["text"], "why": n["why"], "sign": n["sign"], "status": n["status"], "weight": n["weight"],
+              "change": n.get("change")} for n in notes if n["text"] not in had]
     items += [{"text": t, "why": "undone: the turn no longer makes this change", "sign": "↺", "status": "muted"}
               for t in sorted(had - now)]
     if items:

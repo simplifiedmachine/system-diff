@@ -12,7 +12,7 @@ import type { Page, PageBlock, Row, Run } from '../types'
 // the rest keeps its colours: yellow what changed, green what is new, red what went, gray the background.
 
 type Props = { page: Page; canGoBack: boolean }
-type State = { sel: string; sx: number; mine: boolean }
+type State = { sel: string; sx: number; mine: boolean; ticking?: boolean }
 
 const COLORS: Record<string, string> = {
   accent: 'blue', focus: 'blue', near: 'blue', data: 'blue',
@@ -24,6 +24,8 @@ const BOLD = ['bold', 'focus', 'heading', 'attention']
 const STEP = 8 // columns a scroll moves
 
 let askedWidth = 0 // the width last reported to the hooks module, so a resize is told once
+let pendingWidth = 0 // a width the region took, told once it has held for a moment (a drag passes many)
+let pendingTicks = 0
 
 function centre(b: PageBlock): [number, number] {
   return [b.x + b.w / 2, b.y + b.h / 2]
@@ -88,15 +90,26 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
   const picked = byId.get(sel)
   const sx = across(page, cols, state?.mine ? state.sx : 0, picked)
 
-  // The pane was laid out for another width (the split moved): ask for this one, once.
+  // The pane was laid out for another width (the split moved): ask for this one once it holds, not for every
+  // width a drag passes on its way.
   if (surface.columns > 0 && surface.columns !== page.width && surface.columns !== askedWidth) {
-    askedWidth = surface.columns
-    surface.post({ width: surface.columns })
+    if (pendingWidth !== surface.columns) pendingTicks = 0
+    pendingWidth = surface.columns
+  }
+  if (!state?.ticking) {
+    surface.every(150, () => {
+      if (pendingWidth > 0 && ++pendingTicks >= 2) {
+        askedWidth = pendingWidth
+        pendingWidth = 0
+        surface.post({ width: askedWidth })
+      }
+    })
+    surface.setState({ sel: state?.sel ?? '', sx: state?.sx ?? 0, mine: state?.mine ?? false, ticking: true })
   }
 
   const pick = (b: PageBlock | undefined, x = sx) => {
     if (!b) return
-    surface.setState({ sel: b.id, sx: across(page, cols, x, b), mine: true })
+    surface.setState({ sel: b.id, sx: across(page, cols, x, b), mine: true, ticking: true })
     surface.post({ reveal: b.y })
   }
   const act = (b: PageBlock | undefined, which: 'enter' | 'space') => {
@@ -110,11 +123,15 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
     } else if (e.key === 'pageup' || e.key === 'pagedown') {
       surface.post({ scrollBy: e.key === 'pageup' ? -1000 : 1000 }) // a window's worth
     } else if ((e.key === 'left' || e.key === 'right') && e.shift) {
-      surface.setState({ sel, sx: across(page, cols, sx + (e.key === 'left' ? -STEP : STEP), undefined), mine: true })
+      surface.setState({ sel, sx: across(page, cols, sx + (e.key === 'left' ? -STEP : STEP), undefined), mine: true,
+                         ticking: true })
     } else if (['up', 'down', 'left', 'right'].includes(e.key)) {
       pick(move(page.blocks, picked, e.key))
     } else if (e.key === '[' || e.key === ']') {
-      surface.setState({ sel, sx: across(page, cols, sx + (e.key === '[' ? -STEP : STEP), undefined), mine: true })
+      surface.setState({ sel, sx: across(page, cols, sx + (e.key === '[' ? -STEP : STEP), undefined), mine: true,
+                         ticking: true })
+    } else if (e.key === '<' || e.key === '>' || e.key === ',' || e.key === '.') {
+      surface.post({ resize: e.key === '<' || e.key === ',' ? STEP : -STEP }) // the pane: wider, or narrower
     } else if (e.key === 'return') {
       act(picked, 'enter')
     } else if (e.key === ' ') {
@@ -147,20 +164,33 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
   }
   const lit = new Set(page.lights[sel] ?? [])
 
-  const cell = (run: Run, i: number) => {
+  type Look = { text: string; color?: string; bold: boolean; dim: boolean; inverse: boolean }
+  const look = (run: Run): Look => {
     const words = run[1].split(' ')
     const ids = (run[2] ?? '').split(' ').filter(Boolean)
     const isPicked = sel !== '' && ids.includes(sel)
     const isLit = !isPicked && ids.some(id => lit.has(id))
     const color = isPicked ? 'blue' : words.map(w => COLORS[w]).find(Boolean)
     const muted = words.includes('muted') || (words.includes('heading') && !color)
-    return (
-      <Text key={`c${i}`} color={color} bold={isPicked || isLit || BOLD.some(w => words.includes(w))}
-            dimColor={muted && !isPicked && !isLit} inverse={isPicked && words.includes('title')}>
-        {run[0]}
-      </Text>
-    )
+    return { text: run[0], color, bold: isPicked || isLit || BOLD.some(w => words.includes(w)),
+             dim: muted && !isPicked && !isLit, inverse: isPicked && words.includes('title') }
   }
+  const merged = (runs: Run[]): Look[] => {
+    const out: Look[] = []
+    for (const run of runs) {
+      const l = look(run)
+      const prev = out[out.length - 1]
+      if (prev && prev.color === l.color && prev.bold === l.bold && prev.dim === l.dim && prev.inverse === l.inverse) {
+        prev.text += l.text
+      } else {
+        out.push(l)
+      }
+    }
+    return out
+  }
+  const cell = (l: Look, i: number) => (
+    <Text key={`c${i}`} color={l.color} bold={l.bold} dimColor={l.dim} inverse={l.inverse}>{l.text}</Text>
+  )
 
   const wide = page.wide > cols
   return (
@@ -176,11 +206,11 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
         return runs.length === 0 ? (
           <Text key={`r${y}`}> </Text>
         ) : (
-          <Text key={`r${y}`} wrap="truncate-end">{runs.map(cell)}</Text>
+          <Text key={`r${y}`} wrap="truncate-end">{merged(runs).map(cell)}</Text>
         )
       })}
       <Text dimColor wrap="truncate-end">
-        {'click here, then ← ↑ ↓ → pick · ↵ zoom in · shift+arrows scroll' + (canGoBack ? ' · b back' : '') + ' · f follow · Esc leaves'}
+        {'click here, then ← ↑ ↓ → pick · ↵ zoom in · shift+arrows scroll · < > width' + (canGoBack ? ' · b back' : '') + ' · f follow · Esc leaves'}
       </Text>
     </Box>
   )

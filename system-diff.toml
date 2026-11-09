@@ -137,7 +137,7 @@ id = "architecture"
 label = "System diagram"
 kind = "logic"
 group = "Engine"
-paths = ["src/system_diff/architecture.py"]
+paths = ["src/system_diff/architecture.py", "src/system_diff/inside.py"]
 
 [[components]]
 id = "design"

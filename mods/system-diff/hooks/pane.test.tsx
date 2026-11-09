@@ -44,9 +44,12 @@ const page = (part: string, width: number) => ({
   details: { 'b:api': [[['API  ', 'bold'], ['uses Core · used by Developer', 'muted']]] },
 })
 
-function answer(on: any, asked: string[][], exitCode = 0, stderr = '') {
+function answer(on: any, asked: string[][], exitCode = 0, stderr = '', opened: Array<{ columns?: number }> = []) {
   on('command.register', () => ({ value: { command: 'system-diff-pane' } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', (_: unknown, e: { columns?: number }) => {
+    opened.push(e)
+    return { value: { isPlaced: true } }
+  })
   on('ui.scroll', () => ({}))
   on('command.run', () => ({ text: '' }))
   on('process.run', (_: unknown, e: { argv: string[] }) => {
@@ -96,9 +99,12 @@ test('a resized split is laid out again at once, for the width the page reports'
   answer(on, asked)
   await $.command.run(RUN)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.resize({ columns: 90, rows: 30, in: 'page' }) // a drag passes through 90 on its way
   await ui.resize({ columns: 72, rows: 30, in: 'page' })
-  const last = (asked[asked.length - 1] ?? []).join(' ')
-  expect(last).toContain('--width 72')
+  await ui.advance(400)                                  // and settles at 72: that one width is laid out
+  const widths = asked.map(a => a[a.indexOf('--width') + 1])
+  expect(widths[widths.length - 1]).toBe('72')
+  expect(widths).not.toContain('90')
   await ui.unmount()
 })
 
@@ -162,4 +168,16 @@ test('/system-diff and /system-diff-pane both open it, as wide as a dock goes', 
     expect((got as { text?: string }).text).toBe('System diff pane opened.')
   }
   expect(opened.every(o => (o.columns ?? 0) >= 200)).toBe(true)
+})
+
+test('the width buttons ask Claude Code for a wider or narrower pane', async ($, on) => {
+  const opened: Array<{ columns?: number }> = []
+  answer(on, [], 0, '', opened)
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'narrower' })
+  expect(opened[opened.length - 1]?.columns).toBe(100)   // the body's 110, less 10
+  await ui.post({ resize: 8 }, { in: 'page' })            // `<` on the page
+  expect(opened[opened.length - 1]?.columns).toBe(118)
+  await ui.unmount()
 })

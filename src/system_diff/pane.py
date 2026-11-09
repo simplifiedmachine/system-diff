@@ -16,7 +16,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import activity, architecture, canvas, config, design, graph, profile
+from . import activity, architecture, canvas, config, design, graph, inside, profile
 from .compare import compare, turn_sha
 from .extract import Code, first_party, outside_imports
 from .learn import STDLIB, BASIC
@@ -43,6 +43,17 @@ def _diagram(page: canvas.Page, c, model: Dict[str, Any], width: int, centre: bo
     for n in model["nodes"]:
         for nid, title in [(n["id"], n["title"])] + [(i["id"], i["title"]) for i in n.get("items") or []]:
             bid = "b:" + nid
+            if nid.startswith("f:"):                      # a module: what it imports, what imports it, what it serves
+                outs = sorted({names.get(e["to"], e["to"]) for e in model["edges"] if e["from"] == nid})
+                ins = sorted({names.get(e["from"], e["from"]) for e in model["edges"] if e["to"] == nid})
+                words = ([f"uses {design.and_list(outs, 4)}"] if outs else []) + (
+                    [f"used by {design.and_list(ins, 4)}"] if ins else [])
+                serves = [line["text"] for line in n.get("lines") or [] if not line["text"].startswith("reads ")]
+                if serves:
+                    words.append(f"serves {design.and_list(serves, 3)}")
+                g.details[bid] = canvas.detail_rows(" · ".join(words) or "stands alone in its part", page.width,
+                                                    "muted", (f"{nid[2:]}  ", "bold"))
+                continue
             on[bid] = {"enter": {"zoom": nid}}
             if nid.startswith("a:"):
                 uses = sorted({names.get(e["to"], e["to"]) for e in model["edges"] if e["from"] == nid})
@@ -131,7 +142,7 @@ def _learn(page: canvas.Page, root: Path, c, reading: design.Reading, part: str,
         page.add(["   " + tag + (f" · {ROLE_OF[key]}" if key in ROLE_OF else ""), "muted"])
 
 
-def steps(events: List[dict], code: Code, cfg: Dict[str, Any], most: int = 8) -> List[Dict[str, Any]]:
+def steps(events: List[dict], code: Code, cfg: Dict[str, Any], most: int = 6) -> List[Dict[str, Any]]:
     """What just happened to the system, step by step, newest first: each change an edit made, as a design note with
     why it matters and the file it came from; edits that changed no structure, told once per run; each prompt; the
     end of a turn. Reads are left out: they change nothing."""
@@ -168,7 +179,7 @@ def steps(events: List[dict], code: Code, cfg: Dict[str, Any], most: int = 8) ->
                     last["at"] = max(last["files"].values())
                 else:
                     out.pop()
-            for item in fresh:
+            for item in design.summarize({**i, "weight": i.get("weight", 1)} for i in fresh)[:2]:
                 out.append({"at": e["at"], "kind": "change", "item": item,
                             "file": e.get("path", "").rsplit("/", 1)[-1]})
         elif kind == activity.STOP:
@@ -185,12 +196,13 @@ def _steps(page: canvas.Page, events: List[dict], code: Code, cfg: Dict[str, Any
         at = time.strftime("%H:%M ", time.localtime(st["at"]))
         if st["kind"] == "change":
             item = st["item"]
-            mark = SIGN.get(item["sign"] if item["sign"] in "+−~" else item["status"], item["sign"])
+            mark = item["sign"] if item["sign"] in "+−~▲↺" else SIGN.get(item["status"], item["sign"])
             page.add([at, "muted"], [mark + " ", NOTE_STYLE.get(item["status"], "muted")],
                      [canvas.cut(item["text"], page.width - 9), "" if item["status"] != "muted" else "muted"])
-            why = item.get("why", "") + (f" ({st['file']})" if st.get("file") else "")
-            if why:
-                page.para(why, "muted", indent=8)
+            why = canvas.cut(item.get("why", ""), page.width - 9 - len(st.get("file", "")) - 4)
+            why += f" ({st['file']})" if st.get("file") else ""
+            if why.strip():
+                page.add(["        " + why, "muted"])
         elif st["kind"] == "edit":
             files = sorted(st["files"])
             what = "" if st["part"] is None else files[0] if len(files) == 1 else f"{len(files)} files"
@@ -224,24 +236,36 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
         _notes(page, urgent, 3, ask=True)
 
     agent = now["part"]
-    model = architecture.container(c, part, marks, agent) if part else None
-    if model:
-        page.heading(f"Zoomed in on {model['title']}", "b back · f follow Claude · ↵ zoom in")
-    else:
+    model = None
+    if part and part in c.after["components"]:          # a component: its modules, and what is around them
+        model = inside.internals(c, root, part, now.get("path", "") if agent == part else "", marks)
+        if model:
+            holder = architecture.groups_of(c.after, c.cfg, design.kinds(c.after, c.cfg)).get(part, "")
+            where = f" · in {holder[2:]}" if holder else ""
+            more = f", {model['more']} more not drawn" if model["more"] else ""
+            page.heading(f"Inside {model['title']}", f"{model['files']} modules{more}{where} · b back · f follow "
+                         "Claude · ↵ zoom in")
+    if model is None and part:
+        model = architecture.container(c, part, marks, agent)
+        if model:
+            page.heading(f"Zoomed in on {model['title']}", "its components · b back · f follow Claude · ↵ "
+                         "a component's insides")
+    if model is None:
         model = architecture.system(c, marks, agent)
         page.heading("System", "● Claude · + new · ~ changed · − gone · click, then ← ↑ ↓ → and ↵")
     g = _diagram(page, c, model, width, centre=bool(part))
     ids = {b["id"] for b in g.blocks}
     page.pick = next((b for b in ("b:" + (part or ""), "b:" + (agent or "")) if b in ids), "")
 
-    rest = [n for n in notes if n not in urgent]
+    rest = design.summarize([n for n in notes if n not in urgent])
     base = "this turn" if c.base == "the start of this turn" else f"since {c.base}"
-    page.heading(f"This turn · {len(notes)} change{'' if len(notes) == 1 else 's'} to the design" if notes
-                 else "This turn", "" if notes else base)
+    parts = len(design.summarize(notes))
+    page.heading("This turn", f"{len(notes)} change{'' if len(notes) == 1 else 's'} to the design, in {parts} "
+                 f"part{'' if parts == 1 else 's'}; each change in full on the Changes tab" if notes else base)
     if rest:
         _notes(page, rest, 4)
         if len(rest) > 4:
-            page.add([f"   and {len(rest) - 4} more: the Changes tab has them all", "muted"])
+            page.add([f"   and {len(rest) - 4} more parts changed: the Changes tab has them all", "muted"])
     elif not notes:
         page.add(["   nothing in the system's structure has changed yet", "muted"])
 

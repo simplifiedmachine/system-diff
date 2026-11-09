@@ -65,6 +65,9 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,172 C246,172 246,99 278,99 L478,99 C507,99 507,52 536,52" marker-end="url(#ar-call-same)"><title>agent → sources</title></path>
 <path class="be k-call s-same" d="M478,428 C514,428 514,488 484,488" marker-end="url(#ar-call-same)"><title>architecture → design</title></path>
 <path class="be k-call s-same" d="M478,428 C524,428 524,308 484,308" marker-end="url(#ar-call-same)"><title>architecture → graph</title></path>
+<path class="be k-call s-same" d="M478,428 C534,428 534,248 484,248" marker-end="url(#ar-call-same)"><title>architecture → diff</title></path>
+<path class="be k-call s-same" d="M478,428 C544,428 544,188 484,188" marker-end="url(#ar-call-same)"><title>architecture → extract</title></path>
+<path class="be k-call s-same" d="M478,428 C507,428 507,52 536,52" marker-end="url(#ar-call-same)"><title>architecture → sources</title></path>
 <path class="be k-call s-same" d="M214,52 C260,52 260,172 220,172" marker-end="url(#ar-call-same)"><title>cli → agent</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,128 272,128" marker-end="url(#ar-call-same)"><title>cli → config</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,188 272,188" marker-end="url(#ar-call-same)"><title>cli → extract</title></path>
@@ -101,12 +104,12 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,112 C243,112 243,788 272,788" marker-end="url(#ar-call-same)"><title>mcp → textmap</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,728 272,728" marker-end="url(#ar-call-same)"><title>panel → learn</title></path>
 <path class="be k-call s-same" d="M214,368 C246,368 246,219 278,219 L478,219 C507,219 507,112 536,112" marker-end="url(#ar-call-same)"><title>panel → activity</title></path>
+<path class="be k-call s-same" d="M214,368 C243,368 243,428 272,428" marker-end="url(#ar-call-same)"><title>panel → architecture</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,52 272,52" marker-end="url(#ar-call-same)"><title>panel → compare</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,128 272,128" marker-end="url(#ar-call-same)"><title>panel → config</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,188 272,188" marker-end="url(#ar-call-same)"><title>panel → extract</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,308 272,308" marker-end="url(#ar-call-same)"><title>panel → graph</title></path>
 <path class="be k-call s-same" d="M214,368 C246,368 246,219 278,219 L478,219 C507,219 507,52 536,52" marker-end="url(#ar-call-same)"><title>panel → sources</title></path>
-<path class="be k-call s-same" d="M214,368 C243,368 243,428 272,428" marker-end="url(#ar-call-same)"><title>panel → architecture</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,548 272,548" marker-end="url(#ar-call-same)"><title>panel → canvas</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,488 272,488" marker-end="url(#ar-call-same)"><title>panel → design</title></path>
 <path class="be k-call s-same" d="M214,428 C246,428 246,279 278,279 L478,279 C507,279 507,112 536,112" marker-end="url(#ar-call-same)"><title>statusline → activity</title></path>
@@ -141,7 +144,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <g class="bn t-component s-same" transform="translate(278,226)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Typed diff</text><text x="12" y="35" class="bn-s">1 file</text><title>Typed diff</title></g>
 <g class="bn t-component s-same" transform="translate(278,286)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Map layout</text><text x="12" y="35" class="bn-s">1 file</text><title>Map layout</title></g>
 <g class="bn t-component s-same" transform="translate(278,346)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">SVG pictures</text><text x="12" y="35" class="bn-s">used across the code</text><title>SVG pictures</title></g>
-<g class="bn t-component s-same" transform="translate(278,406)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">System diagram</text><text x="12" y="35" class="bn-s">1 file</text><title>System diagram</title></g>
+<g class="bn t-component s-same" transform="translate(278,406)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">System diagram</text><text x="12" y="35" class="bn-s">2 files</text><title>System diagram</title></g>
 <g class="bn t-component s-same" transform="translate(278,466)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Design notes</text><text x="12" y="35" class="bn-s">1 file</text><title>Design notes</title></g>
 <g class="bn t-component s-same" transform="translate(278,526)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Pane pictures</text><text x="12" y="35" class="bn-s">1 file</text><title>Pane pictures</title></g>
 <g class="bn t-component s-same" transform="translate(278,586)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">README section</text><text x="12" y="35" class="bn-s">1 file</text><title>README section</title></g>

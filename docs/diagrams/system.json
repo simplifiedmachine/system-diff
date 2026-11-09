@@ -44,8 +44,8 @@
    "order": 13,
    "container": "",
    "declared": true,
-   "files": 1,
-   "lines": 324,
+   "files": 2,
+   "lines": 533,
    "hub": false,
    "quiet": false
   },
@@ -105,7 +105,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 410,
+   "lines": 486,
    "hub": false,
    "quiet": false
   },
@@ -189,7 +189,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 603,
+   "lines": 627,
    "hub": false,
    "quiet": false
   },
@@ -303,8 +303,11 @@
   "agent>extract": 1,
   "agent>learn": 1,
   "agent>sources": 1,
-  "architecture>design": 1,
-  "architecture>graph": 1,
+  "architecture>design": 2,
+  "architecture>diff": 1,
+  "architecture>extract": 1,
+  "architecture>graph": 2,
+  "architecture>sources": 1,
   "canvas>pictures": 1,
   "cli>activity": 1,
   "cli>agent": 2,
@@ -353,7 +356,7 @@
   "mcp>sources": 1,
   "mcp>textmap": 1,
   "panel>activity": 2,
-  "panel>architecture": 1,
+  "panel>architecture": 2,
   "panel>canvas": 1,
   "panel>compare": 2,
   "panel>config": 2,
@@ -441,11 +444,25 @@
   "architecture>design": [
    "kinds"
   ],
+  "architecture>diff": [
+   "numstat"
+  ],
+  "architecture>extract": [
+   "Code",
+   "ENV_PY",
+   "ENV_TS",
+   "JS_ROUTE",
+   "PREFIX_ARG",
+   "PY_ROUTE"
+  ],
   "architecture>graph": [
    "files_word",
    "change_marks",
    "connections",
    "part_order"
+  ],
+  "architecture>sources": [
+   "GitSource"
   ],
   "canvas>pictures": [
    "OP"
@@ -650,7 +667,9 @@
   ],
   "panel>architecture": [
    "system",
-   "container"
+   "container",
+   "groups_of",
+   "internals"
   ],
   "panel>canvas": [
    "Page",
@@ -670,8 +689,9 @@
   "panel>design": [
    "and_list",
    "Reading",
-   "ATTENTION",
+   "summarize",
    "kinds",
+   "ATTENTION",
    "name_of"
   ],
   "panel>extract": [
@@ -851,8 +871,10 @@
    "typing": 1
   },
   "architecture": {
-   "collections": 1,
-   "typing": 1
+   "collections": 2,
+   "typing": 2,
+   "os": 1,
+   "pathlib": 1
   },
   "canvas": {
    "collections": 1,

@@ -11,6 +11,8 @@ from system_diff.compare import compare
 from system_diff.config import DEFAULTS, merge
 from system_diff.diff import diff
 
+HEALTH_ROUTE = ('from fastapi import APIRouter\nrouter = APIRouter()\n\n\n@router.get("/health")\n'
+                'def health():\n    return rules.everything()\n')
 REFUND = ('from fastapi import APIRouter\nrouter = APIRouter()\n\n\n@router.post("/api/orders/{id}/refund")\n'
           'def refund(id):\n    return "ok"\n')
 
@@ -58,10 +60,20 @@ def test_now_draws_the_system_as_a_designer_would_with_claude_lit(repo, files, c
     assert all(len(run) in (2, 3) for row in out["rows"] for run in row)
 
 
-def test_zoomed_in_a_box_shows_what_it_connects_to(repo, capsys):
-    out, text = page(capsys, repo, "--part", "core")
-    assert out["part"] == "core" and any(t.startswith("ZOOMED IN ON CORE") for t in text)
-    assert {"b:core", "b:api", "b:store"} <= {b["id"] for b in out["blocks"]}
+def test_enter_on_a_component_opens_its_insides(repo, files, capsys):
+    files(repo, {"app/api/health.py": 'from app.core import rules\n' + HEALTH_ROUTE})
+    activity.record(repo, {"event": "prompt", "text": "add a health check"})
+    activity.record(repo, {"event": "edit", "path": "app/api/health.py"})
+    out, text = page(capsys, repo, "--part", "api")
+    assert out["part"] == "api" and any(t.startswith("INSIDE API  2 modules") for t in text)
+    blocks = {b["id"]: b for b in out["blocks"]}
+    assert {"b:f:app/api/routes.py", "b:f:app/api/health.py", "b:web", "b:core"} <= set(blocks)
+    assert "enter" not in blocks["b:f:app/api/health.py"] and blocks["b:core"]["enter"] == {"zoom": "core"}
+    diagram = "\n".join(text)
+    assert "● + health.py" in diagram and "GET /health" in diagram              # Claude's module, new, what it serves
+    assert "HTTP" in diagram                                                     # the front end's calls, to a router
+    assert "serves GET /health" in "".join(r[0] for row in out["details"]["b:f:app/api/health.py"] for r in row)
+    assert "e:web>f:app/api/routes.py" in out["lights"]["b:web"]
 
 
 def test_map_changes_and_topics(repo, capsys):
@@ -201,3 +213,15 @@ def test_learn_names_the_principle_a_part_s_place_calls_for(repo):
     assert r.principle("api")[0] == "an edge of the system"
     assert r.principle("store")[0] == "an adapter" and "PostgreSQL" in r.principle("store")[1]
     assert r.principle("x:postgres")[0] == "outside the system"
+
+
+def test_many_changes_are_told_a_part_at_a_time():
+    comps = {"api": _comp("API", "interface"), "core": _comp("Core", "logic"), "db": _comp("Store", "data")}
+    a = _bp(components=comps)
+    b = _bp(components=comps, flows={"api>core": 1, "api>db": 1}, routes={"GET /health": "api", "POST /refund": "api"})
+    told = design.summarize(_reading(a, b).notes())
+    assert len(told) == 1 and told[0]["count"] == 4
+    assert told[0]["text"] == "API now uses Store and Core; now answers POST /refund and GET /health"
+    assert told[0]["why"].startswith("it creates or acts")          # the weightiest change's reason
+    new = design.summarize(_reading(_bp(components={"api": comps["api"]}), b).notes())
+    assert any(t["text"].startswith("New part Core") for t in new)
