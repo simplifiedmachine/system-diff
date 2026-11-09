@@ -43,9 +43,7 @@ hooks it added before, and frees `/system-diff` for the pane.
 
 A tab beside Claude Code's own file diff: your system drawn the way a system designer draws it, live, with what
 Claude is changing in it. It opens as wide as Claude Code docks a pane (45% of the terminal). To resize it, give it
-the keys (ctrl+x tab, or a click) and press ctrl+x ← to widen or ctrl+x → to narrow; to use shift+← → instead, add
-`{"context": "Pane", "bindings": {"shift+left": "pane:grow", "shift+right": "pane:shrink"}}` to the `bindings` in
-`~/.claude/keybindings.json`.
+the keys (ctrl+x tab, or a click) and press ctrl+x ← to widen or ctrl+x → to narrow.
 
 - **Now** follows Claude, in the order your attention needs it:
   - **What Claude is doing** ("● Claude is working ✎ Editing API") and what you asked.

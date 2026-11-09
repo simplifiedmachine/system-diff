@@ -152,7 +152,7 @@ async function scrollBy($: EngineInterface, rows: number): Promise<void> {
 }
 
 // As wide as Claude Code docks a pane, the first time: a width the person set (dragged, or with the pane's keys:
-// ctrl+x ← →, or shift+← → where bound) is theirs from then on.
+// ctrl+x ← →) is theirs from then on.
 function open($: EngineInterface) {
   return $.ui.open({ id: PANE, title: 'System diff', columns: WIDEST })
 }
@@ -271,7 +271,7 @@ export const register: Register = on => {
           {behind.length > 0 && (
             <Button key="back" hotkey="b" plain onPress={() => void goBack($)}><Text dimColor>← Back</Text></Button>
           )}
-          <Text dimColor>⇆ resize: shift+← → (or ctrl+x ← →)</Text>
+          <Text dimColor>⇆ resize: ctrl+x ← →</Text>
         </Box>
         {said !== '' && <Text dimColor>{said}</Text>}
         {drawn !== null && Client !== undefined && (

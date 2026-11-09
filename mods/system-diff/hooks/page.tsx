@@ -6,7 +6,7 @@ import type { Page, PageBlock, Row, Run } from '../types'
 // the clicks: ← ↑ ↓ → pick a block (a box of the system diagram, a component in a container, a technology), Enter
 // or a second click zooms in on it, space marks a technology new to you, [ and ] scroll a picture wider than the
 // pane, shift ↑ ↓ and Page Up/Down scroll a tall one (as the wheel does), b goes back, f follows Claude, n m c t
-// switch tabs, Esc hands the keys back. Shift ← → are left to Claude Code, which resizes the pane with them.
+// switch tabs, Esc hands the keys back. Shift ← → are left to the terminal.
 //
 // A picked block is blue; what it connects to (its lines, in and out, and the blocks at their other ends) is lit;
 // the rest keeps its colours: yellow what changed, green what is new, red what went, gray the background.
@@ -123,7 +123,7 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
     } else if (e.key === 'pageup' || e.key === 'pagedown') {
       surface.post({ scrollBy: e.key === 'pageup' ? -1000 : 1000 }) // a window's worth
     } else if ((e.key === 'left' || e.key === 'right') && e.shift) {
-      // shift+← → are Claude Code's, to resize the pane: nothing here
+      // shift+← → belong to the terminal (its own splits): nothing here
     } else if (['up', 'down', 'left', 'right'].includes(e.key)) {
       pick(move(page.blocks, picked, e.key))
     } else if (e.key === '[' || e.key === ']') {
