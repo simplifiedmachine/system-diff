@@ -270,6 +270,31 @@ def test_the_agents_tab_shows_each_agent_and_warns_when_two_edit_one_block(repo,
     assert "● API  @api @st" in "\n".join(text)               # who works where, on the diagram
 
 
+def test_messages_reach_an_agent_with_its_next_tool_result_of_any_kind_once(repo):
+    from system_diff import agent, agents
+    from system_diff.sources import git_dir
+
+    def tool(name, **given):
+        said: list = []
+        agent.run_hook(json.dumps({"cwd": str(repo), "hook_event_name": "PostToolUse", "tool_name": name,
+                                   "agent_id": "a1", "tool_input": given}), emit=said.append)
+        return [json.loads(s) for s in said]
+
+    bus = git_dir(repo) / agents.BUS
+    assert not bus.exists() and tool("Bash", command="ls") == []      # no bus: nothing said, nothing written
+    assert not bus.exists()
+    agents.tie(repo, "a1", "api")
+    agents.publish(repo, "agent:api", "please keep GET /api/orders", sender="web")
+    out = tool("Bash", command="ls")                                  # not a file tool: it still gets it
+    assert "web on agent:api: please keep GET /api/orders" in out[0]["hookSpecificOutput"]["additionalContext"]
+    assert out[0]["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
+    assert tool("Bash", command="ls") == []                           # once only
+    agents.publish(repo, "agent:api", "store moved to app/db", sender="store")
+    out = tool("Read", file_path=str(repo / "app/core/rules.py"))
+    assert "store on agent:api: store moved to app/db" in out[0]["hookSpecificOutput"]["additionalContext"]
+    assert tool("Read", file_path=str(repo / "app/core/rules.py")) == []
+
+
 def test_one_agent_editing_two_areas_in_a_turn_is_told_once_to_plan_a_team(repo, files):
     from system_diff import agent
 
@@ -316,3 +341,11 @@ def test_a_narrow_pane_gets_compact_diagrams_unless_asked_otherwise(repo, capsys
 def _run(capsys, repo, *args):
     assert main(["--repo", str(repo), "panel", "--protocol", "2", *args]) == 0
     return capsys.readouterr().out
+
+
+def test_what_an_agent_read_before_it_had_a_name_stays_read(repo):
+    from system_diff import agents
+    agents.publish(repo, "all", "hello", sender="main")
+    assert len(agents.inbox(repo, "agent-a1b2c3")) == 1
+    agents.tie(repo, "a1b2c3d4", "api")
+    assert agents.inbox(repo, "api") == []

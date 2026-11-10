@@ -2,7 +2,7 @@
 CLAIMS, so agents keep to their own blocks; and a BUS, an async publish/subscribe channel whose topics are the system's
 blocks: an agent subscribes to the blocks its own depend on, every structural change to a block is published on that
 block's topic (by the hooks, as it happens), agents publish their own notes too, and each agent's unread messages
-reach it with its next tool call, without waiting on anyone.
+reach it with its next tool result of any kind, without waiting on anyone.
 
 Who is who: Claude Code names each subagent by an id (`agent_id` in its hook events; the main conversation has none,
 "main" here). A plan names agents by area ("billing"); an id is tied to a name when it first edits a block that name
@@ -65,6 +65,10 @@ def tie(root: Path, agent_id: str, name: str) -> None:
         data = _load(root)
         if data["ids"].get(agent_id) != name:
             data["ids"][agent_id] = name
+            short = data["agents"].get("agent-" + agent_id[:6])   # what it read before it had a name stays read
+            if short:
+                a = _agent(data, name)
+                a["read"] = max(a["read"], short["read"])
             _save(root, data)
 
 
@@ -163,6 +167,20 @@ def as_context(msgs: List[Dict[str, Any]], most: int = 8) -> str:
 
 # ── what the hooks do for each agent ─────────────────────────────────────────
 
+def _for_context(msgs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The messages worth putting in an agent's context: spread warnings reach the agent they are about directly; on
+    the bus they are a record for the inbox tool."""
+    return [m for m in msgs if not (m.get("from") == SYSTEM and m.get("kind") == "warning")]
+
+
+def deliver(root: Path, agent_id: str) -> str:
+    """The unread messages for the agent with this Claude Code id ("" or "main": the main conversation), as context
+    text, marked read; "" without writing anything when there is no bus yet."""
+    if not (git_dir(root) / BUS).exists():
+        return ""
+    return as_context(_for_context(inbox(root, name_of(root, agent_id))))
+
+
 def after_edit(root: Path, agent_id: str, part: Optional[str], notes: List[Dict[str, Any]], bp: dict) -> Dict[str, str]:
     """After an agent's edit: tie it to a plan name if it edited a claimed block nobody else is tied to, subscribe it
     to its block and the blocks that block depends on, publish what the edit changed in the structure on the topics
@@ -186,8 +204,7 @@ def after_edit(root: Path, agent_id: str, part: Optional[str], notes: List[Dict[
         publish(root, f"agent:{claimed}", f"{name} edited your block {part}", sender=name, kind="warning")
     from . import config
     wide = spread(root, name, agent_id, bp, config.lenient(root))
-    # spread warnings reach the agent they are about directly; on the bus they are a record for the inbox tool
-    unread = [m for m in inbox(root, name) if not (m.get("from") == SYSTEM and m.get("kind") == "warning")]
+    unread = _for_context(inbox(root, name))
     context = "\n".join(t for t in (as_context(unread), wide) if t)
     warn = "; ".join(t for t in (warn, wide) if t)
     return {"context": context, "warn": warn, "name": name}

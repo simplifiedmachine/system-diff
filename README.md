@@ -100,8 +100,8 @@ Claude does most work alone unless asked otherwise, so system-diff asks it to pl
 - **The bus:** an async publish/subscribe channel whose topics are the blocks. Each agent follows the blocks its own
   depend on. Every change an agent makes to a block's structure is published on that block's topic as it happens
   ("API no longer answers DELETE /orders/{id}"), with why it matters. Agents publish their own notes with `publish`
-  (to a block, to "all", or to "agent:<name>"). Each agent's unread messages reach it with its next tool result:
-  nobody waits on anybody.
+  (to a block, to "all", or to "agent:<name>"). Each agent's unread messages reach it with its next tool result
+  of any kind (a read, an edit, a shell command, a search), once: nobody waits on anybody.
 - **Claims:** `claim` gives an agent its blocks. An edit to someone else's block is published to its owner and shown
   under Needs your attention.
 - **One agent, one area:** when an agent (the main conversation included) edits blocks in two or more areas in one
@@ -114,6 +114,8 @@ The MCP tools: `plan_agents`, `claim`, `publish`, `subscribe`, `inbox`, `team`. 
 
 - **After an edit that changes the system's structure**, one line under it: "System diff: API now answers GET
   /health · a new way in: it needs the same checks as the others". Edits that change no structure stay quiet.
+- **Messages from other agents** on the bus arrive with an agent's next tool result of any kind, not only after
+  an edit.
 - **At the end of each turn**, one line on what the turn did to the system, or which parts it edited when the
   structure stayed the same; nothing for a turn that only talked.
 - **Ask Claude** "what is the API part?" or "what does this change do?": the MCP server gives it `explain` (the facts

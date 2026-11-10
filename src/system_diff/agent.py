@@ -137,30 +137,36 @@ def on_prompt(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
 
 
 def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
-    """Note the file and keep a brief of its part for the status line. After an edit to code, look at what the turn
-    has done to the system so far, and say what this edit added to it (one hook at a time: they can overlap)."""
+    """After every tool: hand the agent what other agents published since its last tool. For a read or an edit of
+    a file in a part, also note the file and keep a brief of its part for the status line; after an edit to code,
+    look at what the turn has done to the system so far, and say what this edit added to it (one hook at a time:
+    they can overlap)."""
     tool = payload.get("tool_name", "")
+    agent_id = payload.get("agent_id") or ""
+
+    def unread() -> Dict[str, Any]:
+        return {"message": None, "context": agents.deliver(root, agent_id)}
+
     if tool not in EDIT_TOOLS + READ_TOOLS:
-        return None
+        return unread()
     given = payload.get("tool_input") or {}
     path = activity.relative(root, given.get("file_path") or given.get("notebook_path") or "")
     if not path:
-        return None
+        return unread()
     edit = tool in EDIT_TOOLS
-    agent_id = payload.get("agent_id") or ""
     activity.record(root, {"event": activity.EDIT if edit else activity.READ, "path": path, "tool": tool,
                            "session": payload.get("session_id", ""), "agent": agent_id})
     cfg = config.lenient(root)
     part = activity.part_of(path, Code(cfg))
     if part is None:
-        return None
+        return unread()
     if not activity.load_brief(root, part, max_age=600):
         activity.save_brief(root, learn.brief(root, cfg, part))
     if not (edit and turn_sha(root)):
-        return None
+        return unread()
     with activity.only_one(root, wait=10) as mine:
         if not mine:
-            return None
+            return unread()
         last = activity.read_state(root).get("turn") or {}
         before = last.get("told") or [s["text"] for s in last.get("story") or []]
         since, turn = compare_worktree(root, ["checkpoint", "turn"])
@@ -246,12 +252,12 @@ HOOKS = (  # event, matcher, how it runs, what it does
      "WezTerm, kitty, Windows Terminal)"),
     ("UserPromptSubmit", None, {"timeout": 10},
      "marks where each turn starts, and asks Claude to plan the work for a team of agents"),
-    ("PostToolUse", "|".join(READ_TOOLS), {"async": True},
-     "notes the files Claude reads, for the terminal view and the status line (in the background)"),
-    # Not in the background: only a hook Claude Code waits for can show you a line in the conversation. A timeout
-    # (seconds) so a stuck git never holds up the agent; Claude Code's own default is 600.
-    ("PostToolUse", "|".join(EDIT_TOOLS), {"timeout": 15},
-     "after an edit that changes the system's structure, one line on what it changed and why it matters"),
+    # One entry for every tool, and not in the background: only a hook Claude Code waits for can show you a line in
+    # the conversation or hand the agent its messages. A timeout (seconds) so a stuck git never holds up the agent;
+    # Claude Code's own default is 600.
+    ("PostToolUse", None, {"timeout": 15},
+     "notes the files Claude reads and, after an edit that changes the system's structure, one line on what it "
+     "changed; and hands each agent what other agents published"),
     ("Stop", None, {"timeout": 30}, "after each turn, one line on what the turn changed in the system"),
 )
 

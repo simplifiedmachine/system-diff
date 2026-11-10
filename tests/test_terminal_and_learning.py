@@ -332,10 +332,8 @@ def test_setup_wires_three_hooks_and_a_status_line_and_leaves_someone_elses_alon
     agent.setup_claude(repo, "local", out=said.append)
     path = repo / ".claude" / "settings.local.json"
     data = json.loads(path.read_text())
-    assert data["hooks"]["PostToolUse"] == [   # reads noted in the background; an edit waited for, so it can speak
-        {"matcher": "Read", "hooks": [{"type": "command", "command": "system-diff hook", "async": True}]},
-        {"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [
-            {"type": "command", "command": "system-diff hook", "timeout": 15}]}]
+    assert data["hooks"]["PostToolUse"] == [   # every tool, waited for: it can speak and hand over messages
+        {"hooks": [{"type": "command", "command": "system-diff hook", "timeout": 15}]}]
     assert data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 10   # waited for: it tells Claude
     assert data["statusLine"] == {"type": "command", "command": "system-diff statusline"}
     agent.setup_claude(repo, "local", undo=True, out=said.append)
@@ -347,9 +345,23 @@ def test_setup_wires_three_hooks_and_a_status_line_and_leaves_someone_elses_alon
     said.clear()
     agent.setup_claude(repo, "local", out=said.append)
     post = json.loads(path.read_text())["hooks"]["PostToolUse"]
-    assert post[0] == {"hooks": [{"command": "mine"}]} and [e["matcher"] for e in post[1:]] == [
-        "Read", "Edit|Write|MultiEdit|NotebookEdit"]
+    assert post == [{"hooks": [{"command": "mine"}]},
+                    {"hooks": [{"type": "command", "command": "system-diff hook", "timeout": 15}]}]
     assert any(s.startswith("updated the PostToolUse hook") for s in said)
+    agent.setup_claude(repo, "local", undo=True, out=said.append)
+
+    two = {"hooks": {"PostToolUse": [   # the two entries the setup before this one wrote
+        {"matcher": "Read", "hooks": [{"type": "command", "command": "system-diff hook", "async": True}]},
+        {"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [
+            {"type": "command", "command": "system-diff hook", "timeout": 15}]}]}}
+    path.write_text(json.dumps(two))
+    said.clear()
+    agent.setup_claude(repo, "local", out=said.append)
+    assert json.loads(path.read_text())["hooks"]["PostToolUse"] == [
+        {"hooks": [{"type": "command", "command": "system-diff hook", "timeout": 15}]}]   # one, not three
+    assert sum(s.startswith("updated the PostToolUse hook") for s in said) == 1
+    agent.setup_claude(repo, "local", out=said.append)
+    assert len(json.loads(path.read_text())["hooks"]["PostToolUse"]) == 1                 # and it stays one
     agent.setup_claude(repo, "local", undo=True, out=said.append)
 
     user = home / ".claude" / "settings.json"
