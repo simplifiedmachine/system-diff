@@ -428,7 +428,7 @@ function drawDiagram(g) {
   if (svg) {
     svg.removeAttribute("width"); svg.removeAttribute("height");
     const vb = (svg.getAttribute("viewBox") || "").split(/[ ,]+/).map(Number);
-    if (vb.length === 4 && vb[2] > 0) { svg.style.maxWidth = Math.round(vb[2] * 1.1) + "px"; svg.style.margin = "0 auto"; }
+    if (vb.length === 4 && vb[2] > 0) { svg.style.maxWidth = Math.round(vb[2] * 1.1) + "px"; svg.style.margin = "0"; }
   }
   for (const n of box.querySelectorAll("[data-id]"))
     if (keyed(g.enter, n.getAttribute("data-id"))) n.classList.add("can-enter");
