@@ -22,34 +22,61 @@ function Current {
 }
 function Run($exe, $pre) { & $exe @pre @rest; exit $LASTEXITCODE }
 
-function Install {   # one at a time; a lock older than ten minutes is from one that died midway
+$lock = Join-Path $data '.installing'
+$stage = Join-Path $data 'stage'
+$log = Join-Path $data 'install.log'
+function Step($what) { Set-Content -NoNewline $stage $what }
+function LastLine { $l = Get-Content $log -Tail 20 | Where-Object { $_.Trim() } | Select-Object -Last 1; if ($l) { "$l".Substring(0, [Math]::Min(160, "$l".Length)) } }
+
+function Stale {   # a lock left by an install that died midway (its process is gone), or ten minutes ago
+  if (-not (Test-Path $lock)) { return }
+  $old = Get-Content (Join-Path $lock 'pid')
+  if (($old -and -not (Get-Process -Id $old)) -or ((Get-Item $lock).LastWriteTime -lt (Get-Date).AddMinutes(-10))) { Remove-Item $lock -Recurse -Force }
+}
+
+function Install {   # one at a time; a lock whose process is gone, or ten minutes old, is from one that died midway
   New-Item -ItemType Directory -Force $data | Out-Null
-  $lock = Join-Path $data '.installing'
-  if ((Test-Path $lock) -and ((Get-Item $lock).LastWriteTime -lt (Get-Date).AddMinutes(-10))) { Remove-Item $lock -Recurse -Force }
+  Stale
   try { New-Item -ItemType Directory $lock -ErrorAction Stop | Out-Null } catch { return }
+  $ok = $false
   try {
-    $log = Join-Path $data 'install.log'
+    Set-Content (Join-Path $lock 'pid') $PID
+    Set-Content (Join-Path $lock 'started') ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
     Set-Content $log ''
+    Step '1/3 Looking for uv'
     $uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
     if (-not $uv) { $uv = Join-Path $data 'uv\uv.exe' }
     if (-not (Test-Path $uv)) {   # no uv: fetch it (it brings its own Python) without touching PATH
+      Step '1/3 Fetching uv, which brings Python'
       $env:UV_INSTALL_DIR = Join-Path $data 'uv'; $env:UV_NO_MODIFY_PATH = '1'
       Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression *>> $log
     }
-    & $uv venv --quiet --python '>=3.11' $venv *>> $log
-    & $uv pip install --quiet --python $own "system-diff[mcp]==$version" *>> $log
-    if ($LASTEXITCODE -ne 0) { & $uv pip install --quiet --python $own 'system-diff[mcp]' *>> $log }
-    if (Has $own) { Set-Content -NoNewline (Join-Path $data 'version') $version }
-  } finally { Remove-Item $lock -Recurse -Force }
+    Step '2/3 Setting up Python with uv'
+    & $uv venv --python '>=3.11' $venv *>> $log
+    Step "3/3 Installing system-diff $version"
+    & $uv pip install --python $own "system-diff[mcp]==$version" *>> $log
+    if ($LASTEXITCODE -ne 0) { & $uv pip install --python $own 'system-diff[mcp]' *>> $log }
+    $ok = Has $own
+    if ($ok) { Set-Content -NoNewline (Join-Path $data 'version') $version; Remove-Item $stage -Force }
+  } catch { Add-Content $log "$_" }
+  finally { if (-not $ok) { Step 'failed' }; Remove-Item $lock -Recurse -Force }
 }
 
 if ($rest.Count -gt 0 -and $rest[0] -eq '__install') { Install; exit 0 }
 if (Has (Join-Path $dir '.venv\Scripts\python.exe')) { Run (Join-Path $dir '.venv\Scripts\python.exe') @('-m', 'system_diff') }
 if (Current) { Run $own @('-m', 'system_diff') }
+Stale
 $background = { Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '__install') }
 $onPath = Get-Command system-diff -ErrorAction SilentlyContinue
-if ($onPath) { & $background; Run $onPath.Source @() }
-if (Has $own) { & $background; Run $own @('-m', 'system_diff') }
-& $background
-[Console]::Error.WriteLine('system-diff: installing (first use, about a minute)')
+if ($onPath) { if (-not (Test-Path $lock)) { & $background }; Run $onPath.Source @() }
+if (Has $own) { if (-not (Test-Path $lock)) { & $background }; Run $own @('-m', 'system_diff') }
+# the pane asks again every few seconds: it shows how the install is going, or why it failed (tried again a minute on)
+if (-not (Test-Path $lock) -and ((Get-Content $stage) -eq 'failed') -and ((Get-Item $stage).LastWriteTime -gt (Get-Date).AddMinutes(-1))) {
+  [Console]::Error.WriteLine("system-diff: install failed: $(LastLine) - log: $log")
+  exit 4
+}
+if (-not (Test-Path $lock)) { & $background; [Console]::Error.WriteLine('system-diff: installing: starting'); exit 3 }
+$started = [long](Get-Content (Join-Path $lock 'started'))
+$took = if ($started) { [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $started } else { 0 }
+[Console]::Error.WriteLine("system-diff: installing: $(Get-Content $stage) - ${took}s - $(LastLine)")
 exit 3

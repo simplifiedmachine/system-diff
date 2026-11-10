@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.6' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.7' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -50,6 +50,15 @@ const COLORS: Record<string, string> = {
   removed: 'red', network: 'magenta',
 }
 
+// The install's progress, as the launcher reports it ("2/3 Setting up Python - 35s - <the log's last line>"): a bar,
+// the step, how long it has taken, and what it is doing now.
+function installNote(detail: string): string {
+  const step = /^(\d)\/(\d)\s*/.exec(detail)
+  const bar = step ? '[' + '■'.repeat(+step[1]) + '□'.repeat(Math.max(0, +step[2] - +step[1])) + '] ' + step[1] + '/' + step[2] + ' ' : ''
+  const rest = step ? detail.slice(step[0].length) : detail
+  return `Installing system-diff (first use, a minute or two): ${bar}${rest}`
+}
+
 let runner: string[] | undefined
 let busy = false
 let again = false
@@ -66,7 +75,7 @@ let windowAt = 0 // the pane's scroll: its first row showing, and how many show
 let windowRows = 40
 let wantOffset: number | null = null
 
-async function run($: EngineInterface, argv: string[]): Promise<{ out: string; old: boolean; installing?: boolean } | null> {
+async function run($: EngineInterface, argv: string[]): Promise<{ out: string; old: boolean; installing?: string; failed?: string } | null> {
   for (const how of runner ? [runner] : RUNNERS) {
     try {
       const command = how === POWERSHELL
@@ -78,7 +87,10 @@ async function run($: EngineInterface, argv: string[]): Promise<{ out: string; o
         return { out: got.stdout, old: false }
       }
       if (/unrecognized arguments|invalid choice/.test(got.stderr)) return { out: '', old: true }
-      if (/system-diff: installing/.test(got.stderr)) return { out: '', old: false, installing: true }
+      const failed = /system-diff: install failed: ?(.*)/.exec(got.stderr)
+      if (failed) return { out: '', old: false, failed: failed[1].trim() }
+      const installing = /system-diff: installing:? ?(.*)/.exec(got.stderr)
+      if (installing) return { out: '', old: false, installing: installing[1].trim() || 'starting' }
     } catch {
       // not this way: try the next
     }
@@ -125,7 +137,7 @@ async function refresh($: EngineInterface): Promise<void> {
       const level = await read($, zoomLevel)
       if (level >= 0) argv.push('--zoom', String(level)) // left out, the engine picks by the width (older ones too)
       const got = await run($, argv)
-      if (got && !got.old && !got.installing) {
+      if (got && !got.old && got.installing === undefined && got.failed === undefined) {
         const data = JSON.parse(got.out) as Page
         deliver($, data.send)
         if (got.out !== last) {
@@ -134,8 +146,10 @@ async function refresh($: EngineInterface): Promise<void> {
         }
         if ((await read($, note)) !== '') await update($, note, () => '')
       } else {
-        await update($, note, () => got?.installing
-          ? 'Installing system-diff for this plugin (first use, about a minute)…'
+        await update($, note, () => got?.installing !== undefined
+          ? installNote(got.installing)
+          : got?.failed !== undefined
+          ? `Installing system-diff failed: ${got.failed}. It tries again in a minute.`
           : got?.old
           ? 'This pane needs a newer system-diff: pipx upgrade system-diff'
           : 'system-diff could not install itself (it fetches uv, which brings Python, from astral.sh). Install uv ' +
