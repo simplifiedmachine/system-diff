@@ -8,7 +8,6 @@
     system-diff summarize --diff diff.json                          -> the plain-words summary alone
     system-diff checkpoint [--ref REF]                              -> mark what you have seen
     system-diff show [PART] [--base checkpoint]                     -> the map, or one part zoomed in, in the terminal
-    system-diff tui [--base checkpoint]                             -> a live terminal view that follows the agent
     system-diff watch [--base checkpoint] [--port 8765]             -> a live page of the diff since then
     system-diff setup claude [--scope user|project|local] [--undo]  -> the hooks, status line, a skill, the MCP server
     system-diff mcp                                                 -> the MCP server (stdio)
@@ -179,11 +178,7 @@ def parser() -> argparse.ArgumentParser:
     sh.add_argument("--base", default="checkpoint", help="marks changes since this point (default checkpoint)")
     sh.add_argument("--width", type=int, default=0, help="columns to fit (default: the terminal's)")
     sh.add_argument("--plain", action="store_true", help="no colours")
-    t = sub.add_parser("tui", help="a live terminal view that follows the part being worked on (needs the [tui] extra)")
-    t.add_argument("--base", default="checkpoint")
-    t.add_argument("--interval", type=float, default=2.0, help="seconds between looks at the files")
-    t.add_argument("--pane", action="store_true", help="open it in a new pane beside this terminal instead "
-                                                       "(tmux, zellij, WezTerm, kitty, Windows Terminal)")
+    sub.add_parser("tui", help="retired: the System diff pane in Claude Code, or system-diff watch in a browser")
     w = sub.add_parser("watch", help="a live local page of the diff since the checkpoint")
     w.add_argument("--base", default="checkpoint")
     w.add_argument("--port", type=int, default=8765)
@@ -230,22 +225,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"system-diff: {exc}", file=sys.stderr)
             return 1
     if args.cmd == "tui":
-        try:
-            from . import tui
-        except ImportError as exc:
-            print(f'system-diff: the terminal view needs its extra: pip install "system-diff[tui]" ({exc})',
-                  file=sys.stderr)
-            return 1
-        if args.pane:
-            from . import companion
-            said = companion.open_beside(root)
-            vscode = (f'; in VS Code: Tasks: Run Task, then "{companion.TASK}" (setup adds it)'
-                      if companion.where() == "vscode" else "")
-            print(said or ("system-diff: the terminal view is already open" if companion.running(root) else
-                           "system-diff: this terminal cannot open a pane from a command (tmux, zellij, WezTerm, kitty "
-                           f"and Windows Terminal can); run `system-diff tui` in a second terminal{vscode}"))
-            return 0 if said or companion.running(root) else 1
-        return tui.run(root, args.base, args.config, args.interval)
+        print("system-diff: the terminal view is retired: the System diff pane in Claude Code (/system-diff) and its "
+              "web page (system-diff watch) show the same, and more", file=sys.stderr)
+        return 1
     if args.cmd == "watch":
         from . import watch
         watch.serve(root, args.base, args.port, args.config, args.interval)

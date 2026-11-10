@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from . import activity, agents, companion, config, design, learn
+from . import activity, agents, config, design, learn
 from .compare import compare_worktree, mark_turn, turn_sha
 from .extract import Code
 from .sources import git
@@ -42,8 +42,8 @@ After a change that may touch the system's structure:
 2. Tell the person, in two or three plain sentences built only from its plan, what changed in the system and why it
    matters: an endpoint added or removed, a new connection between parts, a new outside system, changed stored data,
    or code changed without tests.
-3. Point them at the picture: the path the tool returns, `system-diff tui` (a terminal view that follows the part you
-   are working on) or `system-diff watch` (a page that redraws as you work).
+3. Point them at the picture: the path the tool returns, the System diff pane beside the chat (`/system-diff`), or
+   its web page (`system-diff watch`), which redraw as you work.
 4. When they say they have seen it, call the `checkpoint` tool (or run `system-diff checkpoint`), so the next diff
    shows only what is new to them.
 
@@ -89,7 +89,7 @@ def hook_message(since, turn=None, edited: List[str] = ()) -> Optional[str]:
     top = told[0]
     why = f" ({top['why']})" if top["why"] else ""
     more = f" And {len(told) - 1} more change{'' if len(told) == 2 else 's'}." if len(told) > 1 else ""
-    return f"System diff, this turn: {top['text'][:-1]}{why}.{more} `system-diff tui` explains them."
+    return f"System diff, this turn: {top['text'][:-1]}{why}.{more} The System diff pane explains them."
 
 
 def step_message(before: Iterable[str], after: List[Dict[str, Any]]) -> Optional[str]:
@@ -111,17 +111,6 @@ def edited_this_turn(root: Path, cfg: Dict[str, Any]) -> List[str]:
                 seen.add(part)
                 out.append(activity.label(cfg, part))
     return out
-
-
-def on_start(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[str]:
-    """A session someone watches has started: open the terminal view beside it, when the terminal allows that and the
-    view is not open yet. Started by Claude Code (a hook run, which has CLAUDE_PROJECT_DIR), also start the web page
-    with the same views in the background, unless the config says `[web] start = false`."""
-    if env.get("CLAUDE_PROJECT_DIR"):
-        start_web(root)
-    if payload.get("source", "startup") not in ("startup", "resume") or not companion.watched(env):
-        return None
-    return companion.open_beside(root, env) or None
 
 
 def start_web(root: Path, wait: float = 3.0) -> None:
@@ -146,6 +135,37 @@ def start_web(root: Path, wait: float = 3.0) -> None:
         t.join(wait)
     except Exception:
         pass
+
+
+def on_start(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[str]:
+    """A session has started: started by Claude Code (a hook run, which has CLAUDE_PROJECT_DIR), start the web page
+    with the pane's views in the background, unless the config says `[web] start = false`."""
+    if env.get("CLAUDE_PROJECT_DIR"):
+        start_web(root)
+    return None
+
+
+OLD_TASK = "system-diff: terminal view"   # a VS Code task older setups added to open the retired terminal view
+
+
+def _drop_vscode_task(root: Path, out: Callable[[str], None]) -> None:
+    path = root / ".vscode" / "tasks.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        tasks = data["tasks"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return
+    ours = [t for t in tasks if isinstance(t, dict) and t.get("label") == OLD_TASK]
+    if not ours:
+        return
+    data["tasks"] = [t for t in tasks if t not in ours]
+    if not data["tasks"] and set(data) <= {"version", "tasks"}:
+        path.unlink()
+        if not any(path.parent.iterdir()):
+            path.parent.rmdir()
+    else:
+        _save(path, data)
+    out(f"removed the VS Code task from {path}")
 
 
 def on_prompt(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
@@ -403,8 +423,7 @@ def setup_claude(root: Path, scope: str = "user", undo: bool = False, out: Calla
             _save(settings_path, settings)
         for path in (skill_path, skill_path.parent.parent / OLD_SKILL_NAME / "SKILL.md"):
             _drop_skill(path, out)
-        if scope != "user":
-            companion.add_vscode_task(root, command("tui"), out, undo=True)
+        _drop_vscode_task(root, out)
         if has_claude and _claude(["mcp", "get", NAME]).returncode == 0:
             got = _claude(["mcp", "remove", NAME, "--scope", scope])
             out(f"removed the MCP server ({scope} scope)" if got.returncode == 0 else
@@ -460,12 +479,7 @@ def setup_claude(root: Path, scope: str = "user", undo: bool = False, out: Calla
         with open(skill_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(SKILL)
         out(f"wrote the skill {skill_path}: when and how to show and explain the system")
-    if companion.where() == "vscode":  # its terminal cannot be split by a command: a task opens the view instead
-        if scope == "user":
-            out("in VS Code, setup with --scope local or project in a repository also adds a task that opens the "
-                "terminal view whenever its folder opens")
-        else:
-            companion.add_vscode_task(root, command("tui"), out, hide=scope == "local")
+    _drop_vscode_task(root, out)
     if not has_claude:
         out("Claude Code's `claude` command is not on PATH, so the MCP server was not registered; "
             "run setup again where it is")

@@ -56,7 +56,7 @@ def test_the_hooks_follow_a_turn_and_say_only_what_it_changed(repo, files):
     assert _hook(repo, said, "Stop", last_assistant_message="Added GET /health.") == 0
     assert len(said) == 2 and json.loads(said[1])["systemMessage"] == (
         "System diff, this turn: API now answers GET /health (a new way in: it needs the same checks as the others). "
-        "`system-diff tui` explains them.")
+        "The System diff pane explains them.")
     assert activity.read_state(repo)["since"] == "HEAD (no checkpoint yet)"
 
     _hook(repo, said, "UserPromptSubmit", prompt="Tidy the rules")       # code edited, structure the same
@@ -373,100 +373,6 @@ def test_setup_wires_three_hooks_and_a_status_line_and_leaves_someone_elses_alon
     assert any("left your status line" in s and "settings.json" in s for s in said)
 
 
-def test_a_session_opens_the_terminal_view_beside_claude_where_the_terminal_can(repo, monkeypatch):
-    from system_diff import companion
-    monkeypatch.setattr(companion.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(companion.importlib.util, "find_spec", lambda name: object())   # as if Textual were there
-    ran, old_tmux = [], []
-
-    def run(cmd):
-        ran.append(cmd)
-        return subprocess.CompletedProcess(cmd, 1 if old_tmux and "-l" in cmd else 0)
-    monkeypatch.setattr(companion, "launch", run)
-    start = {"cwd": str(repo), "hook_event_name": "SessionStart", "source": "startup"}
-    assert agent.on_start(repo, start, env={}) is None and not ran               # a plain terminal: nothing to do
-    tmux = {"TMUX": "/tmp/tmux-1/default,1,0"}
-    said = agent.on_start(repo, start, env=tmux)
-    assert said.startswith("system-diff: the terminal view is open in a tmux pane beside Claude")
-    assert ran[0][:6] == ["tmux", "split-window", "-h", "-d", "-l", "42%"] and ran[0][-1].endswith("system_diff tui")
-    for skip in ({**start, "source": "compact"}, start):
-        env = tmux if skip is not start else {**tmux, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"}   # `claude -p`
-        assert agent.on_start(repo, skip, env=env) is None and len(ran) == 1
-    companion.beat(repo)                                                          # a view is already open
-    assert companion.running(repo) and agent.on_start(repo, start, env=tmux) is None and len(ran) == 1
-    companion.gone(repo)
-    ran.clear()
-    old_tmux.append(True)                                                         # a tmux older than 3.1
-    assert companion.open_beside(repo, tmux)
-    assert ran[1][:6] == ["tmux", "split-window", "-h", "-d", "-p", "42"]
-    assert companion.pane_command("wezterm", ["x"], repo)[:3] == ["wezterm", "cli", "split-pane"]
-    assert companion.where({"TERM_PROGRAM": "vscode"}) == "vscode" and companion.where({}) is None
-
-
-def test_in_vscode_setup_adds_a_task_that_opens_the_view_with_the_folder(repo, tmp_path, monkeypatch):
-    from system_diff import companion
-    home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.setenv("TERM_PROGRAM", "vscode")
-    monkeypatch.setattr(agent.shutil, "which", lambda name: "/usr/bin/system-diff" if name == "system-diff" else None)
-    said: list = []
-    agent.setup_claude(repo, "local", out=said.append)
-    tasks = json.loads((repo / ".vscode" / "tasks.json").read_text())["tasks"]
-    assert tasks == [companion.vscode_task("system-diff tui")]
-    assert tasks[0]["runOptions"] == {"runOn": "folderOpen"}
-    assert "/.vscode/tasks.json" in (repo / ".git" / "info" / "exclude").read_text()   # kept out of git status
-    agent.setup_claude(repo, "local", out=said.append)
-    assert any("VS Code task is already" in s for s in said)
-    agent.setup_claude(repo, "local", undo=True, out=said.append)
-    assert not (repo / ".vscode").exists()
-    theirs = repo / ".vscode" / "tasks.json"
-    theirs.parent.mkdir()
-    theirs.write_text('{\n  // mine\n  "version": "2.0.0", "tasks": []\n}\n')
-    agent.setup_claude(repo, "local", out=said.append)
-    assert "// mine" in theirs.read_text() and any("left" in s and "tasks.json alone" in s for s in said)
-
-
-def test_the_terminal_view_follows_the_agent_and_zooms_where_you_pick(repo, files):
-    pytest.importorskip("textual")
-    from system_diff import companion
-    from system_diff.tui import SystemDiffApp
-
-    async def until(pilot, ok, seconds=15.0):
-        end = time.time() + seconds
-        while not ok() and time.time() < end:
-            await pilot.pause(0.1)
-        assert ok()
-
-    async def drive():
-        app = SystemDiffApp(repo, interval=0.2)
-        async with app.run_test(size=(120, 50)) as pilot:
-            await until(pilot, lambda: app.w.snapshot_view().looks > 0)
-            assert companion.running(repo)                            # its heartbeat: no session opens another
-            files(repo, {"app/api/health.py": HEALTH})
-            activity.record(repo, {"event": "edit", "path": "app/api/health.py"})
-            await until(pilot, lambda: app.part == "api")             # it follows the agent
-            assert "Editing API" in str(app.query_one("#doing").render())
-            await until(pilot, lambda: "API now answers GET /health" in str(app.query_one("#feed").render()))
-            await pilot.press("m")
-            app.map_pick = "core"
-            await pilot.press("enter")                                # zoom in on a part picked on the map
-            assert (app.part, app.following, app.query_one("TabbedContent").active) == ("core", False, "now")
-            await pilot.press("down")
-            await pilot.press("enter")                                # then on one of its neighbours
-            assert app.part != "core" and app.history == ["api", "core"]
-            await pilot.press("escape")
-            assert app.part == "core"
-            await pilot.press("f")
-            assert app.following and app.part == "api"
-            await pilot.press("s")                                    # mark as seen
-            await until(pilot, lambda: app.w.snapshot_state()["changes"] == 0)
-            await pilot.press("t")
-            await until(pilot, lambda: "FastAPI" in app.topics_text)
-    asyncio.run(drive())
-    assert not companion.running(repo)                                # closed: a new session may open one again
-
-
 def test_the_mcp_server_explains_a_part_with_a_diagram(repo, files, monkeypatch):
     pytest.importorskip("mcp")
     from system_diff import mcp_server
@@ -524,3 +430,14 @@ def test_the_plugin_carries_the_hooks_the_mcp_server_and_the_skill():
     assert mcp["args"][-1] == "mcp" and (root / "scripts/run.sh").is_file()
     skill = (root / "skills/system-diff-explain/SKILL.md").read_text(encoding="utf-8")
     assert skill == agent.SKILL.replace(agent.SKILL_MARK + "\n", "")      # the same skill setup writes
+
+
+def test_the_terminal_view_is_retired_and_setup_clears_its_old_vscode_task(repo, capsys):
+    from system_diff.cli import main
+    assert main(["--repo", str(repo), "tui"]) == 1 and "retired" in capsys.readouterr().err
+    tasks = repo / ".vscode" / "tasks.json"
+    tasks.parent.mkdir()
+    tasks.write_text(json.dumps({"version": "2.0.0", "tasks": [{"label": agent.OLD_TASK, "command": "system-diff tui"}]}))
+    said: list = []
+    agent._drop_vscode_task(repo, said.append)
+    assert not tasks.exists() and said and "removed the VS Code task" in said[0]

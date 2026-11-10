@@ -2,7 +2,7 @@
 editor while they, or an AI coding agent, change the code. It redraws when a file changes, and zooms in on the part
 being worked on (the one the agent last edited or read, else the one whose files last changed), with what that part
 is, what is changing in it and the topics behind it. "Mark as seen" moves the checkpoint, so the page then shows only
-what is new to them. The terminal view (`system-diff tui`) watches with the same Watcher.
+what is new to them.
 
 Local only: the server listens on 127.0.0.1, and "Mark as seen" needs the page's own token, so no other web page open in
 the same browser can press it. "Send to Claude" (POST /send) needs the token and the page's own origin too, and appends

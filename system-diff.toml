@@ -19,7 +19,7 @@ image = "https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/do
 id = "developer"
 label = "Developer"
 kind = "person"
-uses = ["cli:terminal", "tui:terminal", "watch:browser"]
+uses = ["cli:terminal", "watch:browser"]
 
 [[actors]]
 id = "claude"
@@ -64,14 +64,6 @@ kind = "interface"
 about = "a page on localhost"
 group = "From the terminal"
 paths = ["src/system_diff/watch.py"]
-
-[[components]]
-id = "tui"
-label = "Terminal view"
-kind = "interface"
-about = "full-screen terminal app"
-group = "From the terminal"
-paths = ["src/system_diff/tui.py"]
 
 [[components]]
 id = "panel"
@@ -188,12 +180,6 @@ label = "Terminal pictures"
 kind = "logic"
 group = "Pictures"
 paths = ["src/system_diff/textmap.py"]
-
-[[components]]
-id = "companion"
-label = "Panes beside the agent"
-kind = "logic"
-paths = ["src/system_diff/companion.py"]
 
 [[components]]
 id = "png"

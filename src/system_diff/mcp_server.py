@@ -155,7 +155,7 @@ def tool_diff(root: Path, base: str = "checkpoint", head: str = ".", diagram: bo
     return {"from": c.base, "to": c.head, "headline": c.diff["headline"], "plan": c.diff["plan"],
             "changes": len(c.diff["changes"]), "impacts": c.diff["impacts"],
             "picture": str(path) if svg else None, **extra,
-            "live": "`system-diff tui` (in the terminal) or `system-diff watch` (a page) redraw as the code changes"}
+            "live": "the System diff pane (/system-diff) or its web page (`system-diff watch`) redraw as the code changes"}
 
 
 def tool_explain(root: Path, part: str = "", base: str = "checkpoint") -> Dict[str, Any]:

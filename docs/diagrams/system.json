@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 314,
+   "lines": 296,
    "hub": false,
    "quiet": false
   },
@@ -17,7 +17,7 @@
    "label": "Agent activity",
    "layer": "",
    "kind": "data",
-   "order": 24,
+   "order": 22,
    "container": "",
    "declared": true,
    "files": 1,
@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 493,
+   "lines": 507,
    "hub": false,
    "quiet": false
   },
@@ -41,7 +41,7 @@
    "label": "Agent team",
    "layer": "",
    "kind": "logic",
-   "order": 14,
+   "order": 13,
    "container": "",
    "declared": true,
    "files": 1,
@@ -53,7 +53,7 @@
    "label": "System diagram",
    "layer": "",
    "kind": "logic",
-   "order": 13,
+   "order": 12,
    "container": "",
    "declared": true,
    "files": 2,
@@ -65,7 +65,7 @@
    "label": "Pane pictures",
    "layer": "",
    "kind": "logic",
-   "order": 16,
+   "order": 15,
    "container": "",
    "declared": true,
    "files": 1,
@@ -73,23 +73,11 @@
    "hub": false,
    "quiet": false
   },
-  "companion": {
-   "label": "Panes beside the agent",
-   "layer": "",
-   "kind": "logic",
-   "order": 21,
-   "container": "",
-   "declared": true,
-   "files": 1,
-   "lines": 164,
-   "hub": false,
-   "quiet": false
-  },
   "compare": {
    "label": "Checkpoints and snapshots",
    "layer": "",
    "kind": "logic",
-   "order": 7,
+   "order": 6,
    "container": "",
    "declared": true,
    "files": 1,
@@ -101,7 +89,7 @@
    "label": "Config",
    "layer": "",
    "kind": "logic",
-   "order": 8,
+   "order": 7,
    "container": "",
    "declared": true,
    "files": 1,
@@ -113,7 +101,7 @@
    "label": "Design notes",
    "layer": "",
    "kind": "logic",
-   "order": 15,
+   "order": 14,
    "container": "",
    "declared": true,
    "files": 1,
@@ -125,7 +113,7 @@
    "label": "Typed diff",
    "layer": "",
    "kind": "logic",
-   "order": 10,
+   "order": 9,
    "container": "",
    "declared": true,
    "files": 1,
@@ -137,7 +125,7 @@
    "label": "Extraction",
    "layer": "",
    "kind": "logic",
-   "order": 9,
+   "order": 8,
    "container": "",
    "declared": true,
    "files": 1,
@@ -149,7 +137,7 @@
    "label": "Map layout",
    "layer": "",
    "kind": "logic",
-   "order": 11,
+   "order": 10,
    "container": "",
    "declared": true,
    "files": 1,
@@ -161,7 +149,7 @@
    "label": "Lessons and topics",
    "layer": "",
    "kind": "logic",
-   "order": 19,
+   "order": 18,
    "container": "",
    "declared": true,
    "files": 3,
@@ -185,7 +173,7 @@
    "label": "LLM summary",
    "layer": "",
    "kind": "logic",
-   "order": 18,
+   "order": 17,
    "container": "",
    "declared": true,
    "files": 1,
@@ -197,7 +185,7 @@
    "label": "Pane beside the chat",
    "layer": "",
    "kind": "interface",
-   "order": 5,
+   "order": 4,
    "container": "",
    "declared": true,
    "files": 2,
@@ -209,7 +197,7 @@
    "label": "SVG pictures",
    "layer": "",
    "kind": "logic",
-   "order": 12,
+   "order": 11,
    "container": "",
    "declared": true,
    "files": 1,
@@ -221,7 +209,7 @@
    "label": "PNG rendering",
    "layer": "",
    "kind": "logic",
-   "order": 22,
+   "order": 20,
    "container": "",
    "declared": true,
    "files": 1,
@@ -233,7 +221,7 @@
    "label": "README section",
    "layer": "",
    "kind": "logic",
-   "order": 17,
+   "order": 16,
    "container": "",
    "declared": true,
    "files": 1,
@@ -245,7 +233,7 @@
    "label": "Git and folder sources",
    "layer": "",
    "kind": "data",
-   "order": 23,
+   "order": 21,
    "container": "",
    "declared": true,
    "files": 1,
@@ -257,7 +245,7 @@
    "label": "Status line",
    "layer": "",
    "kind": "interface",
-   "order": 6,
+   "order": 5,
    "container": "",
    "declared": true,
    "files": 1,
@@ -269,23 +257,11 @@
    "label": "Terminal pictures",
    "layer": "",
    "kind": "logic",
-   "order": 20,
+   "order": 19,
    "container": "",
    "declared": true,
    "files": 1,
    "lines": 313,
-   "hub": false,
-   "quiet": false
-  },
-  "tui": {
-   "label": "Terminal view",
-   "layer": "",
-   "kind": "interface",
-   "order": 4,
-   "container": "",
-   "declared": true,
-   "files": 1,
-   "lines": 388,
    "hub": false,
    "quiet": false
   },
@@ -309,7 +285,6 @@
   "activity>sources": 1,
   "agent>activity": 1,
   "agent>agents": 1,
-  "agent>companion": 1,
   "agent>compare": 1,
   "agent>config": 1,
   "agent>design": 1,
@@ -331,7 +306,6 @@
   "canvas>pictures": 1,
   "cli>activity": 1,
   "cli>agent": 2,
-  "cli>companion": 1,
   "cli>compare": 1,
   "cli>config": 2,
   "cli>diff": 1,
@@ -347,9 +321,7 @@
   "cli>sources": 1,
   "cli>statusline": 1,
   "cli>textmap": 1,
-  "cli>tui": 1,
   "cli>watch": 1,
-  "companion>sources": 1,
   "compare>config": 1,
   "compare>diff": 1,
   "compare>extract": 1,
@@ -397,14 +369,6 @@
   "statusline>sources": 1,
   "statusline>textmap": 1,
   "textmap>pictures": 1,
-  "tui>activity": 1,
-  "tui>companion": 1,
-  "tui>graph": 1,
-  "tui>learn": 1,
-  "tui>pictures": 1,
-  "tui>sources": 1,
-  "tui>textmap": 1,
-  "tui>watch": 1,
   "watch>activity": 1,
   "watch>compare": 1,
   "watch>diff": 1,
@@ -442,12 +406,6 @@
    "after_edit",
    "deliver",
    "tie"
-  ],
-  "agent>companion": [
-   "add_vscode_task",
-   "open_beside",
-   "watched",
-   "where"
   ],
   "agent>compare": [
    "compare_worktree",
@@ -535,12 +493,6 @@
    "run_hook",
    "setup_claude"
   ],
-  "cli>companion": [
-   "running",
-   "TASK",
-   "open_beside",
-   "where"
-  ],
   "cli>compare": [
    "compare",
    "checkpoint"
@@ -603,15 +555,8 @@
    "render_map",
    "render_zoom"
   ],
-  "cli>tui": [
-   "run"
-  ],
   "cli>watch": [
    "serve"
-  ],
-  "companion>sources": [
-   "git",
-   "git_dir"
   ],
   "compare>config": [
    "load"
@@ -833,43 +778,6 @@
    "cut",
    "cut_code"
   ],
-  "tui>activity": [
-   "ago",
-   "label"
-  ],
-  "tui>companion": [
-   "BEAT",
-   "beat",
-   "gone"
-  ],
-  "tui>graph": [
-   "change_marks",
-   "neighbourhood",
-   "overview"
-  ],
-  "tui>learn": [
-   "ask_llm",
-   "lesson",
-   "system_markdown",
-   "system_topics",
-   "to_markdown"
-  ],
-  "tui>pictures": [
-   "write_if_changed"
-  ],
-  "tui>sources": [
-   "git_dir"
-  ],
-  "tui>textmap": [
-   "Line",
-   "render_map",
-   "render_zoom",
-   "rich_style"
-  ],
-  "tui>watch": [
-   "View",
-   "Watcher"
-  ],
   "watch>activity": [
    "now",
    "EDIT",
@@ -984,18 +892,6 @@
    "os": 1,
    "pathlib": 1,
    "shutil": 1,
-   "typing": 1
-  },
-  "companion": {
-   "importlib": 1,
-   "json": 1,
-   "os": 1,
-   "pathlib": 1,
-   "shlex": 1,
-   "shutil": 1,
-   "subprocess": 1,
-   "sys": 1,
-   "time": 1,
    "typing": 1
   },
   "compare": {
@@ -1114,14 +1010,6 @@
   },
   "textmap": {
    "textwrap": 1,
-   "typing": 1
-  },
-  "tui": {
-   "pathlib": 1,
-   "rich": 1,
-   "textual": 1,
-   "threading": 1,
-   "time": 1,
    "typing": 1
   },
   "watch": {

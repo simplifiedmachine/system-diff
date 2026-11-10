@@ -12,8 +12,8 @@ After a change that may touch the system's structure:
 2. Tell the person, in two or three plain sentences built only from its plan, what changed in the system and why it
    matters: an endpoint added or removed, a new connection between parts, a new outside system, changed stored data,
    or code changed without tests.
-3. Point them at the picture: the path the tool returns, `system-diff tui` (a terminal view that follows the part you
-   are working on) or `system-diff watch` (a page that redraws as you work).
+3. Point them at the picture: the path the tool returns, the System diff pane beside the chat (`/system-diff`), or
+   its web page (`system-diff watch`), which redraw as you work.
 4. When they say they have seen it, call the `checkpoint` tool (or run `system-diff checkpoint`), so the next diff
    shows only what is new to them.
 

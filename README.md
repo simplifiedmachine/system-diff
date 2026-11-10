@@ -37,7 +37,7 @@ In Claude Code:
 
 That is all. The first time it runs, the plugin installs its own copy of system-diff (the version it was released
 with, in its own data folder, with uv when you have it, else Python's venv and pip; about a minute, the pane says
-so). A system-diff you installed yourself (`pipx install "system-diff[mcp,tui]"`) is used meanwhile, and a project's
+so). A system-diff you installed yourself (`pipx install "system-diff[mcp]"`) is used meanwhile, and a project's
 own `.venv` with system-diff in it comes first. The plugin brings everything, in every session and every project: the System diff pane, the same views
 on a web page in your browser (started with the session, linked in the pane), the hooks that follow what Claude
 reads and edits, the MCP server Claude uses to explain the system and plan a team, and its skill. Two ways to look
@@ -221,12 +221,10 @@ that did not change keeps its place.
   system-diff draw SPEC.json                           # hand-made pictures in the same look
   ```
   `diff --narrate` adds a plain-words summary from your own LLM; `[png]` adds PNG output.
-- **Terminal view** (`system-diff tui`): the pane's views as a full-screen terminal app, for a terminal beside any
-  agent. It opens by itself next to Claude Code in tmux, zellij, WezTerm, kitty and Windows Terminal; in VS Code,
-  setup adds a task that opens it with the folder.
 - **Status line** (`system-diff setup claude` without `--no-status-line`): the pane's first lines under Claude Code's
   prompt, for when the pane is not open.
-- **Browser page** (`system-diff watch`): the same with the SVG pictures, at http://127.0.0.1:8765/.
+- **Web page by hand** (`system-diff watch`): the pane's views in a browser, at http://localhost:8765/, without
+  Claude Code.
 
 ## License
 
