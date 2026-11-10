@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 466,
+   "lines": 493,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +45,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 368,
+   "lines": 385,
    "hub": false,
    "quiet": false
   },
@@ -201,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 878,
+   "lines": 938,
    "hub": false,
    "quiet": false
   },
@@ -297,7 +297,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 341,
+   "lines": 826,
    "hub": false,
    "quiet": false
   }
@@ -316,6 +316,7 @@
   "agent>extract": 1,
   "agent>learn": 1,
   "agent>sources": 1,
+  "agent>watch": 1,
   "agents>activity": 1,
   "agents>architecture": 2,
   "agents>config": 1,
@@ -385,8 +386,9 @@
   "panel>extract": 2,
   "panel>graph": 2,
   "panel>learn": 4,
-  "panel>sources": 2,
+  "panel>sources": 3,
   "panel>textmap": 1,
+  "panel>watch": 1,
   "readme>pictures": 1,
   "statusline>activity": 1,
   "statusline>config": 1,
@@ -408,6 +410,7 @@
   "watch>extract": 1,
   "watch>graph": 1,
   "watch>learn": 1,
+  "watch>panel": 1,
   "watch>pictures": 1,
   "watch>sources": 1
  },
@@ -467,6 +470,9 @@
   ],
   "agent>sources": [
    "git"
+  ],
+  "agent>watch": [
+   "watch"
   ],
   "agents>activity": [
    "EDIT",
@@ -785,10 +791,14 @@
   ],
   "panel>sources": [
    "GitSource",
-   "git"
+   "git",
+   "git_dir"
   ],
   "panel>textmap": [
    "Line"
+  ],
+  "panel>watch": [
+   "watch"
   ],
   "readme>pictures": [
    "write_if_changed"
@@ -888,6 +898,9 @@
    "lesson",
    "one_line"
   ],
+  "watch>panel": [
+   "show"
+  ],
   "watch>pictures": [
    "map_svg"
   ],
@@ -939,6 +952,7 @@
    "shutil": 1,
    "subprocess": 1,
    "sys": 1,
+   "threading": 1,
    "typing": 1
   },
   "agents": {
@@ -1047,11 +1061,12 @@
    "urllib": 1
   },
   "panel": {
+   "json": 2,
    "pathlib": 2,
    "time": 2,
    "typing": 2,
    "collections": 1,
-   "json": 1,
+   "os": 1,
    "re": 1,
    "textwrap": 1
   },
@@ -1109,12 +1124,18 @@
    "dataclasses": 1,
    "http": 1,
    "json": 1,
+   "os": 1,
    "pathlib": 1,
    "secrets": 1,
+   "signal": 1,
+   "socket": 1,
    "subprocess": 1,
+   "sys": 1,
    "threading": 1,
    "time": 1,
-   "typing": 1
+   "typing": 1,
+   "urllib": 1,
+   "uuid": 1
   }
  },
  "containers": {},
@@ -1128,6 +1149,7 @@
   "tests/test_checkpoint_watch_mcp.py": 1,
   "tests/test_design_and_pane.py": 1,
   "tests/test_system_diff.py": 1,
-  "tests/test_terminal_and_learning.py": 1
+  "tests/test_terminal_and_learning.py": 1,
+  "tests/test_web.py": 1
  }
 }

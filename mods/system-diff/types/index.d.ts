@@ -25,6 +25,8 @@ export type Page = {
   details: Record<string, Row[]>
   pick: string
   zoom?: number // how compact it is drawn: 0 full, 1 compact, 2 tiny
+  web?: string // the address of the same views in a browser, when that page runs
+  send?: { id: string; text: string }[] // typed in the web page's Send to Claude box, for the session
 }
 
 declare module 'claude-code' {

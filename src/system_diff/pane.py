@@ -11,6 +11,8 @@ the boxes at their other ends, and shows a line or two on what it uses and what 
 """
 from __future__ import annotations
 
+import json
+import os
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -502,8 +504,8 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
         runs = [("● " if live else "○ ", "accent" if live else "muted"), (name, f"agent{colour[name]} bold"),
                 (f"  {a['area']}" if a["area"] else "", "muted"),
                 (f"  {time.strftime('%H:%M', time.localtime(a['at']))}" if a["at"] else "  not started", "muted")]
-        unread = len(agents.inbox(root, name, mark=False))
-        if unread:
+        unread = unread_count(root, name)
+        if unread > 0:
             runs.append((f"  {unread} unread on the bus", "attention"))
         x = 0
         for text, style in runs:
@@ -614,13 +616,71 @@ def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who
 ZOOM = 0   # how compact the diagrams are drawn: 0 full, 1 compact, 2 tiny (show sets it)
 
 
-def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None, zoom: int = -1) -> Dict[str, Any]:
-    """The page for a view. `zoom` -1: compact below 110 columns, full above."""
+def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None, zoom: int = -1,
+         take: bool = True) -> Dict[str, Any]:
+    """The page for a view. `zoom` -1: compact below 110 columns, full above. `take`: hand over what the web page
+    sent to Claude (the pane, which submits it, does; the web page itself must not, or it would swallow it)."""
     global ZOOM
     ZOOM = (1 if width < 110 else 0) if zoom < 0 else max(0, min(2, zoom))
     out = _show(root, width, view, part)
     out["zoom"] = ZOOM
+    out["web"] = web_url(root)
+    out["send"] = take_outbox(root) if take else []
     return out
+
+
+OUTBOX = "outbox.jsonl"   # what the web page's Send to Claude box wrote, for the pane to submit to the session
+
+
+def take_outbox(root: Path) -> List[Dict[str, str]]:
+    """Take what the web page asked to send to Claude: [{"id", "text"}...], each line once. The file is moved aside
+    first (so a line the web page writes meanwhile goes to a fresh file, never lost or taken twice), then read and
+    deleted. A bad line is skipped; no file, or any failure, is none."""
+    try:
+        from .sources import git_dir
+        folder = git_dir(root)
+        box = folder / OUTBOX
+        if not box.exists():
+            return []
+        taken = folder / f"{OUTBOX}.{os.getpid()}.{time.time_ns()}.taking"
+        os.replace(box, taken)
+    except Exception:
+        return []
+    out: List[Dict[str, str]] = []
+    try:
+        for line in taken.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                item = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(item, dict) and isinstance(item.get("text"), str) and item["text"].strip():
+                out.append({"id": str(item.get("id") or f"{taken.name}:{len(out)}"), "text": item["text"]})
+    except Exception:
+        pass
+    try:
+        taken.unlink()
+    except Exception:
+        pass
+    return out
+
+
+def web_url(root: Path) -> str:
+    """The address of the running web page with the same views, or ""."""
+    try:
+        from . import watch
+        url = getattr(watch, "web_url", None)
+        return (url(root) or "") if url else ""
+    except Exception:
+        return ""
+
+
+def unread_count(root: Path, name: str) -> int:
+    """What `name` has not read on the bus since the current plan."""
+    try:
+        pending = getattr(agents, "pending", None)
+        return int(pending(root, name)) if pending else len(agents.inbox(root, name, mark=False))
+    except Exception:
+        return 0
 
 
 def _show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None) -> Dict[str, Any]:

@@ -115,10 +115,37 @@ def edited_this_turn(root: Path, cfg: Dict[str, Any]) -> List[str]:
 
 def on_start(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[str]:
     """A session someone watches has started: open the terminal view beside it, when the terminal allows that and the
-    view is not open yet."""
+    view is not open yet. Started by Claude Code (a hook run, which has CLAUDE_PROJECT_DIR), also start the web page
+    with the same views in the background, unless the config says `[web] start = false`."""
+    if env.get("CLAUDE_PROJECT_DIR"):
+        start_web(root)
     if payload.get("source", "startup") not in ("startup", "resume") or not companion.watched(env):
         return None
     return companion.open_beside(root, env) or None
+
+
+def start_web(root: Path, wait: float = 3.0) -> None:
+    """Start the local web page (`system-diff watch`) if it is not running, giving it at most `wait` seconds; never
+    raises: a session must start whatever happens here."""
+    try:
+        if (config.lenient(root).get("web") or {}).get("start", True) is False:
+            return
+        from . import watch
+        start = getattr(watch, "start_detached", None)
+        if start is None:
+            return
+        import threading
+
+        def go() -> None:
+            try:
+                start(root)
+            except Exception:
+                pass
+        t = threading.Thread(target=go, daemon=True)
+        t.start()
+        t.join(wait)
+    except Exception:
+        pass
 
 
 def on_prompt(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:

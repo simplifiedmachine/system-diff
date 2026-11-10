@@ -153,6 +153,16 @@ def inbox(root: Path, agent: str, mark: bool = True) -> List[Dict[str, Any]]:
     return new
 
 
+def pending(root: Path, name: str) -> int:
+    """How many unread messages `name` has that were published after the current plan was made (all its unread when
+    there is no plan), marking nothing read; 0 for an agent that is neither in the current plan nor "main"."""
+    p = _load(root)["plan"] or {}
+    if name != MAIN and p and name not in {g.get("name") for g in p.get("agents") or []}:
+        return 0
+    since = float(p.get("at") or 0)
+    return sum(1 for m in inbox(root, name, mark=False) if float(m.get("at") or 0) > since)
+
+
 def as_context(msgs: List[Dict[str, Any]], most: int = 8) -> str:
     """Messages as a few lines an agent reads with its next tool result."""
     if not msgs:
@@ -340,24 +350,31 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
                  + "Finish with a short summary of what you changed in the system's structure.")
         agents.append({"name": name, "area": a["title"], "blocks": a["blocks"], "subscribes": needs,
                        "talks_to": talks_to, "brief": brief})
-    data = _load(root)
-    data["plan"] = {"task": task, "at": round(time.time(), 3), "agents": [{k: v for k, v in g.items() if k != "brief"}
-                                                                          for g in agents]}
-    for g in agents:
-        a = _agent(data, g["name"])
-        a["brief"] = g["brief"]
-        a["blocks"] = list(g["blocks"])
-        a["topics"] = sorted(set(a["topics"]) | set(g["subscribes"]) | {f"agent:{g['name']}"})
-        for b in g["blocks"]:
-            data["claims"][b] = g["name"]
-    _save(root, data)
     how = ("Launch these agents now, in parallel, each as its own subagent with its brief as the prompt (one message "
            "with several Task/Agent tool calls). Do not do their work yourself. When they finish, read the system-diff "
            "`inbox` tool as \"main\" and integrate: resolve what they published, then check the whole with "
            "`system_diff`." if len(agents) > 1 else
            "One area: do it yourself; no team needed.")
+    at = round(time.time(), 3)
     publish(root, "all", f"Plan: {len(agents)} agent{'' if len(agents) == 1 else 's'} for: {task}", sender=MAIN,
             kind="plan")
+    # a new plan starts a clean team: the last plan's agents, claims, ids and warnings go ("main" stays as it was);
+    # the new agents start with no history, their cursors at the latest message on the bus
+    data = _load(root)
+    latest = messages(root)
+    last = latest[-1]["n"] if latest else 0
+    data["agents"] = {k: v for k, v in data["agents"].items() if k == MAIN}
+    data["claims"], data["ids"], data["warned"] = {}, {}, {}
+    data["plan"] = {"task": task, "at": at, "agents": [{k: v for k, v in g.items() if k != "brief"} for g in agents]}
+    for g in agents:
+        a = _agent(data, g["name"])
+        a["brief"] = g["brief"]
+        a["blocks"] = list(g["blocks"])
+        a["topics"] = sorted(set(g["subscribes"]) | {f"agent:{g['name']}"})
+        a["read"] = last
+        for b in g["blocks"]:
+            data["claims"][b] = g["name"]
+    _save(root, data)
     return {"task": task, "agents": agents, "how": how}
 
 

@@ -64,6 +64,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,172 C243,172 243,188 272,188" marker-end="url(#ar-call-same)"><title>agent → extract</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,788 272,788" marker-end="url(#ar-call-same)"><title>agent → learn</title></path>
 <path class="be k-call s-same" d="M214,172 C246,172 246,99 278,99 L478,99 C507,99 507,52 536,52" marker-end="url(#ar-call-same)"><title>agent → sources</title></path>
+<path class="be k-call s-same" d="M214,172 C252.7,172 252.7,248 220,248" marker-end="url(#ar-call-same)"><title>agent → watch</title></path>
 <path class="be k-call s-same" d="M478,488 C514,488 514,428 484,428" marker-end="url(#ar-call-same)"><title>agents → architecture</title></path>
 <path class="be k-call s-same" d="M478,488 C507,488 507,112 536,112" marker-end="url(#ar-call-same)"><title>agents → activity</title></path>
 <path class="be k-call s-same" d="M478,488 C544,488 544,128 484,128" marker-end="url(#ar-call-same)"><title>agents → config</title></path>
@@ -111,13 +112,13 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,112 C246,112 246,99 278,99 L478,99 C507,99 507,52 536,52" marker-end="url(#ar-call-same)"><title>mcp → sources</title></path>
 <path class="be k-call s-same" d="M214,112 C243,112 243,848 272,848" marker-end="url(#ar-call-same)"><title>mcp → textmap</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,788 272,788" marker-end="url(#ar-call-same)"><title>panel → learn</title></path>
+<path class="be k-call s-same" d="M214,368 C246,368 246,219 278,219 L478,219 C507,219 507,52 536,52" marker-end="url(#ar-call-same)"><title>panel → sources</title></path>
 <path class="be k-call s-same" d="M214,368 C246,368 246,219 278,219 L478,219 C507,219 507,112 536,112" marker-end="url(#ar-call-same)"><title>panel → activity</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,428 272,428" marker-end="url(#ar-call-same)"><title>panel → architecture</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,52 272,52" marker-end="url(#ar-call-same)"><title>panel → compare</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,128 272,128" marker-end="url(#ar-call-same)"><title>panel → config</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,188 272,188" marker-end="url(#ar-call-same)"><title>panel → extract</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,308 272,308" marker-end="url(#ar-call-same)"><title>panel → graph</title></path>
-<path class="be k-call s-same" d="M214,368 C246,368 246,219 278,219 L478,219 C507,219 507,52 536,52" marker-end="url(#ar-call-same)"><title>panel → sources</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,488 272,488" marker-end="url(#ar-call-same)"><title>panel → agents</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,608 272,608" marker-end="url(#ar-call-same)"><title>panel → canvas</title></path>
 <path class="be k-call s-same" d="M214,428 C246,428 246,279 278,279 L478,279 C507,279 507,112 536,112" marker-end="url(#ar-call-same)"><title>statusline → activity</title></path>
@@ -138,6 +139,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,248 C243,248 243,188 272,188" marker-end="url(#ar-call-same)"><title>watch → extract</title></path>
 <path class="be k-call s-same" d="M214,248 C243,248 243,308 272,308" marker-end="url(#ar-call-same)"><title>watch → graph</title></path>
 <path class="be k-call s-same" d="M214,248 C243,248 243,788 272,788" marker-end="url(#ar-call-same)"><title>watch → learn</title></path>
+<path class="be k-call s-same" d="M214,248 C260,248 260,368 220,368" marker-end="url(#ar-call-same)"><title>watch → panel</title></path>
 <path class="be k-call s-same" d="M214,248 C246,248 246,159 278,159 L478,159 C507,159 507,52 536,52" marker-end="url(#ar-call-same)"><title>watch → sources</title></path>
 <g class="bn t-component s-same" transform="translate(14,30)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Command line</text><text x="12" y="35" class="bn-s">3 files</text><title>Command line</title></g>
 <g class="bn t-component s-same" transform="translate(14,90)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">MCP server</text><text x="12" y="35" class="bn-s">1 file</text><title>MCP server</title></g>

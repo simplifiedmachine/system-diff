@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.4.6' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.4.7' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -43,6 +43,12 @@ let busy = false
 let again = false
 let columns = 100 // the pane's body width, as last drawn or reported by the page: drawing may not write state
 let last = '' // the last page drawn, so an unchanged look redraws nothing
+// What the web page's Send to Claude box asked for, by id: waiting to be taken by the session, being submitted now,
+// or taken. The page hands each item over once (the outbox is emptied as it is read), so one the session refuses
+// waits here for the next look.
+const waiting = new Map<string, string>()
+const trying = new Set<string>()
+const sent = new Set<string>()
 let regionTop = 1 // rows above the page in the pane's body: the tabs, and a note while there is one
 let windowAt = 0 // the pane's scroll: its first row showing, and how many show
 let windowRows = 40
@@ -64,6 +70,31 @@ async function run($: EngineInterface, argv: string[]): Promise<{ out: string; o
   return null
 }
 
+// Submit what was typed in the web page as the person's own words, each id once. The call resolves only as its turn
+// starts (once the session is idle), so the look does not wait for it; and one made where the session will not take it
+// (inside the /system-diff command's own hook) is tried again at the next look, the one on the clock.
+function deliver($: EngineInterface, send: Page['send']): void {
+  for (const item of Array.isArray(send) ? send : []) {
+    if (!item || typeof item.id !== 'string' || typeof item.text !== 'string' || !item.text) continue
+    if (!sent.has(item.id)) waiting.set(item.id, item.text)
+  }
+  for (const [id, text] of waiting) {
+    if (trying.has(id)) continue
+    trying.add(id)
+    const done = (ok: boolean) => {
+      trying.delete(id)
+      if (!ok) return
+      waiting.delete(id)
+      sent.add(id)
+    }
+    try {
+      $.prompt.submit({ text, asUser: true }).then(() => done(true), () => done(false))
+    } catch {
+      done(false)
+    }
+  }
+}
+
 async function refresh($: EngineInterface): Promise<void> {
   if (busy) {
     again = true // asked while a look runs: look again right after
@@ -79,9 +110,10 @@ async function refresh($: EngineInterface): Promise<void> {
       if (level >= 0) argv.push('--zoom', String(level)) // left out, the engine picks by the width (older ones too)
       const got = await run($, argv)
       if (got && !got.old) {
+        const data = JSON.parse(got.out) as Page
+        deliver($, data.send)
         if (got.out !== last) {
           last = got.out
-          const data = JSON.parse(got.out) as Page
           await update($, page, () => data)
         }
         if ((await read($, note)) !== '') await update($, note, () => '')
@@ -290,6 +322,7 @@ export const register: Register = on => {
           {behind.length > 0 && (
             <Button key="back" hotkey="b" plain onPress={() => void goBack($)}><Text dimColor>← Back</Text></Button>
           )}
+          {drawn?.web ? <Text key="web" dimColor>{`🌐 ${drawn.web}`}</Text> : null}
           <Button key="zoom-out" plain onPress={() => void zoomBy($, 1)}><Text dimColor>⊖</Text></Button>
           <Text dimColor>{ZOOM_WORD[drawn?.zoom ?? 0] ?? 'full'}</Text>
           <Button key="zoom-in" plain onPress={() => void zoomBy($, -1)}><Text dimColor>⊕</Text></Button>

@@ -1,11 +1,18 @@
 # system-diff
 
-**See what Claude Code is doing to your system while it works, and learn your system as it goes.**
+**See what Claude Code is doing to your system while it works, learn your system as it goes, and have a team of
+agents build it in parallel, block by block.**
 
-Claude Code edits files; system-diff tells you what those edits do to the *system*: which part Claude is working on
-and what that part is, the endpoints, connections, stored data and outside systems it adds, changes or removes, why
-each of those matters, and when one needs you to look before Claude goes on. Right in Claude Code, beside the chat.
-So you follow what is happening, learn the parts and the technology behind them, and steer Claude well when it asks.
+system-diff is two things:
+
+1. **The System diff pane.** Claude Code edits files; system-diff tells you what those edits do to the *system*: which
+   part Claude is working on and what that part is, the endpoints, connections, stored data and outside systems it
+   adds, changes or removes, why each of those matters, and when one needs you to look before Claude goes on. Right in
+   Claude Code, beside the chat. So you follow what is happening, learn the parts and the technology behind them, and
+   steer Claude well when it asks.
+2. **A multi-agent orchestrator for system development.** `plan_agents` splits the work by the system's blocks, one
+   agent per area; the agents run in parallel, claim their blocks, and tell each other what they change over an async
+   bus whose topics are the blocks. The pane's Agents tab shows them live: a lane per agent, its blocks in its colour.
 
 <!-- system-map:begin -->
 ![System map, generated from the code](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg)
@@ -26,7 +33,7 @@ pipx install "system-diff[mcp,tui]"
 system-diff setup claude --no-status-line   # the hooks, a skill and the MCP server (--scope project, --undo)
 ```
 
-Then, in Claude Code, the System diff pane:
+Then, in Claude Code, the System diff pane (and the web page with the same views, started with each session):
 
 ```
 /plugin marketplace add simplifiedmachine/system-diff
@@ -38,6 +45,13 @@ it again after you close it. (Should another marketplace you added also have a p
 `/plugin install system-diff@system-diff` names this one.) From a clone, `claude --plugin-dir mods/system-diff`
 loads it for one launch. Upgrading from an earlier version: run `system-diff setup claude` again; it updates the
 hooks it added before, and frees `/system-diff` for the pane.
+
+You get both features at once:
+
+- **The pane** shows what Claude does to the system and teaches you the parts it touches (below).
+- **The orchestrator** has Claude plan a team for each prompt that spans the system's blocks: agents run in parallel,
+  each on its own blocks, talking over the bus, and the pane's Agents tab shows them as they work (see
+  [A team of agents](#a-team-of-agents-by-the-systems-blocks)).
 
 ### The System diff pane
 
@@ -93,6 +107,14 @@ One meaning per colour, so your eye goes where it should:
 - **Red:** only what was taken away.
 
 `n` `r` `a` `t` switch views.
+
+### In a browser
+
+The same views (Now, Review, Agents, Topics) as a web page at http://127.0.0.1:8765/, on your machine only. The
+session-start hook starts it in the background; `system-diff watch` starts it by hand. Hover a block to pick it and
+light its flows, click to zoom in. The pane shows the link in its tab row (🌐) while it runs. `[web] start = false` in
+`system-diff.toml` turns the start with the session off. A Send to Claude box sends what you type to the live
+session, through the pane, as your own message; only the page system-diff serves can send.
 
 ### A team of agents, by the system's blocks
 

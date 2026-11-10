@@ -44,7 +44,8 @@ const page = (part: string, width: number) => ({
   details: { 'b:api': [[['API  ', 'bold'], ['uses Core · used by Developer', 'muted']]] },
 })
 
-function answer(on: any, asked: string[][], exitCode = 0, stderr = '', opened: Array<{ columns?: number }> = []) {
+function answer(on: any, asked: string[][], exitCode = 0, stderr = '', opened: Array<{ columns?: number }> = [],
+                more: Record<string, unknown> = {}) {
   on('command.register', () => ({ value: { command: 'system-diff-pane' } }))
   on('ui.open', (_: unknown, e: { columns?: number }) => {
     opened.push(e)
@@ -56,7 +57,7 @@ function answer(on: any, asked: string[][], exitCode = 0, stderr = '', opened: A
     const argv = [...e.argv]
     asked.push(argv)
     const at = (flag: string) => argv[argv.indexOf(flag) + 1] ?? ''
-    const out = argv.includes('panel') ? JSON.stringify(page(at('--part'), Number(at('--width')) || 100)) : 'ok'
+    const out = argv.includes('panel') ? JSON.stringify({ ...page(at('--part'), Number(at('--width')) || 100), ...more }) : 'ok'
     return { value: { exitCode, stdout: exitCode ? '' : out, stderr, isStdoutTruncated: false,
                       isStderrTruncated: false } }
   })
@@ -195,5 +196,29 @@ test('zoom out draws the diagrams compact, zoom in full again', async ($, on) =>
   expect(asked[asked.length - 1]?.join(' ')).toContain('--zoom 1')
   await ui.key({ key: '=', in: 'page' })
   expect(asked[asked.length - 1]?.join(' ')).toContain('--zoom 0')
+  await ui.unmount()
+})
+
+test('the tab row shows the address of the web page when one runs', async ($, on) => {
+  answer(on, [], 0, '', [], { web: 'http://127.0.0.1:8765/' })
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '🌐 http://127.0.0.1:8765/' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('what the web page sends is submitted as the person\'s words, once', async ($, on) => {
+  const submitted: Array<{ text: string; asUser?: boolean }> = []
+  on('prompt.submit', (_: unknown, e: { text: string; origin?: { asUser?: boolean } }) => {
+    submitted.push({ text: e.text, asUser: e.origin?.asUser })
+    return { text: e.text }
+  })
+  answer(on, [], 0, '', [], { send: [{ id: '1', text: 'hi' }] })
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.advance(3500)                 // the look on the clock delivers it (not the command's own hook)
+  await ui.key({ key: 'r', in: 'page' }) // more looks, the same page: not sent again
+  await ui.advance(7000)
+  expect(submitted).toEqual([{ text: 'hi', asUser: true }])
   await ui.unmount()
 })

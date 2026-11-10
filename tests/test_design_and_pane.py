@@ -425,3 +425,66 @@ def test_review_without_a_checkpoint_starts_before_the_last_commit(repo, capsys)
     out, text = page(capsys, repo, "--view", "review")
     assert any(t.startswith("SYSTEM SINCE BEFORE THE LAST COMMIT") for t in text)
     assert any("no longer answers DELETE" in t or "DELETE /api/orders/{id}" in t for t in text)   # the last commit's
+
+
+def test_a_new_plan_starts_a_clean_team_and_old_agents_have_nothing_pending(repo):
+    from system_diff import agents
+    agents.publish(repo, "all", "before any plan", sender="main")
+    agents.inbox(repo, "main")
+    agents.plan(repo, compare(repo, "HEAD", "."), "make the API and the store faster")
+    agents.tie(repo, "a1", "api")
+    agents.publish(repo, "all", "first team at work", sender="main")
+    agents.publish(repo, "agent:main", "a note for main", sender="api")
+    assert agents.pending(repo, "api") == 1
+    agents.plan(repo, compare(repo, "HEAD", "."), "make the store faster")
+    data = agents.state(repo)
+    assert "main" in data["agents"] and data["agents"]["main"]["read"] >= 1
+    assert data["ids"] == {} and data["warned"] == {}
+    old = {"api", "store"} - {g["name"] for g in data["plan"]["agents"]}
+    assert old == {"api"}
+    new = [g["name"] for g in data["plan"]["agents"]][0]
+    assert all(n not in data["agents"] for n in old)
+    assert set(data["agents"]) == {"main"} | {g["name"] for g in data["plan"]["agents"]}
+    assert set(data["claims"].values()) <= {g["name"] for g in data["plan"]["agents"]}
+    for n in old:
+        assert agents.pending(repo, n) == 0
+    assert agents.pending(repo, "someone-else") == 0
+    assert agents.pending(repo, new) == 0                       # nothing from before the plan
+    agents.publish(repo, "all", "second team at work", sender="main")
+    assert agents.pending(repo, new) == 1
+    assert agents.pending(repo, new) == 1                       # nothing marked read
+    texts = [m["text"] for m in agents.inbox(repo, new)]
+    assert texts == ["second team at work"]
+    agents.tie(repo, "b1", new)
+    assert agents.name_of(repo, "b1") == new and agents.name_of(repo, "a1") != "api"
+
+
+def test_the_page_carries_the_web_address_and_the_session_starts_the_web_page_unless_told_not_to(repo, capsys,
+                                                                                                  monkeypatch):
+    from system_diff import agent, watch
+    out, _ = page(capsys, repo)
+    assert "web" in out and isinstance(out["web"], str)
+    started = []
+    monkeypatch.setattr(watch, "start_detached", lambda root, port=8765: started.append(root) or None, raising=False)
+    hook = {"CLAUDE_PROJECT_DIR": str(repo), "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"}   # no terminal view to open
+    start = {"cwd": str(repo), "hook_event_name": "SessionStart", "source": "startup"}
+    assert agent.on_start(repo, start, env=hook) is None and started == [repo]
+    (repo / "system-diff.toml").write_text((repo / "system-diff.toml").read_text() + "\n[web]\nstart = false\n"
+                                           if (repo / "system-diff.toml").exists() else "[web]\nstart = false\n")
+    started.clear()
+    assert agent.on_start(repo, start, env=hook) is None and started == []
+
+
+def test_what_the_web_page_sends_comes_back_once_in_the_page_and_the_outbox_is_emptied(repo):
+    import json
+    from system_diff import pane
+    from system_diff.sources import git_dir
+    assert pane.show(repo)["send"] == []                        # no outbox: nothing to send
+    box = git_dir(repo) / "outbox.jsonl"
+    box.write_text(json.dumps({"id": "1", "at": "2026-11-10T10:00:00", "text": "hi"}) + "\nnot json\n"
+                   + json.dumps({"id": "2", "at": "2026-11-10T10:00:01", "text": "ünïcode ok"}, ensure_ascii=False)
+                   + "\n", encoding="utf-8")
+    assert pane.show(repo, view="review")["send"] == [{"id": "1", "text": "hi"}, {"id": "2", "text": "ünïcode ok"}]
+    assert not box.exists() and not list(git_dir(repo).glob("outbox.jsonl*"))
+    assert pane.show(repo, view="agents")["send"] == []         # taken once
+    assert pane.take_outbox(repo) == []
