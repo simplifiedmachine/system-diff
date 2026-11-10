@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.0' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -29,7 +29,12 @@ const zoomLevel = atom({ plugin: 'system-diff', key: 'zoom' } as const, -1, { sh
 const ZOOM_WORD = ['full', 'compact', 'tiny']
 
 // How to run system-diff: the repository's own virtualenv first, then whatever is on PATH.
+// First the plugin's own launcher (scripts/run.sh): it finds system-diff, or installs the plugin's own copy of it the
+// first time. Then, for a plugin loaded some other way (--plugin-dir), the places system-diff usually is.
+const LAUNCHER = 'exec sh "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/cache/system-diff/system-diff/' + VERSION +
+  '}/scripts/run.sh" "$@"'
 const RUNNERS: string[][] = [
+  ['sh', '-c', LAUNCHER, 'system-diff'],
   ['.venv/bin/python', '-m', 'system_diff'], ['.venv/Scripts/python.exe', '-m', 'system_diff'], ['system-diff'],
   ['python3', '-m', 'system_diff'], ['python', '-m', 'system_diff'],
 ]
@@ -54,7 +59,7 @@ let windowAt = 0 // the pane's scroll: its first row showing, and how many show
 let windowRows = 40
 let wantOffset: number | null = null
 
-async function run($: EngineInterface, argv: string[]): Promise<{ out: string; old: boolean } | null> {
+async function run($: EngineInterface, argv: string[]): Promise<{ out: string; old: boolean; installing?: boolean } | null> {
   for (const how of runner ? [runner] : RUNNERS) {
     try {
       const got = await $.process.run([...how, ...argv], { timeoutMs: 20000 })
@@ -63,6 +68,7 @@ async function run($: EngineInterface, argv: string[]): Promise<{ out: string; o
         return { out: got.stdout, old: false }
       }
       if (/unrecognized arguments|invalid choice/.test(got.stderr)) return { out: '', old: true }
+      if (/system-diff: installing/.test(got.stderr)) return { out: '', old: false, installing: true }
     } catch {
       // not this way: try the next
     }
@@ -109,7 +115,7 @@ async function refresh($: EngineInterface): Promise<void> {
       const level = await read($, zoomLevel)
       if (level >= 0) argv.push('--zoom', String(level)) // left out, the engine picks by the width (older ones too)
       const got = await run($, argv)
-      if (got && !got.old) {
+      if (got && !got.old && !got.installing) {
         const data = JSON.parse(got.out) as Page
         deliver($, data.send)
         if (got.out !== last) {
@@ -118,7 +124,9 @@ async function refresh($: EngineInterface): Promise<void> {
         }
         if ((await read($, note)) !== '') await update($, note, () => '')
       } else {
-        await update($, note, () => got?.old
+        await update($, note, () => got?.installing
+          ? 'Installing system-diff for this plugin (first use, about a minute)…'
+          : got?.old
           ? 'This pane needs a newer system-diff: pipx upgrade system-diff'
           : 'system-diff is not installed here: pipx install "system-diff[mcp,tui]", then system-diff setup claude')
       }
