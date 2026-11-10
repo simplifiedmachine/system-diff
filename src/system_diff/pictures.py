@@ -331,10 +331,10 @@ AW, AGX, APAD, ATOP = 220, 112, 20, 42
 AROW, AITEM = 16, 26
 OWNERS = (("#0b7f8a", "#4fd3dc"), ("#9b3fc2", "#d482ff"), ("#1d8a3c", "#5fd283"), ("#9a5600", "#f0b44c"),
           ("#1f5fbf", "#5ea4ff"))
-_ARCH_LIGHT = {"ink": INK, "ink2": INK2, "muted": MUTED, "line": "#d5dbe3", "surface": SURFACE, "surface2": SURFACE2,
+_ARCH_LIGHT = {"ink": INK, "ink2": INK2, "muted": MUTED, "line": "#aab4c2", "surface": SURFACE, "surface2": SURFACE2,
                "ok": OK, "warn": WARN, "attn": ATTN, "attn-bg": ATTN_BG, "work": WORK, "work-bg": WORK_BG,
                "item": "#f3f5f8", **{f"o{i}": c[0] for i, c in enumerate(OWNERS)}}
-_ARCH_DARK = {"ink": "#e6eaf0", "ink2": "#c2cad6", "muted": "#8b97a8", "line": "#3a4350", "surface": "#1b2028",
+_ARCH_DARK = {"ink": "#e6eaf0", "ink2": "#c2cad6", "muted": "#a7b2c1", "line": "#5d6878", "surface": "#1b2028",
               "surface2": "#13171d", "ok": "#5fd283", "warn": "#f0b44c", "attn": "#ff6f6f", "attn-bg": "#3a1d1d",
               "work": "#5ea4ff", "work-bg": "#1a2a40", "item": "#232a34",
               **{f"o{i}": c[1] for i, c in enumerate(OWNERS)}}
@@ -352,11 +352,11 @@ svg.sd-arch {{ {_vars(_ARCH_LIGHT)} }}
 .sd-arch text {{ font-family: {SANS}; }}
 .sd-arch .bg {{ fill: var(--surface2); }}
 .sd-arch .col {{ font-size: 11px; font-weight: 600; letter-spacing: .06em; fill: var(--muted); }}
-.sd-arch .an .box {{ fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }}
-.sd-arch .an.t-actor .box {{ fill: var(--work-bg); stroke: var(--work); stroke-opacity: .45; }}
+.sd-arch .an .box {{ fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }}
+.sd-arch .an.t-actor .box {{ fill: var(--work-bg); stroke: var(--work); stroke-opacity: .8; }}
 .sd-arch .an.t-store .box, .sd-arch .an.t-store .lip {{ fill: var(--work-bg); }}
 .sd-arch .an .lip {{ stroke: var(--line); stroke-width: 1.3; }}
-.sd-arch .an.t-host .box {{ fill: var(--surface2); stroke-dasharray: 5 4; stroke: var(--muted); stroke-opacity: .6; }}
+.sd-arch .an.t-host .box {{ fill: var(--surface2); stroke-dasharray: 5 4; stroke: var(--muted); stroke-opacity: .9; }}
 .sd-arch .an.t-group .box {{ fill: var(--surface2); stroke-width: 1.5; }}
 .sd-arch .an .band {{ fill: transparent; }}
 .sd-arch .an.s-added .box, .sd-arch .an.s-added .lip {{ stroke: var(--ok); stroke-width: 1.9; stroke-opacity: 1; }}
@@ -387,7 +387,7 @@ svg.sd-arch {{ {_vars(_ARCH_LIGHT)} }}
 .sd-arch .ai.s-removed rect {{ stroke: var(--attn); stroke-dasharray: 4 3; }}
 .sd-arch .ai.owned rect {{ stroke: var(--own); stroke-width: 1.6; }}
 .sd-arch .ai.agent rect {{ stroke: var(--work); stroke-width: 1.8; fill: var(--work-bg); }}
-.sd-arch .ae path {{ fill: none; stroke: var(--muted); stroke-width: 1.5; opacity: .8; }}
+.sd-arch .ae path {{ fill: none; stroke: var(--muted); stroke-width: 1.6; opacity: 1; }}
 .sd-arch .ae.k-data path {{ stroke: var(--work); }}
 .sd-arch .ae.k-network path {{ stroke: var(--warn); stroke-dasharray: 6 4; }}
 .sd-arch .ae.s-added path {{ stroke: var(--ok); stroke-width: 2.3; opacity: 1; }}
@@ -405,7 +405,7 @@ svg.sd-arch {{ {_vars(_ARCH_LIGHT)} }}
 .sd-arch .lg.s-added {{ fill: var(--ok); font-weight: 600; }} .sd-arch .lg.s-changed {{ fill: var(--warn); font-weight: 600; }}
 .sd-arch .lg.s-removed {{ fill: var(--attn); font-weight: 600; }} .sd-arch .lg.agent {{ fill: var(--work); font-weight: 600; }}
 .sd-arch [data-id] {{ transition: opacity .15s; }}
-.sd-arch .dim {{ opacity: .28; }}
+.sd-arch .dim {{ opacity: .45; }}
 .sd-arch .an.lit > .box, .sd-arch .an.lit > .lip {{ stroke-width: 2.6; stroke-opacity: 1; }}
 .sd-arch .ai.lit rect {{ stroke-width: 2.2; }}
 .sd-arch .ae.lit path {{ stroke-width: 2.8; opacity: 1; }}

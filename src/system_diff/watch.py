@@ -189,6 +189,7 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
     <button id="in" type="button" aria-label="Zoom in">+</button><span id="zoomlabel">auto</span>
     <button id="out" type="button" aria-label="Zoom out">−</button></div>
   <span class="spacer"></span><span id="since"></span>
+  <button id="theme" type="button" title="Light, dark, or as your system is">◐ auto</button>
   <button id="seen" class="primary" type="button" title="Move the checkpoint here: the page then shows only what is new">Mark as seen</button>
 </header>
 <main>
@@ -363,6 +364,18 @@ function lightsOf(pid, own) {
 }
 function rawId(d) { return d && d.startsWith("b:") ? d.slice(2) : d; }
 function keyed(map, d) { return map ? (map[d] !== undefined ? map[d] : map[rawId(d)]) : undefined; }
+const THEMES = ["auto", "light", "dark"];
+function setTheme(t) {
+  if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  $("theme").textContent = { auto: "◐ auto", light: "☀ light", dark: "☾ dark" }[t];
+  try { localStorage.setItem("sd-theme", t); } catch (e) {}
+}
+(function () { let t = "auto"; try { t = localStorage.getItem("sd-theme") || "auto"; } catch (e) {}
+  setTheme(THEMES.includes(t) ? t : "auto"); })();
+$("theme").addEventListener("click", () => {
+  const cur = document.documentElement.dataset.theme || "auto";
+  setTheme(THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length]);
+});
 function applyPick() {
   const g = (ui.data && ui.data.diagram) || {}, nodes = $("dia").querySelectorAll("[data-id]");
   let picked = "", ids = [];
@@ -370,7 +383,7 @@ function applyPick() {
   else if (ui.pick) { picked = ui.pick; ids = keyed(g.lights, picked) || []; }
   const lit = new Set();
   for (const x of ids) { lit.add(x); lit.add("b:" + x); }
-  const active = !!(picked || ui.hover);
+  const active = !!ui.hover || (!!picked && ui.over);   // dim the rest only while the mouse is on the diagram
   for (const n of nodes) {
     const d = n.getAttribute("data-id");
     n.classList.toggle("picked", !!picked && d === picked);
@@ -396,6 +409,8 @@ function pickAt(target) {
   const n = target && target.closest && target.closest("#dia [data-id]");
   return n ? n.getAttribute("data-id") : "";
 }
+$("dia").addEventListener("mouseenter", () => { ui.over = true; applyPick(); });
+$("dia").addEventListener("mouseleave", () => { ui.over = false; applyPick(); });
 $("dia").addEventListener("mouseover", e => {
   const d = pickAt(e.target);
   if (d && d !== ui.pick) { ui.pick = d; ui.mine = true; applyPick(); }
@@ -411,7 +426,11 @@ function drawDiagram(g) {
   if (!g.svg) box.textContent = "No diagram for this view.";
   box.setAttribute("aria-label", g.title || "System diagram");
   const svg = box.querySelector("svg");
-  if (svg) { svg.removeAttribute("width"); svg.removeAttribute("height"); }
+  if (svg) {
+    svg.removeAttribute("width"); svg.removeAttribute("height");
+    const vb = (svg.getAttribute("viewBox") || "").split(/[ ,]+/).map(Number);
+    if (vb.length === 4 && vb[2] > 0) { svg.style.maxWidth = Math.round(vb[2] * 1.1) + "px"; svg.style.margin = "0 auto"; }
+  }
   for (const n of box.querySelectorAll("[data-id]"))
     if (keyed(g.enter, n.getAttribute("data-id"))) n.classList.add("can-enter");
   box.classList.toggle("enterable", !!(g.enter && Object.keys(g.enter).length));
