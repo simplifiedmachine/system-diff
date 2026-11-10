@@ -16,18 +16,20 @@ system-diff is two things:
 
 ## Install
 
-In Claude Code:
+Three steps. First the engine, in a terminal (Python 3.11 or newer):
+
+```
+pip install "system-diff[mcp]"
+```
+
+(or `pipx install "system-diff[mcp]"`). Then, in Claude Code:
 
 ```
 /plugin marketplace add simplifiedmachine/system-diff
 /plugin install system-diff
 ```
 
-That is the whole setup. The pane opens beside the chat, and the same views open in your browser. The first time,
-the plugin installs the system-diff engine for itself (about a minute; the pane says so). It uses
-[uv](https://docs.astral.sh/uv/) or Python 3.11+ when the machine has one; with neither (Windows often has no Python)
-it fetches uv, which brings its own Python, into the plugin's own data folder, and leaves PATH alone. Offline, install
-uv yourself (`winget install astral-sh.uv` on Windows, `curl -LsSf https://astral.sh/uv/install.sh | sh` elsewhere).
+and restart Claude Code. The pane opens beside the chat, and the same views open in your browser.
 
 <!-- system-map:begin -->
 ![System map, generated from the code](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg)
@@ -51,10 +53,9 @@ The plugin brings everything, in every session and every project:
 - **The hooks** that follow what Claude reads and edits, ask it to plan a team, and carry the agents' messages.
 - **The MCP server** Claude uses to explain the system, show what changed and plan a team, and **its skill**.
 
-**Where the engine comes from.** The plugin uses, in order: a project's own `.venv` with system-diff in it, its own
-copy (the version it was released with, installed the first time into its data folder, with uv when you have it,
-else Python's venv and pip), then a system-diff you installed yourself (`pipx install "system-diff[mcp]"`). Where it
-can install none, it stays quiet and never holds a session up.
+**Where the engine comes from.** The plugin uses, in order: a project's own `.venv` with system-diff in it (a project
+that pins it), then the system-diff you installed (`pip install "system-diff[mcp]"` or pipx). Where there is none,
+the pane says how to install it, and the hooks stay quiet and never hold a session up.
 
 **Other ways in.** From a clone, `claude --plugin-dir mods/system-diff` loads the plugin for one launch. Without the
 plugin, `system-diff setup claude` wires the hooks, the skill and the MCP server into Claude Code by hand. Upgrading

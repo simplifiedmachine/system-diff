@@ -84,7 +84,7 @@ test('without system-diff the pane says how to get it; with an old one, how to u
   answer(on, [], 127)
   await $.command.run(RUN)
   let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /could not install itself/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /system-diff is not installed/ })).toBeDefined()
   await ui.unmount()
 })
 
