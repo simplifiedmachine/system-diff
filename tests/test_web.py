@@ -181,3 +181,16 @@ def test_in_a_codespace_the_page_is_linked_and_sent_from_its_forwarded_address()
     assert watch.forwarded(8765, env) == "https://fancy-name-8765.app.github.dev/"
     assert "https://fancy-name-8765.app.github.dev" in watch.origins(8765, env)
     assert watch.forwarded(8765, {}) == "" and watch.origins(8765, {}) == {"http://127.0.0.1:8765", "http://localhost:8765"}
+
+
+def test_the_pane_page_is_utf8_on_a_cp1252_pipe(tmp_path):
+    """Windows writes a pipe in cp1252, which cannot hold the diagrams' box-drawing characters: the engine writes
+    UTF-8 whatever the code page."""
+    import json
+    import subprocess
+    import sys
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+    got = subprocess.run([sys.executable, "-m", "system_diff", "panel", "--protocol", "2", "--width", "100"],
+                         cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True)
+    assert got.returncode == 0, got.stderr.decode("utf-8", "replace")[-400:]
+    json.loads(got.stdout.decode("utf-8"))

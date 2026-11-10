@@ -204,7 +204,18 @@ def parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _utf8() -> None:
+    """Read and write UTF-8 whatever the system's code page: on Windows a pipe is cp1252 by default, which cannot
+    hold the diagrams' box-drawing characters (the pane would get a UnicodeEncodeError, not its page)."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    _utf8()
     args = parser().parse_args(argv)
     root = repo_root(Path(args.repo) if args.repo else None)
     if args.cmd == "map":

@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.8' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.9' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -58,7 +58,11 @@ let windowAt = 0 // the pane's scroll: its first row showing, and how many show
 let windowRows = 40
 let wantOffset: number | null = null
 
+// The last error from a system-diff that is there but failed (not one that is missing), to show in place of the page.
+let failure = ''
+
 async function run($: EngineInterface, argv: string[]): Promise<{ out: string; old: boolean } | null> {
+  failure = ''
   for (const how of runner ? [runner] : RUNNERS) {
     try {
       const got = await $.process.run([...how, ...argv], { timeoutMs: 20000 })
@@ -67,6 +71,10 @@ async function run($: EngineInterface, argv: string[]): Promise<{ out: string; o
         return { out: got.stdout, old: false }
       }
       if (/unrecognized arguments|invalid choice/.test(got.stderr)) return { out: '', old: true }
+      const lines = got.stderr.split(/\r?\n/).filter(l => l.trim())
+      if (lines.length && !/No module named|not found|not recognized|cannot find/i.test(got.stderr)) {
+        failure = lines[lines.length - 1].trim().slice(0, 200)
+      }
     } catch {
       // not this way: try the next
     }
@@ -122,7 +130,9 @@ async function refresh($: EngineInterface): Promise<void> {
         }
         if ((await read($, note)) !== '') await update($, note, () => '')
       } else {
-        await update($, note, () => got?.old
+        await update($, note, () => failure
+          ? `system-diff is installed but failed here: ${failure}`
+          : got?.old
           ? 'This pane needs a newer system-diff: pip install -U "system-diff[mcp]" (or pipx upgrade system-diff)'
           : 'system-diff is not installed. In a terminal: pip install "system-diff[mcp]" (Python 3.11+), ' +
             'then restart Claude Code.')
