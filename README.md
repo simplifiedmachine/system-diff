@@ -72,7 +72,8 @@ Claude is changing in it. `/system-diff close` (or "× close" in its tab row) hi
 - **Review**: everything you have not marked as seen, across turns: the system diagram since your checkpoint with its
   changes coloured, every block to pick and zoom into, then every change read for design and the exact list. Once
   you have understood it, tell Claude "mark it as seen" (or run `system-diff checkpoint`): from then on you see only
-  what is new to you.
+  what is new to you. Before you have marked anything, it starts from before your last commit, and lists the parts
+  whose code changed even when their structure did not.
 - **Agents**: the team at work. A lane per agent in its own colour, live: time runs left to right since the turn
   began, with a mark where it read (◎), edited (✎), changed the system (▲) or told the others something (✉), then what
   it is doing now and how many of its blocks it has touched. Pick an agent to light its blocks; the system diagram

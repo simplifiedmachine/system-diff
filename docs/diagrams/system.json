@@ -201,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 866,
+   "lines": 878,
    "hub": false,
    "quiet": false
   },
@@ -750,7 +750,8 @@
   ],
   "panel>compare": [
    "compare",
-   "turn_sha"
+   "turn_sha",
+   "checkpoint_sha"
   ],
   "panel>config": [
    "lenient"
@@ -783,7 +784,8 @@
    "TECH"
   ],
   "panel>sources": [
-   "GitSource"
+   "GitSource",
+   "git"
   ],
   "panel>textmap": [
    "Line"

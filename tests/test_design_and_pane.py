@@ -419,3 +419,9 @@ def test_the_agents_tab_shows_each_agent_live_in_its_lane(repo, capsys):
     lane = next(t for t in live if t.startswith("api"))
     assert "▲" in lane and "● ✎ editing routes.py" in lane and "1/1 blocks · 1 changes" in lane
     assert any(t.startswith("store") and "○ idle" in t for t in live)
+
+
+def test_review_without_a_checkpoint_starts_before_the_last_commit(repo, capsys):
+    out, text = page(capsys, repo, "--view", "review")
+    assert any(t.startswith("SYSTEM SINCE BEFORE THE LAST COMMIT") for t in text)
+    assert any("no longer answers DELETE" in t or "DELETE /api/orders/{id}" in t for t in text)   # the last commit's

@@ -17,10 +17,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import activity, agents, architecture, canvas, config, design, graph, inside, profile
-from .compare import compare, turn_sha
+from .compare import checkpoint_sha, compare, turn_sha
 from .extract import Code, first_party, outside_imports
 from .learn import STDLIB, BASIC
-from .sources import GitSource
+from .sources import GitSource, git
 from .topics import ROLE_OF, TECH, tech_key
 
 SLOT = 2          # rows under a diagram for the picked box's detail
@@ -281,9 +281,16 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
 def view_review(root: Path, width: int) -> Dict[str, Any]:
     """Everything you have not marked as seen: the system diagram since your checkpoint, its changes coloured, then
     each change read for design, then the exact list. Mark it seen and the next review starts from here."""
-    c = compare(root, "checkpoint", ".")
+    base, since = "checkpoint", "since your checkpoint"
+    if not checkpoint_sha(root):   # nothing marked as seen yet: what the last commit did, and what is not committed
+        try:
+            git("rev-parse", "--verify", "HEAD~1^{commit}", cwd=root)
+            last = git("log", "-1", "--format=%h %s", cwd=root).strip()
+            base, since = "HEAD~1", f"since before the last commit ({canvas.cut(last, 50)})"
+        except Exception:   # a first commit: from there
+            since = "since the last commit"
+    c = compare(root, base, ".")
     agent = activity.now(activity.events(root, 200), Code(c.cfg))["part"]
-    since = "since your checkpoint" if c.base == "checkpoint" else f"since {c.base}"
     page = canvas.Page(width)
     page.add([c.diff["headline"], "bold" if c.diff["changes"] else "muted"])
     page.heading("System " + since, "click, then ← ↑ ↓ → · ↵ zooms in")
@@ -301,7 +308,12 @@ def view_review(root: Path, width: int) -> Dict[str, Any]:
         page.add(["Seen it all? Tell Claude \"mark it as seen\" (or run system-diff checkpoint): the next review "
                   "starts from here.", "muted"])
     else:
-        page.add(["   nothing has changed in the system's structure since you last marked it seen", "muted"])
+        page.add(["   no change to the system's structure " + since.split(" (")[0], "muted"])
+    edited = [ch for ch in c.diff["changes"] if ch["entity"] in ("component", "deploy") and ch["op"] == "change"]
+    if edited:   # code that changed without changing the structure: still worth a look
+        page.heading("Code changed " + since.split(" (")[0], "inside these parts, their structure the same")
+        for ch in edited:
+            page.add([" ~ ", "changed"], [ch["label"], ""], [("  " + ch["detail"][0]) if ch["detail"] else "", "muted"])
     return page.json(view="review", part="")
 
 
