@@ -510,3 +510,17 @@ def test_the_pane_plugin_ships_with_the_package_at_the_same_version():
     shown = (root / "mods/system-diff/hooks/register.tsx").read_text(encoding="utf-8")
     assert f"const VERSION = '{plugin['version']}'" in shown   # the pane's corner says the version it is
     assert [(p["name"], p["source"]) for p in market["plugins"]] == [("system-diff", "./mods/system-diff")]
+
+
+def test_the_plugin_carries_the_hooks_the_mcp_server_and_the_skill():
+    from system_diff import agent
+    root = Path(__file__).resolve().parent.parent / "mods/system-diff"
+    hooks = json.loads((root / "hooks/hooks.json").read_text(encoding="utf-8"))
+    assert hooks["modules"] == ["./register.tsx"]
+    events = {e: [h["command"] for entry in v for h in entry["hooks"]] for e, v in hooks["hooks"].items()}
+    assert set(events) == {h[0] for h in agent.HOOKS}                       # every hook setup would add
+    assert all(c == 'sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" hook' for cs in events.values() for c in cs)
+    mcp = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["system-diff"]
+    assert mcp["args"][-1] == "mcp" and (root / "scripts/run.sh").is_file()
+    skill = (root / "skills/system-diff-explain/SKILL.md").read_text(encoding="utf-8")
+    assert skill == agent.SKILL.replace(agent.SKILL_MARK + "\n", "")      # the same skill setup writes

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "system-diff": {
+      "command": "sh",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/run.sh", "mcp"]
+    }
+  }
+}

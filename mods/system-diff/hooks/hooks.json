@@ -1,1 +1,19 @@
-{ "modules": ["./register.tsx"] }
+{
+  "description": "system-diff: what Claude does to your system, in the pane and on a local web page. The hooks note what Claude reads and edits, start the web page with the session, ask Claude to plan a team of agents, and carry the agents' messages.",
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup|resume",
+        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook", "timeout": 10 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook", "timeout": 10 }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook", "timeout": 15 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook", "timeout": 30 }] }
+    ]
+  },
+  "modules": ["./register.tsx"]
+}

@@ -30,21 +30,27 @@ Read by the code but set by no deploy configuration, so not drawn: Headless Chro
 
 ```sh
 pipx install "system-diff[mcp,tui]"
-system-diff setup claude --no-status-line   # the hooks, a skill and the MCP server (--scope project, --undo)
 ```
 
-Then, in Claude Code, the System diff pane (and the web page with the same views, started with each session):
+Then, in Claude Code:
 
 ```
 /plugin marketplace add simplifiedmachine/system-diff
 /plugin install system-diff
 ```
 
+That is all. The plugin brings everything, in every session and every project: the System diff pane, the same views
+on a web page in your browser (started with the session, linked in the pane), the hooks that follow what Claude
+reads and edits, the MCP server Claude uses to explain the system and plan a team, and its skill. Two ways to look
+at one thing: in the terminal beside the chat, or in the browser.
+
 Python 3.11 or newer. Claude Code opens the pane by itself when the terminal is wide enough; `/system-diff` opens
 it again after you close it. (Should another marketplace you added also have a plugin called system-diff,
 `/plugin install system-diff@system-diff` names this one.) From a clone, `claude --plugin-dir mods/system-diff`
-loads it for one launch. Upgrading from an earlier version: run `system-diff setup claude` again; it updates the
-hooks it added before, and frees `/system-diff` for the pane.
+loads it for one launch. Upgrading from a version before the plugin carried the hooks: run
+`system-diff setup claude --undo` (and `--scope local` or `project` where you set it up there), so they do not run
+twice. Without the plugin, `system-diff setup claude` wires the hooks, the skill and the MCP server into Claude Code
+by hand.
 
 You get both features at once:
 
