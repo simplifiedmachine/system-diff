@@ -3,9 +3,10 @@
 #   1. the project's own virtualenv, when it has system-diff (a project that develops or pins it);
 #   2. the plugin's own copy, the version the plugin was released with, in its data folder;
 #   3. system-diff on PATH (pipx), then any python3 that has it.
-# Where none is found it installs the plugin's own copy (uv when there is one, else python3's venv and pip): in the
+# Where none is found it installs the plugin's own copy (uv when there is one, else python3's venv and pip, and with
+# neither it fetches uv, which brings its own Python, into the plugin's data folder): in the
 # background for a hook, which must not hold up the session and lets this one go, and right away for the MCP server
-# and the pane, which need it to start. Without a Python 3.11+ it does nothing and succeeds.
+# and the pane, which need it to start.
 root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 data="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/plugins/data/system-diff}"
 dir="${CLAUDE_PROJECT_DIR:-$PWD}"
@@ -26,6 +27,18 @@ python311() {
   return 1
 }
 
+get_uv() {   # uv, which brings its own Python, into the plugin's data folder (nothing on PATH changes)
+  mkdir -p "$data/uv"
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      UV_INSTALL_DIR="$data/uv" UV_NO_MODIFY_PATH=1 \
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex" ;;
+    *)
+      if command -v curl >/dev/null 2>&1; then curl -LsSf https://astral.sh/uv/install.sh
+      else wget -qO- https://astral.sh/uv/install.sh; fi | UV_INSTALL_DIR="$data/uv" UV_NO_MODIFY_PATH=1 sh ;;
+  esac >>"$data/install.log" 2>&1
+}
+
 install() {   # the plugin's own copy of the engine, at the plugin's version; one install at a time
   mkdir -p "$data" || return 1
   if [ -d "$data/.installing" ] && [ -n "$(find "$data/.installing" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
@@ -35,14 +48,19 @@ install() {   # the plugin's own copy of the engine, at the plugin's version; on
   trap 'rmdir "$data/.installing" 2>/dev/null' EXIT
   spec="system-diff[mcp]${version:+==$version}"
   # the plugin's own version; when that is not on PyPI (yet), the latest
-  if command -v uv >/dev/null 2>&1; then
-    uv venv --quiet --python ">=3.11" "$venv" >"$data/install.log" 2>&1 &&
-      { uv pip install --quiet --python "$venv" "$spec" >>"$data/install.log" 2>&1 ||
-        uv pip install --quiet --python "$venv" "system-diff[mcp]" >>"$data/install.log" 2>&1; }
+  : >"$data/install.log"
+  uv=$(command -v uv 2>/dev/null) || uv="$data/uv/uv"; [ -x "$uv" ] || [ ! -x "$data/uv/uv.exe" ] || uv="$data/uv/uv.exe"
+  if [ ! -x "$uv" ] && ! python311 >/dev/null; then   # no uv and no Python: fetch uv, and Python with it
+    get_uv; uv="$data/uv/uv"; [ -x "$uv" ] || uv="$data/uv/uv.exe"
+  fi
+  if [ -x "$uv" ]; then
+    "$uv" venv --quiet --python ">=3.11" "$venv" >>"$data/install.log" 2>&1 &&
+      { "$uv" pip install --quiet --python "$venv" "$spec" >>"$data/install.log" 2>&1 ||
+        "$uv" pip install --quiet --python "$venv" "system-diff[mcp]" >>"$data/install.log" 2>&1; }
   else
     py=$(python311) || return 1
     vpy="$venv/bin/python"; case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) vpy="$venv/Scripts/python.exe";; esac
-    "$py" -m venv "$venv" >"$data/install.log" 2>&1 &&
+    "$py" -m venv "$venv" >>"$data/install.log" 2>&1 &&
       { "$vpy" -m pip install --quiet --disable-pip-version-check "$spec" >>"$data/install.log" 2>&1 ||
         "$vpy" -m pip install --quiet --disable-pip-version-check "system-diff[mcp]" >>"$data/install.log" 2>&1; }
   fi
@@ -75,7 +93,7 @@ fi
 if has "$own"; then ( install </dev/null >/dev/null 2>&1 & ); exec "$own" -m system_diff "$@"; fi
 if [ "$1" = "mcp" ]; then   # the MCP server starts once a session: it waits for the install
   if install || current; then exec "$own" -m system_diff "$@"; fi
-  echo "system-diff: could not install the engine (Python 3.11 or newer is needed): see $data/install.log" >&2
+  echo "system-diff: could not install the engine (it needs uv or Python 3.11+, or the internet to fetch uv): see $data/install.log" >&2
   exit 1
 fi
 ( install </dev/null >/dev/null 2>&1 & )   # the pane asks again every few seconds: it shows that this is under way

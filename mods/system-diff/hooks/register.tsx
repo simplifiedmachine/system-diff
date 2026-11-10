@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.5' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.6' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -33,8 +33,13 @@ const ZOOM_WORD = ['full', 'compact', 'tiny']
 // first time. Then, for a plugin loaded some other way (--plugin-dir), the places system-diff usually is.
 const LAUNCHER = 'exec sh "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/cache/system-diff/system-diff/' + VERSION +
   '}/scripts/run.sh" "$@"'
+// On Windows there may be no sh: scripts/run.ps1 does the same in PowerShell. Its arguments go in its command, quoted.
+const PS_LAUNCHER = '$r = if ($env:CLAUDE_PLUGIN_ROOT) { $env:CLAUDE_PLUGIN_ROOT } else { "$HOME\\.claude\\plugins\\cache\\' +
+  'system-diff\\system-diff\\' + VERSION + '" }; & "$r\\scripts\\run.ps1"'
+const POWERSHELL = ['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command']
 const RUNNERS: string[][] = [
   ['sh', '-c', LAUNCHER, 'system-diff'],
+  POWERSHELL,
   ['.venv/bin/python', '-m', 'system_diff'], ['.venv/Scripts/python.exe', '-m', 'system_diff'], ['system-diff'],
   // uv runs it with no shell and no Python of the machine's own (Windows): the plugin's version, else the latest
   ['uvx', '--from', `system-diff[mcp]==${VERSION}`, 'system-diff'], ['uvx', '--from', 'system-diff[mcp]', 'system-diff'],
@@ -64,7 +69,10 @@ let wantOffset: number | null = null
 async function run($: EngineInterface, argv: string[]): Promise<{ out: string; old: boolean; installing?: boolean } | null> {
   for (const how of runner ? [runner] : RUNNERS) {
     try {
-      const got = await $.process.run([...how, ...argv], { timeoutMs: 20000 })
+      const command = how === POWERSHELL
+        ? [...how, [PS_LAUNCHER, ...argv.map(a => "'" + a.replace(/'/g, "''") + "'")].join(' ')]
+        : [...how, ...argv]
+      const got = await $.process.run(command, { timeoutMs: 20000 })
       if (got.exitCode === 0) {
         runner = how
         return { out: got.stdout, old: false }
@@ -130,8 +138,9 @@ async function refresh($: EngineInterface): Promise<void> {
           ? 'Installing system-diff for this plugin (first use, about a minute)…'
           : got?.old
           ? 'This pane needs a newer system-diff: pipx upgrade system-diff'
-          : 'system-diff needs uv or Python 3.11+ to install itself. Install uv (Windows: winget install astral-sh.uv; ' +
-            'macOS/Linux: curl -LsSf https://astral.sh/uv/install.sh | sh) or Python 3.11+, then restart Claude Code.')
+          : 'system-diff could not install itself (it fetches uv, which brings Python, from astral.sh). Install uv ' +
+            '(Windows: winget install astral-sh.uv; macOS/Linux: curl -LsSf https://astral.sh/uv/install.sh | sh) or ' +
+            'Python 3.11+, then restart Claude Code.')
       }
     } while (again)
   } finally {

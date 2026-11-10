@@ -84,7 +84,7 @@ test('without system-diff the pane says how to get it; with an old one, how to u
   answer(on, [], 127)
   await $.command.run(RUN)
   let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /needs uv or Python 3.11/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /could not install itself/ })).toBeDefined()
   await ui.unmount()
 })
 
