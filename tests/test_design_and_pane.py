@@ -270,6 +270,42 @@ def test_the_agents_tab_shows_each_agent_and_warns_when_two_edit_one_block(repo,
     assert "● API  @api @st" in "\n".join(text)               # who works where, on the diagram
 
 
+def test_one_agent_editing_two_areas_in_a_turn_is_told_once_to_plan_a_team(repo, files):
+    from system_diff import agent
+
+    def prompt():
+        agent.run_hook(json.dumps({"cwd": str(repo), "hook_event_name": "UserPromptSubmit", "prompt": "go"}),
+                       emit=lambda _s: None)
+
+    def edit(path, text, **who):
+        files(repo, {path: text})
+        said: list = []
+        agent.run_hook(json.dumps({"cwd": str(repo), "hook_event_name": "PostToolUse", "tool_name": "Edit", **who,
+                                   "tool_input": {"file_path": str(repo / path)}}), emit=said.append)
+        outs = [json.loads(s) for s in said]
+        warns = " ".join(o.get("systemMessage", "") for o in outs)
+        context = " ".join(o.get("hookSpecificOutput", {}).get("additionalContext", "") for o in outs)
+        return warns, context
+
+    routes, rules = "app/api/routes.py", "app/core/rules.py"
+    prompt()
+    warns, context = edit(routes, (repo / routes).read_text() + "\n# one\n")
+    assert "areas this turn" not in warns + context              # one area so far
+    warns, context = edit(rules, (repo / rules).read_text() + "\n# one\n")
+    assert "main has edited blocks in 2 areas this turn" in warns and "plan_agents" in warns
+    assert "main has edited blocks in 2 areas this turn" in context and "plan_agents" in context
+    warns, context = edit("app/db/repo.py", (repo / "app/db/repo.py").read_text() + "\n# one\n")
+    assert "areas this turn" not in warns + context              # once a turn
+    prompt()
+    edit(routes, (repo / routes).read_text() + "# two\n")
+    warns, context = edit(rules, (repo / rules).read_text() + "# two\n")
+    assert "areas this turn" in warns and "areas this turn" in context    # a new turn may warn again
+    prompt()
+    for text in ("# a\n", "# b\n"):                            # a subagent staying in its one area
+        warns, context = edit(routes, (repo / routes).read_text() + text, agent_id="a1")
+        assert "areas this turn" not in warns and "a1 has edited" not in context  # main's warning may reach it by bus
+
+
 def test_a_narrow_pane_gets_compact_diagrams_unless_asked_otherwise(repo, capsys):
     narrow = json.loads(_run(capsys, repo, "--width", "90"))
     wide = json.loads(_run(capsys, repo, "--width", "140"))

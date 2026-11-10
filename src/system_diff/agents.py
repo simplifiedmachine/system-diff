@@ -24,6 +24,7 @@ from .sources import git_dir
 
 STATE, BUS = "agents.json", "bus.jsonl"
 MAIN = "main"
+SYSTEM = "system-diff"   # the sender of what system-diff itself publishes
 KEEP = 2000        # messages kept on the bus
 MOST_AGENTS = 4    # a plan's agents at most, unless asked for more
 
@@ -33,10 +34,11 @@ def _load(root: Path) -> Dict[str, Any]:
         data = json.loads((git_dir(root) / STATE).read_text(encoding="utf-8"))
         if isinstance(data, dict):
             return {"plan": data.get("plan") or {}, "claims": data.get("claims") or {},
-                    "agents": data.get("agents") or {}, "ids": data.get("ids") or {}}
+                    "agents": data.get("agents") or {}, "ids": data.get("ids") or {},
+                    "warned": data.get("warned") or {}}
     except (OSError, ValueError):
         pass
-    return {"plan": {}, "claims": {}, "agents": {}, "ids": {}}
+    return {"plan": {}, "claims": {}, "agents": {}, "ids": {}, "warned": {}}
 
 
 def _save(root: Path, data: Dict[str, Any]) -> None:
@@ -182,7 +184,60 @@ def after_edit(root: Path, agent_id: str, part: Optional[str], notes: List[Dict[
     if part and claimed and claimed != name:
         warn = f"{part} is claimed by agent {claimed}; {name} just edited it"
         publish(root, f"agent:{claimed}", f"{name} edited your block {part}", sender=name, kind="warning")
-    return {"context": as_context(inbox(root, name)), "warn": warn, "name": name}
+    from . import config
+    wide = spread(root, name, agent_id, bp, config.lenient(root))
+    # spread warnings reach the agent they are about directly; on the bus they are a record for the inbox tool
+    unread = [m for m in inbox(root, name) if not (m.get("from") == SYSTEM and m.get("kind") == "warning")]
+    context = "\n".join(t for t in (as_context(unread), wide) if t)
+    warn = "; ".join(t for t in (warn, wide) if t)
+    return {"context": context, "warn": warn, "name": name}
+
+
+def areas_of(root: Path, bp: dict, cfg: Dict[str, Any]) -> Dict[str, str]:
+    """Each block's area: the agent the saved plan gave it to, when there is a plan; else its container, or the
+    block itself when it is in none."""
+    agents = (_load(root)["plan"] or {}).get("agents") or []
+    if agents:
+        return {b: g["name"] for g in agents for b in g.get("blocks") or []}
+    from .architecture import groups_of
+    group = groups_of(bp, cfg, design.kinds(bp, cfg))
+    return {cid: (group[cid][2:] if group.get(cid, "").startswith("g:") else cid) for cid in bp["components"]}
+
+
+def spread(root: Path, name: str, agent_id: str, bp: dict, cfg: Dict[str, Any]) -> str:
+    """When one agent has edited blocks in two or more areas this turn: a message telling it to plan a team and hand
+    the rest on, once per agent per turn (also published to all); else ""."""
+    from .extract import Code
+    code = Code(cfg)
+    me = "" if agent_id in ("", None, MAIN) else agent_id
+    start, parts = 0.0, []
+    for e in activity.events(root, 400):
+        if e.get("event") == activity.PROMPT and not activity.is_system(e.get("text", "")):
+            start, parts = e["at"], []
+        elif e.get("event") == activity.EDIT and (e.get("agent") or "") == me and e.get("path"):
+            part = activity.part_of(e["path"], code)
+            if part and part not in parts:
+                parts.append(part)
+    area = areas_of(root, bp, cfg)
+    seen: List[str] = []
+    for p in parts:
+        a = area.get(p, p)
+        if a not in seen:
+            seen.append(a)
+    if len(seen) < 2:
+        return ""
+    data = _load(root)
+    turn = str(start)
+    told = data["warned"].get(turn) or []
+    if name in told:
+        return ""
+    data["warned"] = {turn: told + [name]}   # only the latest turn is kept
+    _save(root, data)
+    text = (f"{name} has edited blocks in {len(seen)} areas this turn ({', '.join(seen)}). system-diff runs work "
+            "that spans areas as a team: call plan_agents with what is left, launch its agents in parallel, and "
+            "keep to one area yourself.")
+    publish(root, "all", text, sender=SYSTEM, kind="warning")
+    return text
 
 
 def who_worked(events: Iterable[dict], code) -> Dict[str, Dict[str, Any]]:

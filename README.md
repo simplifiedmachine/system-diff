@@ -104,6 +104,8 @@ Claude does most work alone unless asked otherwise, so system-diff asks it to pl
   nobody waits on anybody.
 - **Claims:** `claim` gives an agent its blocks. An edit to someone else's block is published to its owner and shown
   under Needs your attention.
+- **One agent, one area:** when an agent (the main conversation included) edits blocks in two or more areas in one
+  turn, the edit hook tells it, once that turn, to plan a team with `plan_agents` and hand the rest to agents.
 
 The MCP tools: `plan_agents`, `claim`, `publish`, `subscribe`, `inbox`, `team`. It all stays in `.git/system-diff/`
 (`agents.json`, `bus.jsonl`), never pushed.
