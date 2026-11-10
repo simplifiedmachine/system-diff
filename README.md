@@ -31,6 +31,17 @@ pip install "system-diff[mcp]"
 
 and restart Claude Code. The pane opens beside the chat, and the same views open in your browser.
 
+The pane sits beside the chat in Claude Code's fullscreen layout (from 110 columns wide). Where it opens above the
+chat instead (Windows, tmux), turn that layout on, then open a new terminal and start Claude Code again:
+
+```
+setx CLAUDE_CODE_NO_FLICKER 1                                    # Windows (PowerShell or cmd)
+echo 'export CLAUDE_CODE_NO_FLICKER=1' >> ~/.bashrc              # macOS and Linux (~/.zshrc for zsh)
+```
+
+On Windows, `python -m pip install "system-diff[mcp]"` works where `pip` is not on PATH, and the pane finds
+system-diff through `python -m system_diff` too.
+
 <!-- system-map:begin -->
 ![System map, generated from the code](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg)
 

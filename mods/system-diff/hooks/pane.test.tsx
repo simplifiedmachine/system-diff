@@ -236,3 +236,14 @@ test('a pane opens at once on the page last seen in this project, until the fres
   expect(await ui.find({ type: 'Text', text: /API now answers GET \/health/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('above the chat, the pane says how to have it beside the chat', async ($, on) => {
+  answer(on, [])
+  await $.command.run(RUN)
+  const inline = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement: 'inline' }, surface: 'terminal' })
+  expect(await inline.find({ type: 'Text', text: /CLAUDE_CODE_NO_FLICKER/ })).toBeDefined()
+  await inline.unmount()
+  const docked = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await docked.find({ type: 'Text', text: /CLAUDE_CODE_NO_FLICKER/ })).toBeUndefined()
+  await docked.unmount()
+})

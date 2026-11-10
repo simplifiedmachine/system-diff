@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.12' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.13' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -382,7 +382,10 @@ export const register: Register = on => {
     windowAt = e.props.scroll.offset
     windowRows = e.props.scroll.bodyRows
     const drawn = await read($, page)
-    const said = await read($, note)
+    // Above the chat (Claude Code's main-screen layout), it says how to have it beside the chat instead.
+    const said = (await read($, note)) || (e.props.placement === 'inline'
+      ? 'Beside the chat instead: set CLAUDE_CODE_NO_FLICKER=1 (Windows: setx CLAUDE_CODE_NO_FLICKER 1) and restart Claude Code.'
+      : '')
     const now = await read($, view)
     const zoomed = await read($, part)
     const behind = await read($, back)
