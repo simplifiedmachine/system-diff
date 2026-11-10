@@ -110,7 +110,9 @@ One meaning per colour, so your eye goes where it should:
 
 ### In a browser
 
-The same views (Now, Review, Agents, Topics) as a web page at http://127.0.0.1:8765/, on your machine only. The
+The same views (Now, Review, Agents, Topics) as a web page at http://localhost:8765/, on your machine only (in a
+GitHub Codespace, forward the port: `gh codespace ports forward 8765:8765 -c <codespace>` on your own computer, or
+VS Code's Ports panel). The
 session-start hook starts it in the background; `system-diff watch` starts it by hand. Hover a block to pick it and
 light its flows, click to zoom in. The pane shows the link in its tab row (🌐) while it runs. `[web] start = false` in
 `system-diff.toml` turns the start with the session off. A Send to Claude box sends what you type to the live

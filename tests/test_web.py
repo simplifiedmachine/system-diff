@@ -96,7 +96,7 @@ def test_where_it_listens_is_written_while_it_serves(repo):
     f = git_dir(repo) / "web.json"
     info = json.loads(f.read_text())
     assert info["url"] == up["url"] and info["pid"] == os.getpid() and up["url"].endswith(f":{info['port']}/")
-    assert watch.web_url(repo) == up["url"]
+    assert watch.web_url(repo) == up["url"].replace("127.0.0.1", "localhost")   # what a browser opens
     up["server"].shutdown()
     t.join(5)
     assert not f.exists() and watch.web_url(repo) is None

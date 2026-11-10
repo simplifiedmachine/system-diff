@@ -906,7 +906,7 @@ def web_url(root: Path) -> Optional[str]:
         except (OSError, ValueError, KeyError, TypeError):
             url, port, pid = "", 0, 0
         if port and _alive(pid) and _answers(port):
-            return forwarded(port) or url   # in a Codespace, the address the person's browser can open
+            return f"http://localhost:{port}/"   # what a browser opens here, or through a forwarded port
         try:
             f.unlink()
         except OSError:
