@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.9' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.10' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -66,7 +66,8 @@ async function run($: EngineInterface, argv: string[]): Promise<{ out: string; o
   for (const how of runner ? [runner] : RUNNERS) {
     try {
       const got = await $.process.run([...how, ...argv], { timeoutMs: 20000 })
-      if (got.exitCode === 0) {
+      // a way that answers with nothing (a launcher that found no system-diff) is not one: try the next
+      if (got.exitCode === 0 && (got.stdout.trim() !== '' || runner)) {
         runner = how
         return { out: got.stdout, old: false }
       }
@@ -122,7 +123,14 @@ async function refresh($: EngineInterface): Promise<void> {
       if (level >= 0) argv.push('--zoom', String(level)) // left out, the engine picks by the width (older ones too)
       const got = await run($, argv)
       if (got && !got.old) {
-        const data = JSON.parse(got.out) as Page
+        let data: Page
+        try {
+          data = JSON.parse(got.out) as Page
+        } catch {
+          runner = undefined // look for system-diff again next time
+          await update($, note, () => `system-diff answered with something that is not its page: ${got.out.trim().slice(0, 160)}`)
+          continue
+        }
         deliver($, data.send)
         if (got.out !== last) {
           last = got.out

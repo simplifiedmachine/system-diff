@@ -1,6 +1,6 @@
 {
   "name": "system-diff",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "description": "A pane beside the chat: what Claude is working on in your system, zoomed in, what just happened and why it matters, and a topic to learn (system-diff)",
   "types": "./types/index.d.ts",
   "author": {

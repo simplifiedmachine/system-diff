@@ -10,6 +10,7 @@ if command -v system-diff >/dev/null 2>&1; then exec system-diff "$@"; fi
 for py in python3 python py; do
   if command -v "$py" >/dev/null 2>&1 && "$py" -c "import system_diff" >/dev/null 2>&1; then exec "$py" -m system_diff "$@"; fi
 done
-[ "$1" = "hook" ] && cat >/dev/null   # a hook's input, read and let go
-[ "$1" = "mcp" ] && echo 'system-diff is not installed: pip install "system-diff[mcp]"' >&2
-exit 0
+if [ "$1" = "hook" ]; then cat >/dev/null; exit 0; fi   # a hook's input, read and let go: the session goes on
+# anything else (the MCP server, the pane) is told, and fails, so the pane tries its other ways
+echo 'system-diff: not found by the launcher: pip install "system-diff[mcp]"' >&2
+exit 127
