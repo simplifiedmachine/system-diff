@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.2' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.3' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -128,7 +128,7 @@ async function refresh($: EngineInterface): Promise<void> {
           ? 'Installing system-diff for this plugin (first use, about a minute)…'
           : got?.old
           ? 'This pane needs a newer system-diff: pipx upgrade system-diff'
-          : 'system-diff is not installed here: pipx install "system-diff[mcp,tui]", then system-diff setup claude')
+          : 'system-diff could not be installed here (it needs Python 3.11 or newer): pipx install "system-diff[mcp]"')
       }
     } while (again)
   } finally {

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "system-diff"
-version = "0.5.2"
+version = "0.5.3"
 description = "Draws your system from its code (parts, entry points, data, outside systems) and what each change adds, changes or removes. No dependencies; SVG pictures for PRs and READMEs."
 readme = "README.md"
 license = "MIT"
@@ -27,7 +27,6 @@ dependencies = []
 [project.optional-dependencies]
 png = ["playwright>=1.40"]
 mcp = ["mcp>=1.10"]
-tui = []   # the terminal view is retired; kept so `system-diff[mcp,tui]` still installs
 dev = ["pytest>=8", "mcp>=1.10"]
 
 [project.urls]

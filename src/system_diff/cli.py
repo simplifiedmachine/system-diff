@@ -178,7 +178,6 @@ def parser() -> argparse.ArgumentParser:
     sh.add_argument("--base", default="checkpoint", help="marks changes since this point (default checkpoint)")
     sh.add_argument("--width", type=int, default=0, help="columns to fit (default: the terminal's)")
     sh.add_argument("--plain", action="store_true", help="no colours")
-    sub.add_parser("tui", help="retired: the System diff pane in Claude Code, or system-diff watch in a browser")
     w = sub.add_parser("watch", help="a live local page of the diff since the checkpoint")
     w.add_argument("--base", default="checkpoint")
     w.add_argument("--port", type=int, default=8765)
@@ -224,10 +223,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         except ValueError as exc:
             print(f"system-diff: {exc}", file=sys.stderr)
             return 1
-    if args.cmd == "tui":
-        print("system-diff: the terminal view is retired: the System diff pane in Claude Code (/system-diff) and its "
-              "web page (system-diff watch) show the same, and more", file=sys.stderr)
-        return 1
     if args.cmd == "watch":
         from . import watch
         watch.serve(root, args.base, args.port, args.config, args.interval)

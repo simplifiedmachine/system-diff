@@ -432,12 +432,10 @@ def test_the_plugin_carries_the_hooks_the_mcp_server_and_the_skill():
     assert skill == agent.SKILL.replace(agent.SKILL_MARK + "\n", "")      # the same skill setup writes
 
 
-def test_the_terminal_view_is_retired_and_setup_clears_its_old_vscode_task(repo, capsys):
-    from system_diff.cli import main
-    assert main(["--repo", str(repo), "tui"]) == 1 and "retired" in capsys.readouterr().err
+def test_setup_clears_the_vscode_task_an_older_setup_added(repo):
     tasks = repo / ".vscode" / "tasks.json"
     tasks.parent.mkdir()
-    tasks.write_text(json.dumps({"version": "2.0.0", "tasks": [{"label": agent.OLD_TASK, "command": "system-diff tui"}]}))
+    tasks.write_text(json.dumps({"version": "2.0.0", "tasks": [{"label": agent.OLD_TASK, "command": "system-diff view"}]}))
     said: list = []
     agent._drop_vscode_task(repo, said.append)
     assert not tasks.exists() and said and "removed the VS Code task" in said[0]

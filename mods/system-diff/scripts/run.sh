@@ -33,17 +33,17 @@ install() {   # the plugin's own copy of the engine, at the plugin's version; on
   fi
   mkdir "$data/.installing" 2>/dev/null || return 1
   trap 'rmdir "$data/.installing" 2>/dev/null' EXIT
-  spec="system-diff[mcp,tui]${version:+==$version}"
+  spec="system-diff[mcp]${version:+==$version}"
   # the plugin's own version; when that is not on PyPI (yet), the latest
   if command -v uv >/dev/null 2>&1; then
     uv venv --quiet --python ">=3.11" "$venv" >"$data/install.log" 2>&1 &&
       { uv pip install --quiet --python "$venv" "$spec" >>"$data/install.log" 2>&1 ||
-        uv pip install --quiet --python "$venv" "system-diff[mcp,tui]" >>"$data/install.log" 2>&1; }
+        uv pip install --quiet --python "$venv" "system-diff[mcp]" >>"$data/install.log" 2>&1; }
   else
     py=$(python311) || return 1
     "$py" -m venv "$venv" >"$data/install.log" 2>&1 &&
       { "$venv/bin/python" -m pip install --quiet --disable-pip-version-check "$spec" >>"$data/install.log" 2>&1 ||
-        "$venv/bin/python" -m pip install --quiet --disable-pip-version-check "system-diff[mcp,tui]" \
+        "$venv/bin/python" -m pip install --quiet --disable-pip-version-check "system-diff[mcp]" \
           >>"$data/install.log" 2>&1; }
   fi
   ok=$?
