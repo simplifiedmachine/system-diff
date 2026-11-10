@@ -118,6 +118,11 @@ main { max-width:1240px; margin:0 auto; padding:18px 20px 28px; display:grid; ga
 #dia.empty { color:var(--muted); font-size:13px; padding:24px; text-align:center; }
 #dia.enterable [data-id].can-enter { cursor:zoom-in; }
 #detail { padding:12px 16px; min-height:44px; white-space:pre-wrap; color:var(--ink2); font-size:13.5px; }
+.diawrap { display:block; }
+/* a diagram narrower than the card: its detail sits beside it, filling the space on the right */
+.diawrap.side { display:flex; align-items:stretch; }
+.diawrap.side #dia { flex:0 1 auto; border-right:1px solid var(--line); }
+.diawrap.side #detail { flex:1 1 260px; min-width:240px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
 #detail .what { color:var(--muted); }
 #detail b { color:var(--ink); }
 .timeline { list-style:none; margin:0; padding:0 0 0 4px; }
@@ -196,7 +201,7 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
   <section class="card" id="status" hidden></section>
   <div id="before" style="display:grid;gap:16px"></div>
   <section class="card dia" id="diacard" hidden><h2 id="diatitle"></h2>
-    <div id="dia" role="img"></div><div id="detail" aria-live="polite"></div></section>
+    <div class="diawrap" id="diawrap"><div id="dia" role="img"></div><div id="detail" aria-live="polite"></div></div></section>
   <div id="after" style="display:grid;gap:16px"></div>
 </main>
 <div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> views · <kbd>f</kbd> follow Claude · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
@@ -418,6 +423,13 @@ $("dia").addEventListener("click", e => {
   const d = pickAt(e.target), g = (ui.data && ui.data.diagram) || {}, t = d && keyed(g.enter, d);
   if (t) go("now", t);
 });
+// A diagram narrower than its card: its detail sits beside it, in the room to spare on the right.
+function fitSide() {
+  const svg = $("dia").querySelector("svg"), wrap = $("diawrap");
+  const vb = svg ? (svg.getAttribute("viewBox") || "").split(/[ ,]+/).map(Number) : [];
+  wrap.classList.toggle("side", vb.length === 4 && wrap.clientWidth - vb[2] * 1.1 > 280);
+}
+window.addEventListener("resize", fitSide);
 function drawDiagram(g) {
   const box = $("dia");
   box.innerHTML = g.svg || "";
@@ -428,7 +440,10 @@ function drawDiagram(g) {
   if (svg) {
     svg.removeAttribute("width"); svg.removeAttribute("height");
     const vb = (svg.getAttribute("viewBox") || "").split(/[ ,]+/).map(Number);
-    if (vb.length === 4 && vb[2] > 0) { svg.style.maxWidth = Math.round(vb[2] * 1.1) + "px"; svg.style.margin = "0"; }
+    if (vb.length === 4 && vb[2] > 0) {
+      svg.style.maxWidth = Math.round(vb[2] * 1.1) + "px"; svg.style.margin = "0";
+      fitSide();
+    }
   }
   for (const n of box.querySelectorAll("[data-id]"))
     if (keyed(g.enter, n.getAttribute("data-id"))) n.classList.add("can-enter");
