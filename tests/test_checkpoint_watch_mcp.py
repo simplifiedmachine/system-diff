@@ -66,7 +66,7 @@ def test_the_live_page_redraws_and_marks_seen_only_with_its_token(repo, files):
     url, w = up["url"], up["w"]
     try:
         status, page = _get(url)
-        assert status == 200 and w.token in page and "Mark as seen" in page
+        assert status == 200 and w.token in page and "Mark as seen" not in page
         while time.time() < deadline and "GET /health" not in json.loads(_get(url + "state")[1])["plan"]:
             time.sleep(0.1)
         state = json.loads(_get(url + "state")[1])

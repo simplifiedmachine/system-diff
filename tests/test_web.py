@@ -73,7 +73,7 @@ def test_the_web_data_leaves_what_was_sent_for_the_pane(served, repo):
 def test_the_page_is_one_app_that_draws_the_views(served):
     status, html = _get(served)
     assert status == 200
-    for word in ("Now", "Review", "Agents", "Topics", "Follow Claude", "Back", "Mark as seen", "Send to Claude"):
+    for word in ("Now", "Review", "Agents", "Topics", "Follow Claude", "Back", "Send to Claude"):
         assert word in html
     assert 'id="dia"' in html and 'fetch("web?' in html and "data-id" in html
     assert "prefers-color-scheme: dark" in html

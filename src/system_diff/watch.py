@@ -188,9 +188,8 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
   <div class="zoom" title="How much of the system the diagram shows">
     <button id="in" type="button" aria-label="Zoom in">+</button><span id="zoomlabel">auto</span>
     <button id="out" type="button" aria-label="Zoom out">−</button></div>
-  <span class="spacer"></span><span id="since"></span>
+  <span class="spacer"></span>
   <button id="theme" type="button" title="Light, dark, or as your system is">◐ auto</button>
-  <button id="seen" class="primary" type="button" title="Move the checkpoint here: the page then shows only what is new">Mark as seen</button>
 </header>
 <main>
   <div><p class="headline" id="headline">Reading the code…</p><div class="error" id="error"></div></div>
@@ -501,10 +500,6 @@ async function load() {
   } catch (e) {
     if (seq === ui.seq) $("error").textContent = e instanceof TypeError ? "The watcher stopped: start system-diff watch again." : String(e.message || e);
   }
-  try {
-    const r = await fetch("state?since=-1", { cache:"no-store" });
-    if (r.ok) { const s = await r.json(); $("since").textContent = "since " + s.base + " · updated " + s.at; $("seen").disabled = !s.changes; }
-  } catch (e) { /* the error above says it */ }
 }
 function go(view, part) {
   if (view === ui.view && part === ui.part) return;
@@ -532,10 +527,6 @@ $("back").onclick = back;
 $("follow").onclick = () => go("now", "");
 $("out").onclick = () => zoomBy(1);
 $("in").onclick = () => zoomBy(-1);
-$("seen").onclick = async () => {
-  const r = await fetch("seen", { method:"POST", headers:{ "X-Token":TOKEN } });
-  if (r.ok) { ui.last = {}; load(); }
-};
 let noted = 0;
 function note(msg, bad) {
   $("sendnote").textContent = msg; $("sendnote").classList.toggle("bad", !!bad);
