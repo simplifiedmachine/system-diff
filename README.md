@@ -24,8 +24,10 @@ In Claude Code:
 ```
 
 That is the whole setup. The pane opens beside the chat, and the same views open in your browser. The first time,
-the plugin installs the system-diff engine for itself (about a minute; the pane says so). All it needs is Python 3.11
-or newer.
+the plugin installs the system-diff engine for itself (about a minute; the pane says so). All it needs is
+[uv](https://docs.astral.sh/uv/) or Python 3.11 or newer. uv brings its own Python, so on a machine without Python
+(Windows often has none) install uv: `winget install astral-sh.uv` on Windows,
+`curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS and Linux.
 
 <!-- system-map:begin -->
 ![System map, generated from the code](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg)

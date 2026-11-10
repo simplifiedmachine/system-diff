@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.4' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.5' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -36,7 +36,9 @@ const LAUNCHER = 'exec sh "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/cache/sys
 const RUNNERS: string[][] = [
   ['sh', '-c', LAUNCHER, 'system-diff'],
   ['.venv/bin/python', '-m', 'system_diff'], ['.venv/Scripts/python.exe', '-m', 'system_diff'], ['system-diff'],
-  ['python3', '-m', 'system_diff'], ['python', '-m', 'system_diff'],
+  // uv runs it with no shell and no Python of the machine's own (Windows): the plugin's version, else the latest
+  ['uvx', '--from', `system-diff[mcp]==${VERSION}`, 'system-diff'], ['uvx', '--from', 'system-diff[mcp]', 'system-diff'],
+  ['python3', '-m', 'system_diff'], ['python', '-m', 'system_diff'], ['py', '-3', '-m', 'system_diff'],
 ]
 const COLORS: Record<string, string> = {
   accent: 'blue', focus: 'blue', attention: 'yellow', changed: 'yellow', good: 'green', added: 'green',
@@ -128,7 +130,8 @@ async function refresh($: EngineInterface): Promise<void> {
           ? 'Installing system-diff for this plugin (first use, about a minute)…'
           : got?.old
           ? 'This pane needs a newer system-diff: pipx upgrade system-diff'
-          : 'system-diff could not be installed here (it needs Python 3.11 or newer): pipx install "system-diff[mcp]"')
+          : 'system-diff needs uv or Python 3.11+ to install itself. Install uv (Windows: winget install astral-sh.uv; ' +
+            'macOS/Linux: curl -LsSf https://astral.sh/uv/install.sh | sh) or Python 3.11+, then restart Claude Code.')
       }
     } while (again)
   } finally {

@@ -18,7 +18,7 @@ has() { [ -x "$1" ] && "$1" -c "import system_diff" >/dev/null 2>&1; }
 current() { [ -f "$data/version" ] && [ "$(cat "$data/version")" = "$version" ] && has "$own"; }
 
 python311() {
-  for p in python3 python3.13 python3.12 python3.11 python; do
+  for p in python3 python3.13 python3.12 python3.11 python py; do
     if command -v "$p" >/dev/null 2>&1 && "$p" -c "import sys; sys.exit(sys.version_info < (3, 11))" 2>/dev/null; then
       command -v "$p"; return 0
     fi
@@ -41,10 +41,10 @@ install() {   # the plugin's own copy of the engine, at the plugin's version; on
         uv pip install --quiet --python "$venv" "system-diff[mcp]" >>"$data/install.log" 2>&1; }
   else
     py=$(python311) || return 1
+    vpy="$venv/bin/python"; case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) vpy="$venv/Scripts/python.exe";; esac
     "$py" -m venv "$venv" >"$data/install.log" 2>&1 &&
-      { "$venv/bin/python" -m pip install --quiet --disable-pip-version-check "$spec" >>"$data/install.log" 2>&1 ||
-        "$venv/bin/python" -m pip install --quiet --disable-pip-version-check "system-diff[mcp]" \
-          >>"$data/install.log" 2>&1; }
+      { "$vpy" -m pip install --quiet --disable-pip-version-check "$spec" >>"$data/install.log" 2>&1 ||
+        "$vpy" -m pip install --quiet --disable-pip-version-check "system-diff[mcp]" >>"$data/install.log" 2>&1; }
   fi
   ok=$?
   own="$venv/bin/python"; [ -x "$own" ] || own="$venv/Scripts/python.exe"
