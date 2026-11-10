@@ -1,4 +1,4 @@
-import type { ClientKeyEvent, ClientModule, ClientPointerEvent, JsonValue } from 'claude-code'
+import type { ClientKeyEvent, ClientModule, JsonValue } from 'claude-code'
 
 import type { Page, PageBlock, Row, Run } from '../types'
 
@@ -141,17 +141,6 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
       surface.post({ view: { n: 'now', m: 'map', c: 'changes', t: 'topics' }[e.key] ?? 'now' })
     }
   })
-  surface.onPointer((e: ClientPointerEvent) => {
-    if (e.type !== 'down' || e.button !== 'left') return
-    const x = e.x + sx
-    const y = e.y - (page.wide > cols ? 1 : 0)
-    const hit = page.blocks.filter(b => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)
-      .sort((a, b) => a.w * a.h - b.w * b.h)[0] // the innermost: a component over its container
-    if (!hit) return
-    if (hit.id === sel) act(hit, 'enter')
-    else pick(hit)
-  })
-
   // The detail of the picked block, in the slot under its picture.
   const rows: Row[] = page.rows.slice()
   if (picked?.slot) {

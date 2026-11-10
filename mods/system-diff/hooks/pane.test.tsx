@@ -108,7 +108,7 @@ test('a resized split is laid out again at once, for the width the page reports'
   await ui.unmount()
 })
 
-test('the arrows pick a block, Enter zooms in, a click picks and a second click zooms', async ($, on) => {
+test('the arrows pick a block, Enter zooms in, b goes back', async ($, on) => {
   const asked: string[][] = []
   answer(on, asked)
   await $.command.run(RUN)
@@ -124,10 +124,7 @@ test('the arrows pick a block, Enter zooms in, a click picks and a second click 
   expect(last()).toContain('--part ')
   expect(last()).not.toContain('--part core')
 
-  await ui.pointer({ type: 'down', x: 2, y: 2, button: 'left' }) // Developer: picked
-  await ui.pointer({ type: 'down', x: 2, y: 2, button: 'left' }) // again: zoomed in on
-  expect(last()).toContain('--part a:dev')
-
+  await ui.key({ key: 'return', in: 'page' })           // zoomed in again: Follow Claude shows
   await ui.key({ key: 'm', in: 'page' })
   expect(last()).toContain('--view map')
   await ui.press({ key: 'follow' })
@@ -145,7 +142,7 @@ test('space on a technology marks it new to you', async ($, on) => {
   await ui.unmount()
 })
 
-test('/system-diff and /system-diff-pane both open it, as wide as a dock goes', async ($, on) => {
+test('/system-diff and /system-diff-pane both open it, at the width the person keeps', async ($, on) => {
   const registered: string[] = []
   const opened: Array<{ columns?: number }> = []
   on('ui.open', (_: unknown, e: { columns?: number }) => {
@@ -167,5 +164,5 @@ test('/system-diff and /system-diff-pane both open it, as wide as a dock goes', 
     const got = await $.command.run({ ...RUN, command })
     expect((got as { text?: string }).text).toBe('System diff pane opened.')
   }
-  expect(opened.every(o => (o.columns ?? 0) >= 200)).toBe(true)
+  expect(opened.every(o => o.columns === undefined)).toBe(true) // the width is the person's
 })

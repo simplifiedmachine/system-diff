@@ -16,7 +16,6 @@ import type { Act, Page, Row } from '../types'
 const PANE = 'system-diff'
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['map', 'Map', 'm'], ['changes', 'Changes', 'c'], ['topics', 'Topics', 't']] as const
-const WIDEST = 999 // as wide as Claude Code docks a pane (it caps a dock at 45% of the terminal)
 
 const page = atom({ plugin: 'system-diff', key: 'page' } as const, null as Page | null, { shape: 'page-2' })
 const view = atom({ plugin: 'system-diff', key: 'view' } as const, 'now', { shape: 'view-1' })
@@ -154,7 +153,7 @@ async function scrollBy($: EngineInterface, rows: number): Promise<void> {
 // As wide as Claude Code docks a pane, the first time: a width the person set (dragged, or with the pane's keys:
 // ctrl+x ← →) is theirs from then on.
 function open($: EngineInterface) {
-  return $.ui.open({ id: PANE, title: 'System diff', columns: WIDEST })
+  return $.ui.open({ id: PANE, title: 'System diff' })
 }
 
 export const register: Register = on => {
@@ -275,7 +274,7 @@ export const register: Register = on => {
         </Box>
         {said !== '' && <Text dimColor>{said}</Text>}
         {drawn !== null && Client !== undefined && (
-          <Client key="page" module="./page.tsx" width="100%" props={{ page: drawn, canGoBack: behind.length > 0 }} />
+          <Client key="page" module="./page.tsx" props={{ page: drawn, canGoBack: behind.length > 0 }} />
         )}
         {drawn !== null && Client === undefined && drawn.rows.map(line)}
         {drawn !== null && Client === undefined && (
