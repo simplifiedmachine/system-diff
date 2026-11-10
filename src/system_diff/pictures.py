@@ -333,10 +333,11 @@ OWNERS = (("#0b7f8a", "#4fd3dc"), ("#9b3fc2", "#d482ff"), ("#1d8a3c", "#5fd283")
           ("#1f5fbf", "#5ea4ff"))
 _ARCH_LIGHT = {"ink": INK, "ink2": INK2, "muted": MUTED, "line": "#aab4c2", "surface": SURFACE, "surface2": SURFACE2,
                "ok": OK, "warn": WARN, "attn": ATTN, "attn-bg": ATTN_BG, "work": WORK, "work-bg": WORK_BG,
-               "item": "#f3f5f8", **{f"o{i}": c[0] for i, c in enumerate(OWNERS)}}
+               "item": "#f3f5f8", "hi": "#2f7bff", "hi-bg": "#e4eeff",
+               **{f"o{i}": c[0] for i, c in enumerate(OWNERS)}}
 _ARCH_DARK = {"ink": "#e6eaf0", "ink2": "#c2cad6", "muted": "#a7b2c1", "line": "#5d6878", "surface": "#1b2028",
               "surface2": "#13171d", "ok": "#5fd283", "warn": "#f0b44c", "attn": "#ff6f6f", "attn-bg": "#3a1d1d",
-              "work": "#5ea4ff", "work-bg": "#1a2a40", "item": "#232a34",
+              "work": "#5ea4ff", "work-bg": "#1a2a40", "item": "#232a34", "hi": "#6cb2ff", "hi-bg": "#173356",
               **{f"o{i}": c[1] for i, c in enumerate(OWNERS)}}
 
 
@@ -407,12 +408,15 @@ svg.sd-arch {{ {_vars(_ARCH_LIGHT)} }}
 .sd-arch [data-id] {{ transition: opacity .15s; }}
 .sd-arch .dim {{ opacity: .45; }}
 .sd-arch .an.lit > .box, .sd-arch .an.lit > .lip {{ stroke-width: 2.6; stroke-opacity: 1; }}
-.sd-arch .ai.lit rect {{ stroke-width: 2.2; }}
+.sd-arch .ai.lit rect {{ stroke: var(--hi); stroke-width: 2.2; stroke-opacity: 1; fill: var(--hi-bg); }}
+.sd-arch .an.lit > .box, .sd-arch .an.lit > .lip {{ stroke: var(--hi); stroke-width: 2.6; stroke-opacity: 1; }}
+.sd-arch .ae.lit path {{ stroke: var(--hi); stroke-width: 2.6; opacity: 1; }}
 .sd-arch .ae.lit path {{ stroke-width: 2.8; opacity: 1; }}
 .sd-arch .lit {{ opacity: 1; }}
-.sd-arch .an.picked > .box, .sd-arch .ai.picked rect {{ stroke: var(--work); stroke-width: 3; stroke-opacity: 1; }}
-.sd-arch .ai.picked rect {{ fill: var(--work-bg); }}
-.sd-arch .ae.picked path {{ stroke: var(--work); stroke-width: 3; opacity: 1; }}
+.sd-arch .an.picked > .box, .sd-arch .ai.picked rect {{ stroke: var(--hi); stroke-width: 3.2; stroke-opacity: 1;
+  fill: var(--hi-bg); filter: drop-shadow(0 0 4px var(--hi)); }}
+.sd-arch .ai.picked text, .sd-arch .an.picked text {{ fill: var(--hi); font-weight: 650; }}
+.sd-arch .ae.picked path {{ stroke: var(--hi); stroke-width: 3.2; opacity: 1; }}
 """
 
 

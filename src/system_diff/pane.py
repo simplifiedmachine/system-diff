@@ -275,7 +275,6 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
     agent = now["part"]
     model, title, aside = _now_model(c, root, part, now, marks)
     page.heading(title, aside)
-    badges(model, root, events, code)
     g = _diagram(page, c, model, width, centre=bool(part))
     ids = {b["id"] for b in g.blocks}
     page.pick = next((b for b in ("b:" + (part or ""), "b:" + (agent or "")) if b in ids), "")
@@ -822,7 +821,6 @@ def _web_now(root: Path, part: str, zoom: int) -> Dict[str, Any]:
         sections.append(_web_section("Needs your attention", "notes", [_web_note(n) for n in urgent],
                                      "worth a look before Claude goes on"))
     model, title, aside = _now_model(c, root, part, now, marks)
-    badges(model, root, events, code)
     diagram = _web_diagram(c, model, title, aside, zoom, ["b:" + (part or ""), "b:" + (agent or "")])
     rest = design.summarize([n for n in notes if n not in urgent])
     base = "this turn" if c.base == "the start of this turn" else f"since {c.base}"

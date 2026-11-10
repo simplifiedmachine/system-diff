@@ -78,6 +78,7 @@ header.top h1 { font-size:15px; margin:0 6px 0 0; font-weight:650; }
 #since { color:var(--muted); font-size:12.5px; }
 main { max-width:1240px; margin:0 auto; padding:18px 20px 28px; display:grid; gap:16px; }
 main > * { min-width:0; }
+pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 [hidden] { display:none !important; }
 .headline, .card > h2 { overflow-wrap:anywhere; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); }
@@ -230,7 +231,8 @@ function ago(at) {
 }
 function card(title, aside, cls) {
   const c = el("section", null, "card" + (cls ? " " + cls : "")), h = el("h2", title);
-  if (aside) h.append(el("span", aside, "aside"));
+  const said = $("headline").textContent.trim();   // already the page's headline: not said twice
+  if (aside && !(said && aside.replace(/^plan:\s*/, "").trim() === said)) h.append(el("span", aside, "aside"));
   c.append(h);
   return c;
 }
@@ -392,6 +394,8 @@ function applyPick() {
     n.classList.toggle("lit", lit.has(d) && d !== picked);
     n.classList.toggle("dim", active && d !== picked && !lit.has(d));
   }
+  // a container holding what is picked or lit is not dimmed: its dimming would fade them too
+  for (const n of $("dia").querySelectorAll(".dim")) if (n.querySelector(".picked, .lit")) n.classList.remove("dim");
   // the lanes and chips that hold the picked block (or are picked, or lit by it) light up too
   for (const e of document.querySelectorAll("[data-pid]")) {
     const own = JSON.parse(e.dataset.blocks || e.dataset.parts || "[]"), pid = e.dataset.pid;
