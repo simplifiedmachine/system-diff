@@ -77,6 +77,9 @@ header.top h1 { font-size:15px; margin:0 6px 0 0; font-weight:650; }
 .spacer { flex:1; }
 #since { color:var(--muted); font-size:12.5px; }
 main { max-width:1240px; margin:0 auto; padding:18px 20px 28px; display:grid; gap:16px; }
+main > * { min-width:0; }
+[hidden] { display:none !important; }
+.headline, .card > h2 { overflow-wrap:anywhere; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); }
 .card > h2 { font-size:13px; margin:0 0 10px; color:var(--muted); font-weight:600; letter-spacing:.04em; text-transform:uppercase;
              display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
@@ -118,11 +121,6 @@ main { max-width:1240px; margin:0 auto; padding:18px 20px 28px; display:grid; ga
 #dia.empty { color:var(--muted); font-size:13px; padding:24px; text-align:center; }
 #dia.enterable [data-id].can-enter { cursor:zoom-in; }
 #detail { padding:12px 16px; min-height:44px; white-space:pre-wrap; color:var(--ink2); font-size:13.5px; }
-.diawrap { display:block; }
-/* a diagram narrower than the card: its detail sits beside it, filling the space on the right */
-.diawrap.side { display:flex; align-items:stretch; }
-.diawrap.side #dia { flex:0 1 auto; border-right:1px solid var(--line); }
-.diawrap.side #detail { flex:1 1 260px; min-width:240px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
 #detail .what { color:var(--muted); }
 #detail b { color:var(--ink); }
 .timeline { list-style:none; margin:0; padding:0 0 0 4px; }
@@ -423,13 +421,6 @@ $("dia").addEventListener("click", e => {
   const d = pickAt(e.target), g = (ui.data && ui.data.diagram) || {}, t = d && keyed(g.enter, d);
   if (t) go("now", t);
 });
-// A diagram narrower than its card: its detail sits beside it, in the room to spare on the right.
-function fitSide() {
-  const svg = $("dia").querySelector("svg"), wrap = $("diawrap");
-  const vb = svg ? (svg.getAttribute("viewBox") || "").split(/[ ,]+/).map(Number) : [];
-  wrap.classList.toggle("side", vb.length === 4 && wrap.clientWidth - vb[2] * 1.1 > 280);
-}
-window.addEventListener("resize", fitSide);
 function drawDiagram(g) {
   const box = $("dia");
   box.innerHTML = g.svg || "";
@@ -442,7 +433,6 @@ function drawDiagram(g) {
     const vb = (svg.getAttribute("viewBox") || "").split(/[ ,]+/).map(Number);
     if (vb.length === 4 && vb[2] > 0) {
       svg.style.maxWidth = Math.round(vb[2] * 1.1) + "px"; svg.style.margin = "0";
-      fitSide();
     }
   }
   for (const n of box.querySelectorAll("[data-id]"))
@@ -917,7 +907,11 @@ def web_url(root: Path) -> Optional[str]:
 
 
 def _free(port: int) -> bool:
+    """Whether the server could listen on `port`: as it binds, a port whose last connections are still closing
+    (TIME_WAIT, after a browser or a tunnel used it) counts as free."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if os.name != "nt":
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind(("127.0.0.1", port))
             return True
