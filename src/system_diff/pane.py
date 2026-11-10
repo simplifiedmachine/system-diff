@@ -278,32 +278,31 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
     return page.json(view="now", part=part or "")
 
 
-def view_map(root: Path, width: int) -> Dict[str, Any]:
+def view_review(root: Path, width: int) -> Dict[str, Any]:
+    """Everything you have not marked as seen: the system diagram since your checkpoint, its changes coloured, then
+    each change read for design, then the exact list. Mark it seen and the next review starts from here."""
     c = compare(root, "checkpoint", ".")
     agent = activity.now(activity.events(root, 200), Code(c.cfg))["part"]
+    since = "since your checkpoint" if c.base == "checkpoint" else f"since {c.base}"
     page = canvas.Page(width)
     page.add([c.diff["headline"], "bold" if c.diff["changes"] else "muted"])
-    page.heading("System" + (" since your checkpoint" if c.base == "checkpoint" else f" since {c.base}"),
-                 "click, then ← ↑ ↓ → · ↵ zooms in")
+    page.heading("System " + since, "click, then ← ↑ ↓ → · ↵ zooms in")
     g = _diagram(page, c, architecture.system(c, None, agent), width)
     ids = {b["id"] for b in g.blocks}
     page.pick = "b:" + agent if agent and "b:" + agent in ids else ""
-    return page.json(view="map", part="")
-
-
-def view_changes(root: Path, width: int) -> Dict[str, Any]:
-    page = canvas.Page(width)
-    for point in ["checkpoint"] + (["turn"] if turn_sha(root) else []):
-        c = compare(root, point, ".")
-        notes = design.Reading(c).notes()
-        page.heading("This turn" if point == "turn" else "Since " + ("your checkpoint" if c.base == "checkpoint"
-                                                                      else c.base))
-        page.add([c.diff["headline"], "bold"])
-        _notes(page, notes, 40, ask=True)
+    notes = design.Reading(c).notes()
+    page.heading("Every change " + since, f"{len(notes)} to the design" if notes else "")
+    if notes:
+        _notes(page, notes, 60, ask=True)
         page.blank()
         for line in c.diff["plan"].splitlines():
             page.add([line, "muted"])
-    return page.json(view="changes", part="")
+        page.blank()
+        page.add(["Seen it all? Tell Claude \"mark it as seen\" (or run system-diff checkpoint): the next review "
+                  "starts from here.", "muted"])
+    else:
+        page.add(["   nothing has changed in the system's structure since you last marked it seen", "muted"])
+    return page.json(view="review", part="")
 
 
 def stack(source, bp: dict, cfg: Dict[str, Any]) -> Dict[str, Dict[str, int]]:
@@ -491,10 +490,8 @@ def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = N
 def _show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None) -> Dict[str, Any]:
     if view == "agents":
         return view_agents(root, width)
-    if view == "map":
-        return view_map(root, width)
-    if view == "changes":
-        return view_changes(root, width)
+    if view in ("review", "map", "changes"):   # Map and Changes were one review in two tabs: now one
+        return view_review(root, width)
     if view == "topics":
         return view_topics(root, width)
     return view_now(root, width, part or "")

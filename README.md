@@ -69,12 +69,13 @@ Claude is changing in it. `/system-diff close` (or "× close" in its tab row) hi
     - The basics of a technology only where it is new: new to the system this turn, or one you marked new to you.
   - **What just happened**: the system diff, step by step. Each change an edit made is said in plain words, with why
     it matters and the file it came from. Edits that changed no structure are told once.
-- **Map**: the system diagram since your checkpoint, every box to pick and zoom into.
+- **Review**: everything you have not marked as seen, across turns: the system diagram since your checkpoint with its
+  changes coloured, every block to pick and zoom into, then every change read for design and the exact list. Once
+  you have understood it, tell Claude "mark it as seen" (or run `system-diff checkpoint`): from then on you see only
+  what is new to you.
 - **Agents**: the team at work. Each agent's area, the blocks it owns and edited, and unread messages; the system
   diagram with `@agent` after each block it works on; the bus, newest first; and a warning when two agents edit one
   block, or one edits a block claimed for another.
-- **Changes**: every change since your checkpoint, and this turn, read for design. Once you have understood it, tell
-  Claude "mark it as seen" (or run `system-diff checkpoint`): from then on you see only what is new to you.
 - **Topics**: the stack, technology by technology. Pick one and the parts that use it light up in the diagram; space
   marks it new to you, so Learn explains its basics.
 
@@ -87,7 +88,7 @@ One meaning per colour, so your eye goes where it should:
 - **Gray:** the background (why, when, labels).
 - **Red:** only what was taken away.
 
-`n` `m` `c` `t` switch views.
+`n` `r` `a` `t` switch views.
 
 ### A team of agents, by the system's blocks
 

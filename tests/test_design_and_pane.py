@@ -76,11 +76,15 @@ def test_enter_on_a_component_opens_its_insides(repo, files, capsys):
     assert "e:web>f:app/api/routes.py" in out["lights"]["b:web"]
 
 
-def test_map_changes_and_topics(repo, capsys):
-    the_map, _ = page(capsys, repo, "--view", "map")
-    assert the_map["view"] == "map" and {"b:api", "b:x:postgres"} <= {b["id"] for b in the_map["blocks"]}
-    changes, text = page(capsys, repo, "--view", "changes")
-    assert any(t.startswith("SINCE") for t in text)
+def test_review_and_topics(repo, files, capsys):
+    files(repo, {"app/api/health.py": HEALTH_ROUTE})
+    review, text = page(capsys, repo, "--view", "review")
+    assert review["view"] == "review" and {"b:api", "b:x:postgres"} <= {b["id"] for b in review["blocks"]}
+    assert any(t.startswith("SYSTEM SINCE") for t in text) and any(t.startswith("EVERY CHANGE SINCE") for t in text)
+    assert "+ route GET /health — GET /health   [new-interface]" in text or any(
+        t.startswith("+ route GET /health") for t in text)                     # the exact list too
+    for old in ("map", "changes"):                          # the two tabs it replaces still open it
+        assert page(capsys, repo, "--view", old)[0]["view"] == "review"
     topics, text = page(capsys, repo, "--view", "topics")
     chip = next(b for b in topics["blocks"] if b["id"] == "t:fastapi")
     assert chip["space"] == {"learn": "fastapi"} and chip["slot"][1] == 4

@@ -126,8 +126,8 @@ test('the arrows pick a block, Enter zooms in, b goes back', async ($, on) => {
   expect(last()).not.toContain('--part core')
 
   await ui.key({ key: 'return', in: 'page' })           // zoomed in again: Follow Claude shows
-  await ui.key({ key: 'm', in: 'page' })
-  expect(last()).toContain('--view map')
+  await ui.key({ key: 'r', in: 'page' })
+  expect(last()).toContain('--view review')
   await ui.press({ key: 'view-agents' })
   expect(last()).toContain('--view agents')
   await ui.press({ key: 'follow' })
