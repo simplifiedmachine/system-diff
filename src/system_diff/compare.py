@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -22,6 +23,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from . import config
 from .diff import diff, numstat
 from .extract import EXTRACT_VERSION, Code, extract
+from . import progress
 from .sources import GitSource, git, git_dir
 
 CHECKPOINT_REF = "refs/worktree/system-diff/checkpoint"
@@ -47,9 +49,17 @@ def _head(root: Path) -> Optional[str]:
 def worktree_tree(root: Path) -> str:
     """The working tree's git tree id: cheap, and the same until a file changes."""
     with tempfile.TemporaryDirectory() as tmp:
-        env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
-        if _head(root):
-            _git_env(root, env, "read-tree", "HEAD")
+        index = Path(tmp) / "index"
+        env = {**os.environ, "GIT_INDEX_FILE": str(index)}
+        # Start from a copy of the repository's own index: it knows each file's size and time, so `add -A` hashes only
+        # the files that changed. From an empty index it would hash every file every time (slow in a large repository,
+        # most of all on Windows).
+        try:
+            real = Path(_git_env(root, dict(os.environ), "rev-parse", "--git-path", "index"))
+            shutil.copyfile(real if real.is_absolute() else root / real, index)
+        except (OSError, subprocess.CalledProcessError):
+            if _head(root):
+                _git_env(root, env, "read-tree", "HEAD")
         _git_env(root, env, "add", "-A")
         return _git_env(root, env, "write-tree")
 
@@ -160,8 +170,13 @@ def _compare(root: Path, base: str, a_sha: str, a_label: str, head: str, b_sha: 
              config_path: Optional[str]) -> Comparison:
     head_src = GitSource(b_sha, root)
     cfg = config.load(head_src, root, config_path)
+    progress.stage(f"Reading the code at {a_label}")
     a = _blueprint(a_sha, cfg, lambda: GitSource(a_sha, root), root if base in ("checkpoint", "turn") else None)
-    b = _blueprint(b_sha, cfg, head_src)
+    progress.stage(f"Reading the code at {b_label}")
+    # the working tree's too: its snapshot's id changes with any file, so a kept one is never stale, and the pane,
+    # asking every few seconds, does not read every file again each time
+    b = _blueprint(b_sha, cfg, head_src, root if head in WORKTREE else None)
+    progress.stage("Comparing")
     for side, point, label in ((a, base, a_label), (b, head, b_label)):
         if point in ("checkpoint", "turn") or point in WORKTREE:
             side["ref"] = label  # a snapshot's commit id means nothing to a person
@@ -179,5 +194,6 @@ def compare(root: Path, base: str = "checkpoint", head: str = ".", config_path: 
 
 def compare_worktree(root: Path, bases: Iterable[str], config_path: Optional[str] = None) -> List[Comparison]:
     """The working tree against each of `bases` (e.g. the checkpoint and the turn), snapshotted and read once."""
+    progress.stage("Taking a snapshot of the working tree")
     b_sha, b_label = resolve(root, ".")
     return [_compare(root, base, *resolve(root, base), ".", b_sha, b_label, config_path) for base in bases]

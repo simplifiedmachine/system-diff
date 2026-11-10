@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 302,
+   "lines": 325,
    "hub": false,
    "quiet": false
   },
@@ -81,7 +81,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 183,
+   "lines": 199,
    "hub": false,
    "quiet": false
   },
@@ -129,7 +129,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1048,
+   "lines": 1051,
    "hub": false,
    "quiet": false
   },
@@ -189,7 +189,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 1216,
+   "lines": 1221,
    "hub": false,
    "quiet": false
   },
@@ -214,6 +214,18 @@
    "declared": true,
    "files": 1,
    "lines": 121,
+   "hub": false,
+   "quiet": false
+  },
+  "src/system_diff": {
+   "label": "src/system_diff",
+   "layer": "undeclared",
+   "kind": "",
+   "order": 23,
+   "container": "",
+   "declared": false,
+   "files": 1,
+   "lines": 72,
    "hub": false,
    "quiet": false
   },
@@ -319,6 +331,7 @@
   "cli>png": 1,
   "cli>readme": 1,
   "cli>sources": 1,
+  "cli>src/system_diff": 2,
   "cli>statusline": 1,
   "cli>textmap": 1,
   "cli>watch": 1,
@@ -326,10 +339,12 @@
   "compare>diff": 1,
   "compare>extract": 1,
   "compare>sources": 1,
+  "compare>src/system_diff": 1,
   "design>graph": 1,
   "diff>extract": 1,
   "diff>sources": 1,
   "extract>config": 1,
+  "extract>src/system_diff": 1,
   "graph>diff": 1,
   "graph>pictures": 1,
   "learn>activity": 1,
@@ -360,9 +375,11 @@
   "panel>learn": 4,
   "panel>pictures": 1,
   "panel>sources": 3,
+  "panel>src/system_diff": 1,
   "panel>textmap": 1,
   "panel>watch": 1,
   "readme>pictures": 1,
+  "src/system_diff>sources": 1,
   "statusline>activity": 1,
   "statusline>config": 1,
   "statusline>extract": 1,
@@ -546,6 +563,9 @@
    "GitSource",
    "repo_root"
   ],
+  "cli>src/system_diff": [
+   "line"
+  ],
   "cli>statusline": [
    "statusline"
   ],
@@ -575,6 +595,9 @@
    "git",
    "git_dir"
   ],
+  "compare>src/system_diff": [
+   "stage"
+  ],
   "design>graph": [
    "connections",
    "part_kind"
@@ -588,6 +611,10 @@
   ],
   "extract>config": [
    "segment_rx"
+  ],
+  "extract>src/system_diff": [
+   "_stage",
+   "stage"
   ],
   "graph>diff": [
    "files_word"
@@ -743,6 +770,10 @@
    "git",
    "git_dir"
   ],
+  "panel>src/system_diff": [
+   "begin",
+   "end"
+  ],
   "panel>textmap": [
    "Line"
   ],
@@ -751,6 +782,9 @@
   ],
   "readme>pictures": [
    "write_if_changed"
+  ],
+  "src/system_diff>sources": [
+   "git_dir"
   ],
   "statusline>activity": [
    "now",
@@ -886,11 +920,12 @@
    "typing": 1
   },
   "cli": {
+   "pathlib": 2,
    "sys": 2,
+   "time": 2,
    "argparse": 1,
    "json": 1,
    "os": 1,
-   "pathlib": 1,
    "shutil": 1,
    "typing": 1
   },
@@ -900,6 +935,7 @@
    "json": 1,
    "os": 1,
    "pathlib": 1,
+   "shutil": 1,
    "subprocess": 1,
    "tempfile": 1,
    "threading": 1,
@@ -998,6 +1034,14 @@
    "pathlib": 1,
    "re": 1,
    "subprocess": 1,
+   "typing": 1
+  },
+  "src/system_diff": {
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "subprocess": 1,
+   "time": 1,
    "typing": 1
   },
   "statusline": {

@@ -194,3 +194,17 @@ def test_the_pane_page_is_utf8_on_a_cp1252_pipe(tmp_path):
                          cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True)
     assert got.returncode == 0, got.stderr.decode("utf-8", "replace")[-400:]
     json.loads(got.stdout.decode("utf-8"))
+
+
+def test_a_long_read_says_where_it_is_and_clears_when_done(tmp_path):
+    """The pane shows what a long first read is doing: `system-diff progress` prints the stage while it runs, and
+    nothing once it is done."""
+    import subprocess
+    from system_diff import progress
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    assert progress.line(tmp_path) == ""
+    progress.begin(tmp_path)
+    progress.stage("Reading the code at the working tree", 50, 1234)
+    assert progress.line(tmp_path).startswith("Reading the code at the working tree: 50 of 1,234 files - ")
+    progress.end()
+    assert progress.line(tmp_path) == ""

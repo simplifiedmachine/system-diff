@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.10' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.11' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -58,14 +58,21 @@ let windowAt = 0 // the pane's scroll: its first row showing, and how many show
 let windowRows = 40
 let wantOffset: number | null = null
 
+const LONGEST = 300000 // how long a read of the system may take: a first one in a large repository is slow
+
 // The last error from a system-diff that is there but failed (not one that is missing), to show in place of the page.
 let failure = ''
 
 async function run($: EngineInterface, argv: string[]): Promise<{ out: string; old: boolean } | null> {
   failure = ''
   for (const how of runner ? [runner] : RUNNERS) {
+    const began = Date.now()
+    const settled = { done: false }
     try {
-      const got = await $.process.run([...how, ...argv], { timeoutMs: 20000 })
+      const pending = $.process.run([...how, ...argv], { timeoutMs: LONGEST })
+      void pending.then(() => { settled.done = true }, () => { settled.done = true })
+      if (argv[0] === 'panel') void watch($, how, settled)
+      const got = await pending
       // a way that answers with nothing (a launcher that found no system-diff) is not one: try the next
       if (got.exitCode === 0 && (got.stdout.trim() !== '' || runner)) {
         runner = how
@@ -77,10 +84,30 @@ async function run($: EngineInterface, argv: string[]): Promise<{ out: string; o
         failure = lines[lines.length - 1].trim().slice(0, 200)
       }
     } catch {
+      if (Date.now() - began >= LONGEST - 1000) { // it ran, and ran too long: no other way will do better
+        failure = `reading the system took over ${LONGEST / 60000} minutes`
+        return null
+      }
       // not this way: try the next
     }
   }
   return null
+}
+
+// While a long read runs (the first one in a large repository), what it is doing, once a second: the engine's
+// `progress --wait 1` waits the second, so the pane needs no timer.
+async function watch($: EngineInterface, how: string[], settled: { done: boolean }): Promise<void> {
+  while (!settled.done) {
+    let got
+    try {
+      got = await $.process.run([...how, 'progress', '--wait', '1'], { timeoutMs: 15000 })
+    } catch {
+      return
+    }
+    if (settled.done || got.exitCode !== 0) return // done, or a system-diff from before progress
+    const line = got.stdout.trim()
+    if (line) await update($, note, () => `Reading the system (the first time in a large repository takes a while): ${line}`)
+  }
 }
 
 // Submit what was typed in the web page as the person's own words, each id once. The call resolves only as its turn

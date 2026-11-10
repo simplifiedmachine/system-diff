@@ -21,6 +21,7 @@ import re
 from collections import Counter, defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from . import progress
 from .config import segment_rx
 
 EXTRACT_VERSION = "2"  # what a blueprint records: a blueprint cached by another version is read again
@@ -878,7 +879,9 @@ def extract(source, cfg: Dict[str, Any]) -> dict:
     owner: Dict[str, str] = {}
     components: Dict[str, dict] = {}
     ui_files: Counter = Counter()
-    for f in code:
+    for n, f in enumerate(code):
+        if n % 25 == 0:
+            progress.stage(progress._stage or "Reading the code", n, len(code))
         cid = code_of.part_of(f)
         owner[f] = cid
         meta = next((c for c in comps if c["id"] == cid), None)

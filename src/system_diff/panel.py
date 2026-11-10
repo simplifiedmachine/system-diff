@@ -235,8 +235,13 @@ def rows(root: Path, width: int = 80) -> List[textmap.Line]:
 def main(root: Path, width: int, view: str = "now", part: Optional[str] = None, protocol: int = 1,
          zoom: int = -1) -> int:
     if protocol >= 2:
-        from . import pane
-        print(json.dumps(pane.show(root, width, view, part or None, zoom), ensure_ascii=False))
+        from . import pane, progress
+        progress.begin(root)   # a long first read says where it is, for the pane to show meanwhile
+        try:
+            page = pane.show(root, width, view, part or None, zoom)
+        finally:
+            progress.end()
+        print(json.dumps(page, ensure_ascii=False))
         return 0
     got = show(root, width, view, part or None)
     for key in ("head", "rows"):

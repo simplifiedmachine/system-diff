@@ -185,6 +185,8 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
+    pg = sub.add_parser("progress", help="what a long read of the system is doing now (for the pane, while it waits)")
+    pg.add_argument("--wait", type=float, default=0, help="seconds to wait first (the pane's pace)")
     pn = sub.add_parser("panel", help="what a pane beside the agent shows, as JSON (for the Claude Code mod)")
     pn.add_argument("--width", type=int, default=80)
     pn.add_argument("--view", default="now", choices=["now", "review", "map", "changes", "topics", "agents"])
@@ -241,6 +243,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "hook":
         from . import agent
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
+    if args.cmd == "progress":
+        from .progress import line
+        if args.wait:
+            import time
+            time.sleep(min(10.0, args.wait))
+        print(line(root))
+        return 0
     if args.cmd == "panel":
         from . import panel
         return panel.main(root, args.width, args.view, args.part, args.protocol, args.zoom)

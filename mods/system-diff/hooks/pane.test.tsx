@@ -55,6 +55,9 @@ function answer(on: any, asked: string[][], exitCode = 0, stderr = '', opened: A
   on('command.run', () => ({ text: '' }))
   on('process.run', (_: unknown, e: { argv: string[] }) => {
     const argv = [...e.argv]
+    if (argv.includes('progress')) { // what a long read is doing: nothing, here
+      return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
     asked.push(argv)
     const at = (flag: string) => argv[argv.indexOf(flag) + 1] ?? ''
     const out = argv.includes('panel') ? JSON.stringify({ ...page(at('--part'), Number(at('--width')) || 100), ...more }) : 'ok'
