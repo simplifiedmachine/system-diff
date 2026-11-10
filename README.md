@@ -14,6 +14,19 @@ system-diff is two things:
    agent per area; the agents run in parallel, claim their blocks, and tell each other what they change over an async
    bus whose topics are the blocks. The pane's Agents tab shows them live: a lane per agent, its blocks in its colour.
 
+## Install
+
+In Claude Code:
+
+```
+/plugin marketplace add simplifiedmachine/system-diff
+/plugin install system-diff
+```
+
+That is the whole setup. The pane opens beside the chat, and the same views open in your browser. The first time,
+the plugin installs the system-diff engine for itself (about a minute; the pane says so). All it needs is Python 3.11
+or newer.
+
 <!-- system-map:begin -->
 ![System map, generated from the code](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg)
 
@@ -28,28 +41,24 @@ Read by the code but set by no deploy configuration, so not drawn: Headless Chro
 
 ## In Claude Code
 
-In Claude Code:
+The plugin brings everything, in every session and every project:
 
-```
-/plugin marketplace add simplifiedmachine/system-diff
-/plugin install system-diff
-```
+- **The System diff pane** beside the chat. Claude Code opens it by itself when the terminal is wide enough;
+  `/system-diff` opens it again, `/system-diff close` hides it.
+- **The same views in your browser**, at http://localhost:8765/: started with each session, linked in the pane.
+- **The hooks** that follow what Claude reads and edits, ask it to plan a team, and carry the agents' messages.
+- **The MCP server** Claude uses to explain the system, show what changed and plan a team, and **its skill**.
 
-That is all. The first time it runs, the plugin installs its own copy of system-diff (the version it was released
-with, in its own data folder, with uv when you have it, else Python's venv and pip; about a minute, the pane says
-so). A system-diff you installed yourself (`pipx install "system-diff[mcp]"`) is used meanwhile, and a project's
-own `.venv` with system-diff in it comes first. The plugin brings everything, in every session and every project: the System diff pane, the same views
-on a web page in your browser (started with the session, linked in the pane), the hooks that follow what Claude
-reads and edits, the MCP server Claude uses to explain the system and plan a team, and its skill. Two ways to look
-at one thing: in the terminal beside the chat, or in the browser.
+**Where the engine comes from.** The plugin uses, in order: a project's own `.venv` with system-diff in it, its own
+copy (the version it was released with, installed the first time into its data folder, with uv when you have it,
+else Python's venv and pip), then a system-diff you installed yourself (`pipx install "system-diff[mcp]"`). Where it
+can install none, it stays quiet and never holds a session up.
 
-Python 3.11 or newer. Claude Code opens the pane by itself when the terminal is wide enough; `/system-diff` opens
-it again after you close it. (Should another marketplace you added also have a plugin called system-diff,
-`/plugin install system-diff@system-diff` names this one.) From a clone, `claude --plugin-dir mods/system-diff`
-loads it for one launch. Upgrading from a version before the plugin carried the hooks: run
-`system-diff setup claude --undo` (and `--scope local` or `project` where you set it up there), so they do not run
-twice. Without the plugin, `system-diff setup claude` wires the hooks, the skill and the MCP server into Claude Code
-by hand.
+**Other ways in.** From a clone, `claude --plugin-dir mods/system-diff` loads the plugin for one launch. Without the
+plugin, `system-diff setup claude` wires the hooks, the skill and the MCP server into Claude Code by hand. Upgrading
+from a version before the plugin carried the hooks: run `system-diff setup claude --undo` (with `--scope local` or
+`project` where you set it up there), so they do not run twice. Should another marketplace you added also have a
+plugin called system-diff, `/plugin install system-diff@system-diff` names this one.
 
 You get both features at once:
 
