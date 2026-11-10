@@ -12,7 +12,7 @@ import type { Page, PageBlock, Row, Run } from '../types'
 // the rest keeps its colours: yellow what changed, green what is new, red what went, gray the background.
 
 type Props = { page: Page; canGoBack: boolean }
-type State = { sel: string; sx: number; mine: boolean; ticking?: boolean }
+type State = { sel: string; sx: number; mine: boolean; ticking?: boolean; free?: boolean } // free: scrolled by hand
 
 const COLORS: Record<string, string> = {
   accent: 'blue', focus: 'blue', near: 'blue', data: 'blue',
@@ -88,7 +88,7 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
   const state = surface.state
   const sel = state?.mine && byId.has(state.sel) ? state.sel : byId.has(page.pick) ? page.pick : (page.blocks[0]?.id ?? '')
   const picked = byId.get(sel)
-  const sx = across(page, cols, state?.mine ? state.sx : 0, picked)
+  const sx = across(page, cols, state?.mine ? state.sx : 0, state?.free ? undefined : picked)
 
   // The pane was laid out for another width (the split moved): ask for this one once it holds, not for every
   // width a drag passes on its way.
@@ -104,7 +104,8 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
         surface.post({ width: askedWidth })
       }
     })
-    surface.setState({ sel: state?.sel ?? '', sx: state?.sx ?? 0, mine: state?.mine ?? false, ticking: true })
+    surface.setState({ sel: state?.sel ?? '', sx: state?.sx ?? 0, mine: state?.mine ?? false, ticking: true,
+                       free: state?.free })
   }
 
   const pick = (b: PageBlock | undefined, x = sx) => {
@@ -127,7 +128,7 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
     } else if (['up', 'down', 'left', 'right'].includes(e.key)) {
       pick(move(page.blocks, picked, e.key))
     } else if (e.key === '[' || e.key === ']') {
-      surface.setState({ sel, sx: across(page, cols, sx + (e.key === '[' ? -STEP : STEP), undefined), mine: true,
+      surface.setState({ sel, sx: across(page, cols, sx + (e.key === '[' ? -STEP : STEP), undefined), mine: true, free: true,
                          ticking: true })
     } else if (e.key === 'return') {
       act(picked, 'enter')

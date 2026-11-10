@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.4.0' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.4.1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['map', 'Map', 'm'], ['agents', 'Agents', 'a'], ['changes', 'Changes', 'c'],
@@ -282,7 +282,7 @@ export const register: Register = on => {
         </Box>
         {said !== '' && <Text dimColor>{said}</Text>}
         {drawn !== null && Client !== undefined && (
-          <Client key="page" module="./page.tsx" props={{ page: drawn, canGoBack: behind.length > 0 }} />
+          <Client key="page" module="./page.tsx" width="100%" props={{ page: drawn, canGoBack: behind.length > 0 }} />
         )}
         {drawn !== null && Client === undefined && drawn.rows.map(line)}
         {drawn !== null && Client === undefined && (
