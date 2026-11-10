@@ -19,6 +19,7 @@ const COLORS: Record<string, string> = {
   attention: 'yellow', changed: 'yellow',
   good: 'green', added: 'green',
   removed: 'red', network: 'magenta',
+  agent0: 'cyan', agent1: 'magenta', agent2: 'green', agent3: 'yellow', agent4: 'blue',
 }
 const BOLD = ['bold', 'focus', 'heading', 'attention']
 const STEP = 8 // columns a scroll moves

@@ -353,3 +353,69 @@ def test_what_an_agent_read_before_it_had_a_name_stays_read(repo):
     assert len(agents.inbox(repo, "agent-a1b2c3")) == 1
     agents.tie(repo, "a1b2c3d4", "api")
     assert agents.inbox(repo, "api") == []
+
+
+def test_a_box_an_agent_owns_draws_in_that_agents_colour():
+    nodes = [{"id": "a", "col": "one", "title": "Alpha", "sub": "", "status": "same", "type": "component", "owner": 0},
+             {"id": "b", "col": "two", "title": "Beta", "sub": "", "status": "changed", "type": "component", "owner": 1},
+             {"id": "c", "col": "two", "title": "Gamma", "sub": "", "status": "same", "type": "component"}]
+    g = canvas.layered(nodes, [], [("one", "One"), ("two", "Two")], width=80)
+    runs = [r for row in g.rows() for r in row if len(r) == 3]
+    border = {bid: {r[1] for r in runs if r[2] == bid and set(r[0]) <= set("╭╮╰╯┌┐└┘─│ ")} for bid in ("b:a", "b:b", "b:c")}
+    assert border["b:a"] == {"agent0"} and border["b:b"] == {"agent1"} and border["b:c"] == {"muted"}
+    titles = {r[1] for r in runs if r[0].strip() in ("Alpha", "~ Beta", "~Beta")}
+    assert "title agent0" in titles and any(t.endswith("agent1") for t in titles)
+
+
+def test_each_agent_is_a_lane_that_lights_its_blocks_drawn_in_its_colour(repo, capsys):
+    from system_diff import agents
+    agents.plan(repo, compare(repo, "HEAD", "."), "make the API and the store faster")
+    agents.tie(repo, "a1", "api")
+    agents.tie(repo, "a2", "store")
+    activity.record(repo, {"event": "prompt", "text": "go"})
+    activity.record(repo, {"event": "edit", "path": "app/api/routes.py", "agent": "a1"})
+    out, text = page(capsys, repo, "--view", "agents")
+    ids = {b["id"] for b in out["blocks"]}
+    assert {"ag:api", "ag:store"} <= ids
+    assert "b:api" in out["lights"]["ag:api"]
+    detail = "\n".join("".join(r[0] for r in row) for row in out["details"]["ag:api"])
+    assert detail.startswith("owns ") and "edited API" in detail
+    styles = {r[1] for row in out["rows"] for r in row}
+    assert any(s.split()[-1] in ("agent0", "agent1", "agent2") for s in styles if s)   # legend and boxes coloured
+    runs = [r for row in out["rows"] for r in row if len(r) == 3 and r[2] == "b:api"]
+    assert any("agent" in r[1] for r in runs)                  # the API box drawn in its editor's colour
+
+
+def test_a_part_picked_on_the_topics_tab_lights_and_names_the_technology_it_uses(repo, files, capsys):
+    files(repo, {"app/api/health.py": HEALTH_ROUTE})
+    topics, _text = page(capsys, repo, "--view", "topics")
+    assert "t:fastapi" in topics["lights"]["b:api"]
+    assert "t:fastapi" in topics["lights"] and "b:api" in topics["lights"]["t:fastapi"]   # chips still light parts
+    detail = "".join(r[0] for row in topics["details"]["b:api"] for r in row)
+    assert "uses " in detail and "FastAPI" in detail
+
+
+def test_a_subagent_naming_itself_to_a_team_tool_gets_its_messages_by_that_name(repo):
+    from system_diff import agent, agents
+    agents.publish(repo, "agent:panes", "canvas draws owners now", sender="pictures")
+    said: list = []
+    agent.run_hook(json.dumps({"cwd": str(repo), "hook_event_name": "PostToolUse", "agent_id": "x9",
+                               "tool_name": "mcp__system-diff__claim", "tool_input": {"agent": "panes", "blocks": []}}),
+                   emit=said.append)
+    assert agents.name_of(repo, "x9") == "panes"
+    assert "pictures on agent:panes: canvas draws owners now" in json.loads(said[-1])["hookSpecificOutput"]["additionalContext"]
+
+
+def test_the_agents_tab_shows_each_agent_live_in_its_lane(repo, capsys):
+    from system_diff import agents
+    agents.plan(repo, compare(repo, "HEAD", "."), "make the API and the store faster")
+    agents.tie(repo, "a1", "api")
+    activity.record(repo, {"event": "prompt", "text": "go"})
+    activity.record(repo, {"event": "read", "path": "app/api/routes.py", "agent": "a1"})
+    activity.record(repo, {"event": "edit", "path": "app/api/routes.py", "agent": "a1"})
+    agents.publish(repo, "api", "API now answers GET /health", sender="api", kind="change")
+    out, text = page(capsys, repo, "--view", "agents")
+    live = text[next(i for i, t in enumerate(text) if t.startswith("LIVE")) + 1:]
+    lane = next(t for t in live if t.startswith("api"))
+    assert "▲" in lane and "● ✎ editing routes.py" in lane and "1/1 blocks · 1 changes" in lane
+    assert any(t.startswith("store") and "○ idle" in t for t in live)

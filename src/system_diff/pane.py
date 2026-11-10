@@ -368,8 +368,19 @@ def view_topics(root: Path, width: int) -> Dict[str, Any]:
         g.lights["t:" + key] = sorted({"b:" + p for p in parts} | {"b:" + holder[p] for p in parts if p in holder})
     page.grid(g, slot=4, on={"t:" + k: {"space": {"learn": k}} for k in techs})
     page.pick = g.blocks[0]["id"] if g.blocks else ""
-    page.heading("Where it is used", "the picked technology's parts light up")
-    _diagram(page, c, model, width)
+    page.heading("Where it is used", "the picked technology's parts light up; a picked part lights what it uses")
+    d = _diagram(page, c, model, width)
+    for n in model["nodes"]:                  # a part (or container) picked: the technology it uses, lit and named
+        for box in [n] + list(n.get("items") or []):
+            inside = {i["id"] for i in n.get("items") or []} if box is n and n.get("items") else {box["id"]}
+            used = sorted((k for k in techs if inside & set(techs[k])),
+                          key=lambda k: (-sum(techs[k].get(p, 0) for p in inside), TECH[k][0].lower()))
+            bid = "b:" + box["id"]
+            if not used or bid not in d.details:
+                continue
+            page.lights[bid] = list(dict.fromkeys(page.lights.get(bid, []) + ["t:" + k for k in used]))
+            page.details[bid] = canvas.detail_rows("uses " + design.and_list([TECH[k][0] for k in used], 6), width,
+                                                   "muted", (f"{box['title']}  ", "bold"))[:SLOT]
     return page.json(view="topics", part="")
 
 
@@ -429,6 +440,30 @@ def collisions(root: Path, events: List[dict], code: Code, cfg: Dict[str, Any]) 
     return out
 
 
+def colours(who: Dict[str, Dict[str, Any]]) -> Dict[str, int]:
+    """Each agent's colour, 0..4 (style word f"agent{n}"): main first, then by name; past five they repeat."""
+    order = sorted(who, key=lambda n: (n != agents.MAIN, n))
+    return {name: i % 5 for i, name in enumerate(order)}
+
+
+def owners(model: Dict[str, Any], who: Dict[str, Dict[str, Any]], colour: Dict[str, int]) -> None:
+    """Colour each box by its agent: "owner" on every node or item an agent edited this turn (the one that edited
+    it most recently), else the one it is claimed for (the first)."""
+    edited: Dict[str, str] = {}
+    claimed: Dict[str, str] = {}
+    for name, a in sorted(who.items(), key=lambda kv: kv[1]["at"]):
+        for part in a["edits"]:
+            edited[part] = name                      # later (more recent) agents overwrite
+    for name in sorted(who, key=lambda n: colour[n]):
+        for part in who[name]["blocks"]:
+            claimed.setdefault(part, name)
+    for n in model["nodes"]:
+        for box in [n] + list(n.get("items") or []):
+            name = edited.get(box["id"]) or claimed.get(box["id"])
+            if name is not None:
+                box["owner"] = colour[name]
+
+
 def view_agents(root: Path, width: int) -> Dict[str, Any]:
     cfg = config.lenient(root)
     code = Code(cfg)
@@ -443,24 +478,53 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
     clash = collisions(root, events, code, cfg)
     if clash:
         _notes(page, clash, 4, ask=True)
+    model = architecture.system(c, None, activity.now(events, code)["part"])
+    holder = {i["id"]: n["id"] for n in model["nodes"] for i in n.get("items") or []}
+    drawn = {n["id"] for n in model["nodes"]} | set(holder)
+    colour = colours(who)
+    g = canvas.Grid()
+    y = 0
     for name, a in sorted(who.items(), key=lambda kv: (kv[0] != agents.MAIN, -kv[1]["at"], kv[0])):
         live = a["at"] and time.time() - a["at"] < 120
-        page.add(["● " if live else "○ ", "accent" if live else "muted"], [name, "bold"],
-                 [f"  {a['area']}" if a["area"] else "", "muted"],
-                 [f"  {time.strftime('%H:%M', time.localtime(a['at']))}" if a["at"] else "  not started", "muted"])
-        mine = [activity.label(cfg, b) for b in a["blocks"]]
-        if mine:
-            page.para("owns " + design.and_list(mine, 5), "muted", indent=4)
-        if a["edits"]:
-            page.para("edited " + design.and_list([activity.label(cfg, b) for b in a["edits"]], 5), "", indent=4)
+        bid = "ag:" + name
+        runs = [("● " if live else "○ ", "accent" if live else "muted"), (name, f"agent{colour[name]} bold"),
+                (f"  {a['area']}" if a["area"] else "", "muted"),
+                (f"  {time.strftime('%H:%M', time.localtime(a['at']))}" if a["at"] else "  not started", "muted")]
         unread = len(agents.inbox(root, name, mark=False))
         if unread:
-            page.add([f"    {unread} unread on the bus", "attention"])
-    if not who:
+            runs.append((f"  {unread} unread on the bus", "attention"))
+        x = 0
+        for text, style in runs:
+            if x >= width:
+                break
+            text = canvas.cut(text, max(0, width - x))
+            if text:
+                g.put(x, y, text, style, [bid])
+                x += len(text)
+        g.blocks.append({"id": bid, "x": 0, "y": y, "w": max(1, x), "h": 1})
+        parts = list(dict.fromkeys(list(a["edits"]) + list(a["blocks"])))
+        g.lights[bid] = sorted({"b:" + p for p in parts if p in drawn} | {"b:" + holder[p] for p in parts
+                                                                            if p in holder})
+        mine = [activity.label(cfg, b) for b in a["blocks"]]
+        done = [activity.label(cfg, b) for b in a["edits"]]
+        g.details[bid] = ([[["owns ", "muted"], [canvas.cut(design.and_list(mine, 5) if mine else "no blocks",
+                                                            width - 6), ""]]]
+                          + [[["edited ", "muted"], [canvas.cut(design.and_list(done, 5) if done else "nothing yet",
+                                                               width - 8), ""]]])
+        y += 1
+    if who:
+        page.grid(g, slot=2)
+        swimlanes(page, root, events, code, who, colour, width)
+    else:
         page.add(["   no agent has touched the code yet", "muted"])
-    page.heading("Who works where", "@name after a block: the agents on it")
-    model = architecture.system(c, None, activity.now(events, code)["part"])
+    page.heading("Who works where", "@name after a block: the agents on it, in their colour")
+    if who:
+        legend: List[list] = []
+        for name in sorted(who, key=lambda n: colour[n]):
+            legend += [["■ " + name, f"agent{colour[name]}"], ["   ", ""]]
+        page.add(*legend)
     badges(model, root, events, code)
+    owners(model, who, colour)
     _diagram(page, c, model, width)
     page.heading("The bus", "what agents told each other, newest first")
     msgs = agents.messages(root)[-10:][::-1]
@@ -473,6 +537,66 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
     if not msgs:
         page.add(["   nothing yet: changes to a block are published here as agents make them", "muted"])
     return page.json(view="agents", part="")
+
+
+LANE = {"change": ("▲", 4), "message": ("✉", 3), "edit": ("✎", 2), "read": ("◎", 1)}
+
+
+def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who: Dict[str, Dict[str, Any]],
+              colour: Dict[str, int], width: int) -> None:
+    """The team at work, live: a lane per agent in its colour, time left to right since the turn began, a mark where
+    it read (◎), edited (✎), changed the system's structure (▲) or told the others something (✉); then what it is
+    doing now and how far it has got."""
+    st = agents.state(root)
+    start = max((e["at"] for e in events if e.get("event") == activity.PROMPT
+                 and not activity.is_system(e.get("text", ""))), default=time.time() - 600)
+    now = time.time()
+    span = max(120.0, now - start)
+    label_w = min(14, max(len(n) for n in who) + 2)
+    cells = max(10, min(60, width - label_w - 34))
+    marks: Dict[str, List[tuple]] = defaultdict(list)
+    last: Dict[str, dict] = {}
+
+    def name_of(aid: str) -> str:
+        return agents.MAIN if not aid or aid == agents.MAIN else st["ids"].get(aid) or "agent-" + aid[:6]
+
+    for e in events:
+        kind = {activity.EDIT: "edit", activity.READ: "read"}.get(e.get("event"))
+        if kind and e["at"] >= start:
+            n = name_of(e.get("agent") or "")
+            marks[n].append((e["at"], kind))
+            last[n] = e
+    for m in agents.messages(root):
+        if m["at"] >= start and m["from"] in who:
+            marks[m["from"]].append((m["at"], "change" if m.get("kind") == "change" else "message"))
+    changes = {n: sum(1 for _at, k in ms if k == "change") for n, ms in marks.items()}
+    page.heading("Live", "since the turn began · ◎ read  ✎ edit  ▲ changed the system  ✉ told the others")
+    for name in sorted(who, key=lambda n: colour[n]):
+        lane = ["·"] * cells
+        rank = [0] * cells
+        for at, kind in marks.get(name, []):
+            i = min(cells - 1, int((at - start) / span * cells))
+            glyph, r = LANE[kind]
+            if r > rank[i]:
+                lane[i], rank[i] = glyph, r
+        style = f"agent{colour[name]}"
+        runs = [[canvas.cut(name, label_w - 1).ljust(label_w), style + " bold"]]
+        for ch in lane:
+            runs.append([ch, "muted" if ch == "·" else style + (" bold" if ch == "▲" else "")])
+        e = last.get(name)
+        if e and now - e["at"] < 90:
+            doing = ("✎ editing " if e["event"] == activity.EDIT else "◎ reading ") + e["path"].rsplit("/", 1)[-1]
+            runs.append(["  ● " + doing, "accent"])
+        else:
+            runs.append([f"  ○ idle{' since ' + time.strftime('%H:%M', time.localtime(e['at'])) if e else ''}",
+                         "muted"])
+        a = who[name]
+        owned = set(a["blocks"])
+        touched = len(owned & set(a["edits"])) if owned else len(a["edits"])
+        progress = (f" · {touched}/{len(owned)} blocks" if owned else f" · {touched} blocks") + (
+            f" · {changes.get(name, 0)} changes" if changes.get(name) else "")
+        runs.append([progress, "muted"])
+        page.add(*runs)
 
 
 ZOOM = 0   # how compact the diagrams are drawn: 0 full, 1 compact, 2 tiny (show sets it)

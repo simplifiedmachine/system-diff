@@ -147,6 +147,10 @@ def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
     def unread() -> Dict[str, Any]:
         return {"message": None, "context": agents.deliver(root, agent_id)}
 
+    named = (payload.get("tool_input") or {}).get("agent")
+    if tool.startswith("mcp__system-diff__") and isinstance(named, str) and agent_id:
+        agents.tie(root, agent_id, named)   # a subagent says who it is the first time it claims, publishes or reads
+
     if tool not in EDIT_TOOLS + READ_TOOLS:
         return unread()
     given = payload.get("tool_input") or {}

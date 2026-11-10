@@ -73,10 +73,13 @@ Claude is changing in it. `/system-diff close` (or "× close" in its tab row) hi
   changes coloured, every block to pick and zoom into, then every change read for design and the exact list. Once
   you have understood it, tell Claude "mark it as seen" (or run `system-diff checkpoint`): from then on you see only
   what is new to you.
-- **Agents**: the team at work. Each agent's area, the blocks it owns and edited, and unread messages; the system
-  diagram with `@agent` after each block it works on; the bus, newest first; and a warning when two agents edit one
+- **Agents**: the team at work. A lane per agent in its own colour, live: time runs left to right since the turn
+  began, with a mark where it read (◎), edited (✎), changed the system (▲) or told the others something (✉), then what
+  it is doing now and how many of its blocks it has touched. Pick an agent to light its blocks; the system diagram
+  draws each agent's blocks in its colour, with `@agent` after them; the bus, newest first; and a warning when two agents edit one
   block, or one edits a block claimed for another.
-- **Topics**: the stack, technology by technology. Pick one and the parts that use it light up in the diagram; space
+- **Topics**: the stack, technology by technology. Pick one and the parts that use it light up in the diagram (pick a
+  block in the diagram and the technologies it uses light up); space
   marks it new to you, so Learn explains its basics.
 
 One meaning per colour, so your eye goes where it should:

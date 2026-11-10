@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 462,
+   "lines": 466,
    "hub": false,
    "quiet": false
   },
@@ -69,7 +69,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 531,
+   "lines": 542,
    "hub": false,
    "quiet": false
   },
@@ -201,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 742,
+   "lines": 866,
    "hub": false,
    "quiet": false
   },
@@ -436,7 +436,8 @@
   "agent>agents": [
    "ORCHESTRATE",
    "after_edit",
-   "deliver"
+   "deliver",
+   "tie"
   ],
   "agent>companion": [
    "add_vscode_task",
@@ -724,13 +725,13 @@
    "now",
    "EDIT",
    "PROMPT",
-   "STOP"
+   "is_system"
   ],
   "panel>agents": [
    "MAIN",
    "state",
-   "inbox",
    "messages",
+   "inbox",
    "who_worked"
   ],
   "panel>architecture": [

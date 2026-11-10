@@ -123,7 +123,10 @@ def box_kind(n: dict) -> str:
 
 
 def box_style(n: dict) -> str:
-    """Blue where the agent is, the change's colour where something changed, gray otherwise."""
+    """The owning agent's colour where an agent owns it; blue where the agent is, the change's colour where something
+    changed, gray otherwise."""
+    if isinstance(n.get("owner"), int):
+        return f"agent{n['owner']}"
     if n.get("focus") or n.get("agent"):
         return "accent"
     st = n.get("status", "same")
@@ -133,6 +136,9 @@ def box_style(n: dict) -> str:
 def title_style(n: dict) -> str:
     """White for a part like any other, bold in the change's colour, bold blue where the agent is."""
     st = n.get("status", "same")
+    if isinstance(n.get("owner"), int):
+        bold = n.get("focus") or n.get("agent") or st != "same"
+        return f"title {'bold ' if bold else ''}agent{n['owner']}"
     if n.get("focus") or n.get("agent"):
         return "title bold accent"
     return f"title bold {st}" if st != "same" else "title"
@@ -172,12 +178,16 @@ def layered(nodes: List[dict], edges: List[dict], columns: List[Sequence[str]], 
         bid = "b:" + n["id"]
         rows = [(("● " if n.get("agent") and not n.get("items") else "") + SIGN.get(n.get("status", "same"), "")
                  + (n["title"].upper() if n.get("items") else n["title"]),
-                 "heading" if n.get("items") and not n.get("agent") else title_style(n), bid)]
+                 (("heading" + (f" agent{n['owner']}" if isinstance(n.get("owner"), int) else ""))
+                  if n.get("items") and not n.get("agent") else title_style(n)), bid)]
         rows.append((n.get("sub", ""), "muted", bid))   # always a second row: lines in and out keep their own rows
         for it in n.get("items") or []:
             st = it.get("status", "same")
-            style = ("title bold accent" if it.get("agent") else f"title bold {st}" if st != "same"
-                     else "title muted" if it.get("hub") else "title")
+            if isinstance(it.get("owner"), int):
+                style = f"title {'bold ' if it.get('agent') or st != 'same' else ''}agent{it['owner']}"
+            else:
+                style = ("title bold accent" if it.get("agent") else f"title bold {st}" if st != "same"
+                         else "title muted" if it.get("hub") else "title")
             rows.append((("● " if it.get("agent") else "") + SIGN.get(st, "") + it["title"], style, "b:" + it["id"]))
         for line in (n.get("lines") or [])[:most_lines]:
             st = line.get("status", "same")
@@ -347,7 +357,8 @@ def layered(nodes: List[dict], edges: List[dict], columns: List[Sequence[str]], 
     def from_style(e: dict) -> str:
         n = node[e["from"]]
         it = next((i for i in n.get("items") or [] if i["id"] == e.get("from_item")), None)
-        return box_style(it) if it and (it.get("agent") or it.get("status", "same") != "same") else box_style(n)
+        return box_style(it) if it and (it.get("agent") or isinstance(it.get("owner"), int)
+                                      or it.get("status", "same") != "same") else box_style(n)
 
     for r, (e, cs, ct, ys, yt, hops) in enumerate(routes):
         st = e.get("status", "same")
