@@ -74,6 +74,7 @@ test('the pane paints the page in its own region, and its rows, on every surface
     await ui.unmount()
   }
   const terminal = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await terminal.find({ type: 'Text', text: /^v\d+\.\d+\.\d+$/ })).toBeDefined() // the version, bottom right
   await terminal.key({ key: 'down', in: 'page' }) // the page's own region, taking the keys (throws if absent)
   await terminal.unmount()
 })
@@ -142,7 +143,7 @@ test('space on a technology marks it new to you', async ($, on) => {
   await ui.unmount()
 })
 
-test('/system-diff and /system-diff-pane both open it, at the width the person keeps', async ($, on) => {
+test('/system-diff and /system-diff-pane both open it, as wide as a dock goes', async ($, on) => {
   const registered: string[] = []
   const opened: Array<{ columns?: number }> = []
   on('ui.open', (_: unknown, e: { columns?: number }) => {
@@ -164,7 +165,7 @@ test('/system-diff and /system-diff-pane both open it, at the width the person k
     const got = await $.command.run({ ...RUN, command })
     expect((got as { text?: string }).text).toBe('System diff pane opened.')
   }
-  expect(opened.every(o => o.columns === undefined)).toBe(true) // the width is the person's
+  expect(opened.every(o => (o.columns ?? 0) >= 200)).toBe(true) // as wide as a dock goes
 })
 
 test('/system-diff close closes the pane, and so does its close button', async ($, on) => {

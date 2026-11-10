@@ -14,6 +14,8 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
+const VERSION = '0.3.5' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['map', 'Map', 'm'], ['changes', 'Changes', 'c'], ['topics', 'Topics', 't']] as const
 
@@ -153,7 +155,7 @@ async function scrollBy($: EngineInterface, rows: number): Promise<void> {
 // As wide as Claude Code docks a pane, the first time: a width the person set (dragged, or with the pane's keys:
 // ctrl+x ← →) is theirs from then on.
 function open($: EngineInterface) {
-  return $.ui.open({ id: PANE, title: 'System diff' })
+  return $.ui.open({ id: PANE, title: 'System diff', columns: WIDEST })
 }
 
 export const register: Register = on => {
@@ -291,6 +293,7 @@ export const register: Register = on => {
             ))}
           </Box>
         )}
+        <Box flexDirection="row" justifyContent="flex-end"><Text dimColor>{`v${VERSION}`}</Text></Box>
       </Box>
     )
   })

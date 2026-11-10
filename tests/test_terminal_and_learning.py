@@ -491,4 +491,6 @@ def test_the_pane_plugin_ships_with_the_package_at_the_same_version():
     plugin = json.loads((root / "mods/system-diff/.claude-plugin/plugin.json").read_text(encoding="utf-8"))
     market = json.loads((root / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
     assert plugin["version"] == system_diff.__version__        # a release bumps both: Claude Code sees the update
+    shown = (root / "mods/system-diff/hooks/register.tsx").read_text(encoding="utf-8")
+    assert f"const VERSION = '{plugin['version']}'" in shown   # the pane's corner says the version it is
     assert [(p["name"], p["source"]) for p in market["plugins"]] == [("system-diff", "./mods/system-diff")]
