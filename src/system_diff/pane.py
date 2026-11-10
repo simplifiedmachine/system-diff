@@ -35,7 +35,7 @@ def _name(nid: str, *bps: dict) -> str:
 def _diagram(page: canvas.Page, c, model: Dict[str, Any], width: int, centre: bool = False) -> canvas.Grid:
     """The diagram on the page, every box a block: Enter zooms in on it; its detail says what it uses and what uses
     it, all of it (the diagram draws each box's main flows)."""
-    g = canvas.layered(model["nodes"], model["edges"], model["columns"], width=width, centre=centre)
+    g = canvas.layered(model["nodes"], model["edges"], model["columns"], width=width, centre=centre, zoom=ZOOM)
     conns = graph.connections(c.after)
     names = {n["id"]: n["title"] for n in model["nodes"]}
     names.update({i["id"]: i["title"] for n in model["nodes"] for i in n.get("items") or []})
@@ -476,7 +476,19 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
     return page.json(view="agents", part="")
 
 
-def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None) -> Dict[str, Any]:
+ZOOM = 0   # how compact the diagrams are drawn: 0 full, 1 compact, 2 tiny (show sets it)
+
+
+def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None, zoom: int = -1) -> Dict[str, Any]:
+    """The page for a view. `zoom` -1: compact below 110 columns, full above."""
+    global ZOOM
+    ZOOM = (1 if width < 110 else 0) if zoom < 0 else max(0, min(2, zoom))
+    out = _show(root, width, view, part)
+    out["zoom"] = ZOOM
+    return out
+
+
+def _show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None) -> Dict[str, Any]:
     if view == "agents":
         return view_agents(root, width)
     if view == "map":

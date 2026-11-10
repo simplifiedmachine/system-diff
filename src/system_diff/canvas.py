@@ -138,8 +138,12 @@ def title_style(n: dict) -> str:
     return f"title bold {st}" if st != "same" else "title"
 
 
+ZOOMS = {0: (20, 32, 2, 6, 4), 1: (12, 22, 0, 5, 3), 2: (8, 16, 0, 5, 3)}  # min box, max box, rows, channel, gap
+                                                                         # by zoom: full, compact, tiny
+
+
 def layered(nodes: List[dict], edges: List[dict], columns: List[Sequence[str]], *, width: int = 100,
-            centre: bool = False, most_lines: int = 2) -> Grid:
+            centre: bool = False, most_lines: int = 2, zoom: int = 0) -> Grid:
     """A system diagram: `nodes` (id, col, title, sub, status, type: actor|component|group|store|host; `agent` where
     the agent works, `focus` for the box zoomed in on, `items` for the components a container holds, `lines` for
     rows inside a box) in `columns` order, joined by `edges` (from, to, kind, status, label; `from_item`/`to_item`:
@@ -150,6 +154,12 @@ def layered(nodes: List[dict], edges: List[dict], columns: List[Sequence[str]], 
     present = [k for k, _h in columns if any(n["col"] == k for n in nodes)]
     if not present:
         return g
+    least, most_w, rows_in, chan_min, chan_pad = ZOOMS.get(zoom, ZOOMS[0])
+    most_lines = min(most_lines, rows_in)
+    if zoom:   # compact: no labels on flows (a picked box's detail names them), tiny: no subtitles either
+        edges = [{**e, "label": ""} for e in edges]
+        if zoom >= 2:
+            nodes = [{**n, "sub": ""} for n in nodes]
     heading = {k: h for k, h in columns}
     ci = {k: i for i, k in enumerate(present)}
     col_nodes = [[n for n in nodes if n["col"] == k] for k in present]
@@ -181,13 +191,13 @@ def layered(nodes: List[dict], edges: List[dict], columns: List[Sequence[str]], 
     item_row = {it["id"]: (n["id"], 3 + j) for n in nodes for j, it in enumerate(n.get("items") or [])}
 
     # widths: as wide as the longest row wants, narrowed together when the whole is wider than the pane
-    want = [min(32, max([len(t) + 4 for n in col for t, _s, _b in contents[n["id"]][:1]]
-                        + [len(t) + 4 for n in col for t, _s, _b in contents[n["id"]][2:]]
-                        + [len(heading[present[i]]) + 1, 14]))
+    want = [min(most_w, max([len(t) + 4 for n in col for t, _s, _b in contents[n["id"]][:1]]
+                            + [len(t) + 4 for n in col for t, _s, _b in contents[n["id"]][2:]]
+                            + [min(len(heading[present[i]]) + 1, most_w), least]))
             for i, col in enumerate(col_nodes)]
     label_w = max([len(e.get("label") or "") for e in edges] + [0])
-    gaps = (8 + label_w) * len(present)
-    while sum(want) + gaps > width and max(want) > 20:
+    gaps = (chan_min + 2 + label_w) * len(present)
+    while sum(want) + gaps > width and max(want) > least:
         biggest = max(range(len(want)), key=lambda i: want[i])
         want[biggest] -= 1
     heights = {n["id"]: 2 + len(contents[n["id"]]) for n in nodes}
@@ -320,7 +330,7 @@ def layered(nodes: List[dict], edges: List[dict], columns: List[Sequence[str]], 
         if e.get("label") and cs != ct:
             label_in[hops[-1][0]] = max(label_in[hops[-1][0]], len(e["label"]) + 2)
     widths = want
-    chan = [max(6, len(lanes[k]) + 4 + label_in[k]) for k in range(len(present))]
+    chan = [max(chan_min, len(lanes[k]) + chan_pad + label_in[k]) for k in range(len(present))]
     if not lanes[len(present) - 1]:
         chan[-1] = 0
     xs, x = [], 0

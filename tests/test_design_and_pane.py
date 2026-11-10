@@ -18,7 +18,7 @@ REFUND = ('from fastapi import APIRouter\nrouter = APIRouter()\n\n\n@router.post
 
 
 def page(capsys, repo, *args):
-    assert main(["--repo", str(repo), "panel", "--width", "100", "--protocol", "2", *args]) == 0
+    assert main(["--repo", str(repo), "panel", "--width", "100", "--protocol", "2", "--zoom", "0", *args]) == 0
     out = json.loads(capsys.readouterr().out)
     return out, ["".join(run[0] for run in row) for row in out["rows"]]
 
@@ -268,3 +268,15 @@ def test_the_agents_tab_shows_each_agent_and_warns_when_two_edit_one_block(repo,
     assert any(t.startswith("THE TEAM  plan: make the API") for t in text)
     assert any("api and store all edit API" in t for t in text)
     assert "● API  @api @st" in "\n".join(text)               # who works where, on the diagram
+
+
+def test_a_narrow_pane_gets_compact_diagrams_unless_asked_otherwise(repo, capsys):
+    narrow = json.loads(_run(capsys, repo, "--width", "90"))
+    wide = json.loads(_run(capsys, repo, "--width", "140"))
+    assert narrow["zoom"] == 1 and wide["zoom"] == 0
+    assert json.loads(_run(capsys, repo, "--width", "90", "--zoom", "2"))["zoom"] == 2
+
+
+def _run(capsys, repo, *args):
+    assert main(["--repo", str(repo), "panel", "--protocol", "2", *args]) == 0
+    return capsys.readouterr().out

@@ -60,6 +60,8 @@ Claude is changing in it. `/system-diff close` (or "× close" in its tab row) hi
     - **Zoom:** Enter (or a second click) zooms in on a container's components, with the lines between them. `b` goes
       back, `f` follows Claude again.
     - **Scroll:** `[` `]` scroll a wide diagram across; shift ↑ ↓, Page Up/Down or the wheel scroll a tall one.
+    - **Zoom:** ⊖ and ⊕ in the tab row (or `-` and `=`) draw the diagrams compact (narrower boxes, no flow labels) or
+      tiny (titles only), to fit more of the system in a narrow pane; below 110 columns it is compact by itself.
   - **This turn**: each change to the design, and what it trades off.
   - **Learn**: how the part Claude works on is designed.
     - The principle its place calls for: an edge of the system, an adapter, a shared foundation, a coordinator.

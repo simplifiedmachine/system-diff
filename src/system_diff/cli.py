@@ -195,6 +195,7 @@ def parser() -> argparse.ArgumentParser:
     pn.add_argument("--width", type=int, default=80)
     pn.add_argument("--view", default="now", choices=["now", "map", "changes", "topics", "agents"])
     pn.add_argument("--part", default="", help="the part to zoom in on (default: the one the agent works on)")
+    pn.add_argument("--zoom", type=int, default=-1, help="diagrams 0 full, 1 compact, 2 tiny; -1 by the width")
     pn.add_argument("--protocol", type=int, default=1, help="2: a page of runs and pickable blocks (the mod's painter)")
     pf = sub.add_parser("profile", help="what you want explained: technologies marked new to you")
     pf.add_argument("--learn", metavar="TECH", help="mark a technology new to you, or unmark it")
@@ -254,7 +255,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
     if args.cmd == "panel":
         from . import panel
-        return panel.main(root, args.width, args.view, args.part, args.protocol)
+        return panel.main(root, args.width, args.view, args.part, args.protocol, args.zoom)
     if args.cmd == "profile":
         from . import profile
         if args.learn:

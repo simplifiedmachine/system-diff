@@ -130,6 +130,8 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
     } else if (e.key === '[' || e.key === ']') {
       surface.setState({ sel, sx: across(page, cols, sx + (e.key === '[' ? -STEP : STEP), undefined), mine: true, free: true,
                          ticking: true })
+    } else if (e.key === '-' || e.key === '=' || e.key === '+') {
+      surface.post({ zoomBy: e.key === '-' ? 1 : -1 }) // - shows more of the system, = bigger boxes
     } else if (e.key === 'return') {
       act(picked, 'enter')
     } else if (e.key === ' ') {

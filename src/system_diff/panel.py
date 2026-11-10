@@ -232,10 +232,11 @@ def rows(root: Path, width: int = 80) -> List[textmap.Line]:
     return got["head"] + got["rows"]
 
 
-def main(root: Path, width: int, view: str = "now", part: Optional[str] = None, protocol: int = 1) -> int:
+def main(root: Path, width: int, view: str = "now", part: Optional[str] = None, protocol: int = 1,
+         zoom: int = -1) -> int:
     if protocol >= 2:
         from . import pane
-        print(json.dumps(pane.show(root, width, view, part or None), ensure_ascii=False))
+        print(json.dumps(pane.show(root, width, view, part or None, zoom), ensure_ascii=False))
         return 0
     got = show(root, width, view, part or None)
     for key in ("head", "rows"):

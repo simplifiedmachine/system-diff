@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.4.1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.4.2' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['map', 'Map', 'm'], ['agents', 'Agents', 'a'], ['changes', 'Changes', 'c'],
@@ -25,6 +25,9 @@ const view = atom({ plugin: 'system-diff', key: 'view' } as const, 'now', { shap
 const part = atom({ plugin: 'system-diff', key: 'part' } as const, '', { shape: 'part-1' })
 const back = atom({ plugin: 'system-diff', key: 'back' } as const, [] as string[], { shape: 'back-2' })
 const note = atom({ plugin: 'system-diff', key: 'note' } as const, 'Reading the system…', { shape: 'note-1' })
+// How compact the diagrams are: -1 by the pane's width (compact below 110 columns), 0 full, 1 compact, 2 tiny.
+const zoomLevel = atom({ plugin: 'system-diff', key: 'zoom' } as const, -1, { shape: 'zoom-1' })
+const ZOOM_WORD = ['full', 'compact', 'tiny']
 
 // How to run system-diff: the repository's own virtualenv first, then whatever is on PATH.
 const RUNNERS: string[][] = [
@@ -73,6 +76,8 @@ async function refresh($: EngineInterface): Promise<void> {
       again = false
       const argv = ['panel', '--protocol', '2', '--width', String(columns), '--view', await read($, view),
                     '--part', await read($, part)]
+      const level = await read($, zoomLevel)
+      if (level >= 0) argv.push('--zoom', String(level)) // left out, the engine picks by the width (older ones too)
       const got = await run($, argv)
       if (got && !got.old) {
         if (got.out !== last) {
@@ -155,6 +160,13 @@ async function scrollBy($: EngineInterface, rows: number): Promise<void> {
 
 // As wide as Claude Code docks a pane, the first time: a width the person set (dragged, or with the pane's keys:
 // ctrl+x ← →) is theirs from then on.
+// More of the system in the pane (zoom out, +1) or bigger boxes (zoom in, -1), from where the page is drawn now.
+async function zoomBy($: EngineInterface, by: number): Promise<void> {
+  const drawnAt = (await read($, page))?.zoom ?? 0
+  await update($, zoomLevel, () => Math.max(0, Math.min(2, drawnAt + by)))
+  await refresh($)
+}
+
 function open($: EngineInterface) {
   return $.ui.open({ id: PANE, title: 'System diff', columns: WIDEST })
 }
@@ -213,7 +225,7 @@ export const register: Register = on => {
   // What the page (page.tsx) asks for.
   on('ui.message', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const data = (e.data ?? {}) as Act & { back?: boolean; follow?: boolean; width?: number; reveal?: number;
-                                             scrollBy?: number }
+                                             scrollBy?: number; zoomBy?: number }
     if (typeof data.width === 'number' && data.width > 0 && data.width !== columns) {
       columns = data.width
       await refresh($)
@@ -223,6 +235,7 @@ export const register: Register = on => {
     else if (typeof data.learn === 'string') await learn($, data.learn)
     else if (data.back) await goBack($)
     else if (data.follow) await follow($)
+    else if (typeof data.zoomBy === 'number') await zoomBy($, data.zoomBy)
     else if (typeof data.view === 'string') await choose($, data.view)
     return {}
   })
@@ -278,6 +291,9 @@ export const register: Register = on => {
           {behind.length > 0 && (
             <Button key="back" hotkey="b" plain onPress={() => void goBack($)}><Text dimColor>← Back</Text></Button>
           )}
+          <Button key="zoom-out" plain onPress={() => void zoomBy($, 1)}><Text dimColor>⊖</Text></Button>
+          <Text dimColor>{ZOOM_WORD[drawn?.zoom ?? 0] ?? 'full'}</Text>
+          <Button key="zoom-in" plain onPress={() => void zoomBy($, -1)}><Text dimColor>⊕</Text></Button>
           <Button key="close" plain onPress={() => void $.ui.close({ id: PANE })}><Text dimColor>× close</Text></Button>
         </Box>
         {said !== '' && <Text dimColor>{said}</Text>}

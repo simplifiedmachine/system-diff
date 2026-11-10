@@ -185,3 +185,15 @@ test('/system-diff close closes the pane, and so does its close button', async (
   expect(closed).toEqual(['system-diff', 'system-diff'])
   await ui.unmount()
 })
+
+test('zoom out draws the diagrams compact, zoom in full again', async ($, on) => {
+  const asked: string[][] = []
+  answer(on, asked)
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'zoom-out' })
+  expect(asked[asked.length - 1]?.join(' ')).toContain('--zoom 1')
+  await ui.key({ key: '=', in: 'page' })
+  expect(asked[asked.length - 1]?.join(' ')).toContain('--zoom 0')
+  await ui.unmount()
+})

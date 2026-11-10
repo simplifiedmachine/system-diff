@@ -24,6 +24,7 @@ export type Page = {
   lights: Record<string, string[]>
   details: Record<string, Row[]>
   pick: string
+  zoom?: number // how compact it is drawn: 0 full, 1 compact, 2 tiny
 }
 
 declare module 'claude-code' {
@@ -34,6 +35,7 @@ declare module 'claude-code' {
       part: Shaped<string>
       back: Shaped<string[]>
       note: Shaped<string>
+      zoom: Shaped<number>
     }
   }
 }
