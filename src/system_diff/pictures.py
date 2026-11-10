@@ -318,6 +318,298 @@ def map_svg(graph: dict, diff: bool = False, label: str = "System map") -> str:
     return _svg(width, y + (8 if legend or footer else 0), body, label, markers.values())
 
 
+# ── architecture: the system diagram canvas.layered draws, for a web page ─────
+#
+# model = {"columns": [[key, heading]], "nodes": [{"id", "col", "title", "sub", "status",
+#          "type": actor|component|group|store|host, "agent": bool, "owner": 0..4, "focus": bool,
+#          "items": [{"id", "title", "status", "agent", "owner", "hub"}], "lines": [{"text", "status"}]}],
+#          "edges": [{"from", "to", "kind": call|data|network, "status", "label", "from_item", "to_item"}]}
+# Every box carries data-id "b:<id>", every row in a container "b:<item id>", every flow "e:<from>><to>", the ids
+# canvas.layered gives them, so a page lights the same things the pane does by toggling .lit, .picked and .dim.
+
+AW, AGX, APAD, ATOP = 220, 112, 20, 42
+AROW, AITEM = 16, 26
+OWNERS = (("#0b7f8a", "#4fd3dc"), ("#9b3fc2", "#d482ff"), ("#1d8a3c", "#5fd283"), ("#9a5600", "#f0b44c"),
+          ("#1f5fbf", "#5ea4ff"))
+_ARCH_LIGHT = {"ink": INK, "ink2": INK2, "muted": MUTED, "line": "#d5dbe3", "surface": SURFACE, "surface2": SURFACE2,
+               "ok": OK, "warn": WARN, "attn": ATTN, "attn-bg": ATTN_BG, "work": WORK, "work-bg": WORK_BG,
+               "item": "#f3f5f8", **{f"o{i}": c[0] for i, c in enumerate(OWNERS)}}
+_ARCH_DARK = {"ink": "#e6eaf0", "ink2": "#c2cad6", "muted": "#8b97a8", "line": "#3a4350", "surface": "#1b2028",
+              "surface2": "#13171d", "ok": "#5fd283", "warn": "#f0b44c", "attn": "#ff6f6f", "attn-bg": "#3a1d1d",
+              "work": "#5ea4ff", "work-bg": "#1a2a40", "item": "#232a34",
+              **{f"o{i}": c[1] for i, c in enumerate(OWNERS)}}
+
+
+def _vars(d: Dict[str, str]) -> str:
+    return " ".join(f"--{k}: {v};" for k, v in d.items())
+
+
+ARCH_CSS = f"""
+svg.sd-arch {{ {_vars(_ARCH_LIGHT)} }}
+@media (prefers-color-scheme: dark) {{
+  svg.sd-arch:root, :root:not([data-theme=light]) svg.sd-arch {{ {_vars(_ARCH_DARK)} }} }}
+:root[data-theme=dark] svg.sd-arch {{ {_vars(_ARCH_DARK)} }}
+.sd-arch text {{ font-family: {SANS}; }}
+.sd-arch .bg {{ fill: var(--surface2); }}
+.sd-arch .col {{ font-size: 11px; font-weight: 600; letter-spacing: .06em; fill: var(--muted); }}
+.sd-arch .an .box {{ fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }}
+.sd-arch .an.t-actor .box {{ fill: var(--work-bg); stroke: var(--work); stroke-opacity: .45; }}
+.sd-arch .an.t-store .box, .sd-arch .an.t-store .lip {{ fill: var(--work-bg); }}
+.sd-arch .an .lip {{ stroke: var(--line); stroke-width: 1.3; }}
+.sd-arch .an.t-host .box {{ fill: var(--surface2); stroke-dasharray: 5 4; stroke: var(--muted); stroke-opacity: .6; }}
+.sd-arch .an.t-group .box {{ fill: var(--surface2); stroke-width: 1.5; }}
+.sd-arch .an .band {{ fill: transparent; }}
+.sd-arch .an.s-added .box, .sd-arch .an.s-added .lip {{ stroke: var(--ok); stroke-width: 1.9; stroke-opacity: 1; }}
+.sd-arch .an.s-changed .box, .sd-arch .an.s-changed .lip {{ stroke: var(--warn); stroke-width: 1.9; stroke-opacity: 1; }}
+.sd-arch .an.s-removed .box {{ stroke: var(--attn); stroke-dasharray: 5 4; fill: var(--attn-bg); stroke-opacity: 1; }}
+.sd-arch .an.s-added .band {{ fill: var(--ok); }} .sd-arch .an.s-changed .band {{ fill: var(--warn); }}
+.sd-arch .an.s-removed .band {{ fill: var(--attn); }}
+{chr(10).join(f'.sd-arch .o{i} {{ --own: var(--o{i}); }}' for i in range(len(OWNERS)))}
+.sd-arch .an.owned > .box, .sd-arch .an.owned > .lip {{ stroke: var(--own); stroke-width: 2; stroke-opacity: 1; }}
+.sd-arch .an.owned > .band {{ fill: var(--own); }}
+.sd-arch .an.agent > .box, .sd-arch .an.agent > .lip {{ stroke: var(--work); stroke-width: 2.4; stroke-opacity: 1;
+  filter: drop-shadow(0 0 5px var(--work)); }}
+.sd-arch .an.focus > .box {{ stroke: var(--work); stroke-width: 2.4; }}
+.sd-arch .an-t {{ font-size: 13.5px; font-weight: 600; fill: var(--ink); }}
+.sd-arch .t-group .an-t {{ font-size: 11.5px; letter-spacing: .07em; }}
+.sd-arch .an-s {{ font-size: 11.5px; fill: var(--muted); }}
+.sd-arch .an-p {{ font-size: 11.5px; fill: var(--ink2); }}
+.sd-arch .an.agent .an-t, .sd-arch .ai.agent text {{ fill: var(--work); }}
+.sd-arch .an.owned .an-t, .sd-arch .ai.owned text {{ fill: var(--own); }}
+.sd-arch .s-added > .an-t, .sd-arch .an-p.s-added, .sd-arch .ai.s-added text {{ fill: var(--ok); }}
+.sd-arch .s-changed > .an-t, .sd-arch .an-p.s-changed, .sd-arch .ai.s-changed text {{ fill: var(--warn); }}
+.sd-arch .s-removed > .an-t, .sd-arch .an-p.s-removed, .sd-arch .ai.s-removed text {{ fill: var(--attn); }}
+.sd-arch .ai.s-removed text {{ text-decoration: line-through; }}
+.sd-arch .ai rect {{ fill: var(--surface); stroke: var(--line); stroke-width: 1; }}
+.sd-arch .ai text {{ font-size: 12.5px; fill: var(--ink); }}
+.sd-arch .ai.hub text {{ fill: var(--muted); }}
+.sd-arch .ai.s-added rect {{ stroke: var(--ok); }} .sd-arch .ai.s-changed rect {{ stroke: var(--warn); }}
+.sd-arch .ai.s-removed rect {{ stroke: var(--attn); stroke-dasharray: 4 3; }}
+.sd-arch .ai.owned rect {{ stroke: var(--own); stroke-width: 1.6; }}
+.sd-arch .ai.agent rect {{ stroke: var(--work); stroke-width: 1.8; fill: var(--work-bg); }}
+.sd-arch .ae path {{ fill: none; stroke: var(--muted); stroke-width: 1.5; opacity: .8; }}
+.sd-arch .ae.k-data path {{ stroke: var(--work); }}
+.sd-arch .ae.k-network path {{ stroke: var(--warn); stroke-dasharray: 6 4; }}
+.sd-arch .ae.s-added path {{ stroke: var(--ok); stroke-width: 2.3; opacity: 1; }}
+.sd-arch .ae.s-changed path {{ stroke: var(--warn); stroke-width: 2; opacity: 1; }}
+.sd-arch .ae.s-removed path {{ stroke: var(--attn); stroke-dasharray: 5 4; opacity: 1; }}
+.sd-arch .ae text {{ font-size: 10.5px; font-weight: 600; letter-spacing: .03em; fill: var(--ink2); }}
+.sd-arch .ae .tag {{ fill: var(--surface); stroke: var(--line); stroke-width: 1; }}
+.sd-arch .ae.s-added .tag {{ stroke: var(--ok); }} .sd-arch .ae.s-removed .tag {{ stroke: var(--attn); }}
+.sd-arch .ae.lit .tag, .sd-arch .ae.picked .tag {{ stroke: var(--work); }}
+.sd-arch .ae.s-added text {{ fill: var(--ok); }} .sd-arch .ae.s-removed text {{ fill: var(--attn); }}
+.sd-arch .arh {{ fill: var(--muted); }} .sd-arch .arh.k-data {{ fill: var(--work); }}
+.sd-arch .arh.k-network, .sd-arch .arh.s-changed {{ fill: var(--warn); }}
+.sd-arch .arh.s-added {{ fill: var(--ok); }} .sd-arch .arh.s-removed {{ fill: var(--attn); }}
+.sd-arch .lg {{ font-size: 11.5px; fill: var(--muted); }}
+.sd-arch .lg.s-added {{ fill: var(--ok); font-weight: 600; }} .sd-arch .lg.s-changed {{ fill: var(--warn); font-weight: 600; }}
+.sd-arch .lg.s-removed {{ fill: var(--attn); font-weight: 600; }} .sd-arch .lg.agent {{ fill: var(--work); font-weight: 600; }}
+.sd-arch [data-id] {{ transition: opacity .15s; }}
+.sd-arch .dim {{ opacity: .28; }}
+.sd-arch .an.lit > .box, .sd-arch .an.lit > .lip {{ stroke-width: 2.6; stroke-opacity: 1; }}
+.sd-arch .ai.lit rect {{ stroke-width: 2.2; }}
+.sd-arch .ae.lit path {{ stroke-width: 2.8; opacity: 1; }}
+.sd-arch .lit {{ opacity: 1; }}
+.sd-arch .an.picked > .box, .sd-arch .ai.picked rect {{ stroke: var(--work); stroke-width: 3; stroke-opacity: 1; }}
+.sd-arch .ai.picked rect {{ fill: var(--work-bg); }}
+.sd-arch .ae.picked path {{ stroke: var(--work); stroke-width: 3; opacity: 1; }}
+"""
+
+
+def _arch_title_lines(n: dict) -> List[str]:
+    title = n["title"].upper() if n.get("type") == "group" else n["title"]
+    return wrap(title, 26, max_lines=2)
+
+
+def arch_height(n: dict) -> int:
+    kind = n.get("type", "component")
+    extra = AROW * (len(_arch_title_lines(n)) - 1) + (8 if kind == "store" else 0)
+    if kind == "group":
+        return 50 + extra + AITEM * len(n.get("items") or []) + 6
+    rows = (AROW if n.get("sub") else 0) + 15 * min(2, len(n.get("lines") or []))
+    rows += 15 if len(n.get("lines") or []) > 2 else 0
+    return max(52 if kind == "actor" else 48, 34 + extra + rows)
+
+
+def _arch_head(n: dict, top: int) -> List[str]:
+    """Title (with its change mark and ● where Claude works), subtitle and up to two lines, from `top`."""
+    kind = n.get("type", "component")
+    status = n.get("status", "same")
+    x = 22 if kind == "actor" else 14
+    out = []
+    titles = _arch_title_lines(n)
+    lead = ("● " if n.get("agent") and kind != "group" else "") + (f"{OP[status]} " if OP.get(status) else "")
+    for i, t in enumerate(titles):
+        out.append(f'<text x="{x}" y="{top + 21 + AROW * i}" class="an-t">{esc((lead if i == 0 else "") + t)}</text>')
+    y = top + 21 + AROW * (len(titles) - 1)
+    if n.get("sub"):
+        y += AROW
+        out.append(f'<text x="{x}" y="{y}" class="an-s">{esc(cut(n["sub"], 32))}</text>')
+    lines = n.get("lines") or []
+    for line in lines[:2]:
+        y += 15
+        ls = line.get("status", "same")
+        out.append(f'<text x="{x + 2}" y="{y}" class="an-p s-{ls}">{esc((OP.get(ls) or "·") + " " + cut(line["text"], 30))}'
+                   f'</text>')
+    if len(lines) > 2:
+        y += 15
+        out.append(f'<text x="{x + 2}" y="{y}" class="an-p">+{len(lines) - 2} more</text>')
+    return out
+
+
+def _owner_cls(n: dict) -> List[str]:
+    own = n.get("owner")
+    return ["owned", f"o{own % len(OWNERS)}"] if isinstance(own, int) and not isinstance(own, bool) else []
+
+
+def _arch_box(n: dict, p: tuple) -> Tuple[str, Dict[str, float]]:
+    """The box, and the y (in the picture) of the middle of each row a container holds."""
+    x, y, h, _ = p
+    kind = n.get("type", "component")
+    status = n.get("status", "same")
+    cls = ["an", "t-" + kind, "s-" + status] + _owner_cls(n) + (["agent"] if n.get("agent") else []) \
+        + (["focus"] if n.get("focus") else [])
+    out = [f'<g class="{" ".join(cls)}" data-id="b:{esc(n["id"])}" transform="translate({_f(x)},{_f(y)})">'
+           f'<title>{esc(n["title"])}{(" — " + esc(n["sub"])) if n.get("sub") else ""}</title>']
+    rows: Dict[str, float] = {}
+    top = 0
+    if kind == "store":
+        e = 8
+        out.append(f'<path class="box" d="M0,{e} A{AW / 2},{e} 0 0 1 {AW},{e} L{AW},{h - e} '
+                   f'A{AW / 2},{e} 0 0 1 0,{h - e} Z"/>')
+        out.append(f'<path class="lip" d="M0,{e} A{AW / 2},{e} 0 0 0 {AW},{e}"/>')
+        top = e
+    else:
+        rx = h / 2 if kind == "actor" else 14 if kind == "host" else 12 if kind == "group" else 8
+        out.append(f'<rect class="box" width="{AW}" height="{h}" rx="{_f(min(rx, 26))}"/>')
+        if kind not in ("actor", "host"):
+            out.append(f'<rect class="band" x="0" y="6" width="4" height="{h - 12}" rx="2"/>')
+    out += _arch_head(n, top)
+    if kind == "group":
+        ry = 50 + AROW * (len(_arch_title_lines(n)) - 1)
+        for it in n.get("items") or []:
+            st = it.get("status", "same")
+            icls = ["ai", "s-" + st] + _owner_cls(it) + (["agent"] if it.get("agent") else []) \
+                + (["hub"] if it.get("hub") else [])
+            text = ("● " if it.get("agent") else "") + (f"{OP[st]} " if OP.get(st) else "") + cut(it["title"], 28)
+            out.append(f'<g class="{" ".join(icls)}" data-id="b:{esc(it["id"])}">'
+                       f'<rect x="10" y="{ry}" width="{AW - 20}" height="{AITEM - 4}" rx="6"/>'
+                       f'<text x="20" y="{ry + 15}">{esc(text)}</text><title>{esc(it["title"])}</title></g>')
+            rows[it["id"]] = y + ry + (AITEM - 4) / 2
+            ry += AITEM
+    out.append("</g>")
+    return "".join(out), rows
+
+
+def _route(a: tuple, b: tuple, ay: float, by: float, columns: Dict[int, tuple]) -> Tuple[str, float, float, str]:
+    """A flow from box a at height ay to box b at by, as _curve draws one, and where its label goes."""
+    ax, _ay0, _ah, ac = a
+    bx, _by0, _bh, bc = b
+    if bc == ac:  # same column: an arc on the right
+        x = ax + AW
+        bend = 30 + min(44, abs(by - ay) / 5)
+        d = "M{},{} C{},{} {},{} {},{}".format(*map(_f, (x, ay, x + bend, ay, x + bend, by, x + 7, by)))
+        return d, x + bend * 0.75 + 6, (ay + by) / 2 + 4, "start"
+    step = 1 if bc > ac else -1
+    x, y = (ax + AW, ay) if step > 0 else (ax, ay)
+    d = f"M{_f(x)},{_f(y)}"
+    for k in range(ac + step, bc, step):
+        cx, boxes = columns[k]
+        gy = _free_y(boxes, ay + (by - ay) * (k - ac) / (bc - ac))
+        near, far = (cx, cx + AW) if step > 0 else (cx + AW, cx)
+        d += f" {_s(x, y, near, gy)} L{_f(far)},{_f(gy)}"
+        x, y = far, gy
+    end = bx - 7 if step > 0 else bx + AW + 7
+    return d + f" {_s(x, y, end, by)}", (x + end) / 2, (y + by) / 2 - 8, "middle"
+
+
+ARCH_LEGEND = [("op", "added", "added"), ("op", "changed", "changed"), ("op", "removed", "removed"),
+               ("agent", "agent", "● where Claude works"), ("line", "call", "calls"),
+               ("line", "data", "reads and writes data"), ("line", "network", "over the network")]
+
+
+def architecture_svg(model: dict, label: str = "System") -> str:
+    """The system diagram canvas.layered draws in the terminal, as an SVG in the map's look: columns of actors (pills),
+    components (boxes), containers (their components as rows), stores (cylinders) and outside systems (dashed), joined
+    by curved, labelled flows. Scales to its page: a viewBox and no fixed size."""
+    present = [(k, h) for k, h in model.get("columns", []) if any(n.get("col") == k for n in model.get("nodes", []))]
+    nodes = [n for n in model.get("nodes", []) if n.get("col") in {k for k, _h in present}]
+    pos: Dict[str, tuple] = {}
+    heads, x, bottom = [], APAD, ATOP
+    for key, heading in present:
+        y = ATOP
+        for n in (n for n in nodes if n["col"] == key):
+            h = arch_height(n)
+            pos[n["id"]] = (x, y, h, len(heads))
+            y += h + 18
+        heads.append((heading, x))
+        bottom = max(bottom, y)
+        x += AW + AGX
+    width = max(x - AGX + APAD, 360)
+    columns: Dict[int, tuple] = {}
+    for bx, by, bh, c in sorted(pos.values(), key=lambda v: (v[3], v[1])):
+        columns.setdefault(c, (bx, []))[1].append((by, bh))
+
+    body = [f'<text class="col" x="{_f(hx)}" y="24">{esc(str(h).upper())}</text>' for h, hx in heads]
+    rows: Dict[str, Dict[str, float]] = {}
+    for n in nodes:
+        svg, r = _arch_box(n, pos[n["id"]])
+        body.append(svg)
+        rows[n["id"]] = r
+    markers: Dict[str, str] = {}
+    for e in model.get("edges", []):
+        s, t = e.get("from"), e.get("to")
+        if s not in pos or t not in pos or s == t:
+            continue
+        kind, status = e.get("kind", "call"), e.get("status", "same")
+        a, b = pos[s], pos[t]
+        ay = rows[s].get(e.get("from_item") or "", a[1] + min(a[2] / 2, 26))
+        by = rows[t].get(e.get("to_item") or "", b[1] + min(b[2] / 2, 26))
+        d, lx, ly, anchor = _route(a, b, ay, by, columns)
+        mid = f"sda-{kind}-{status}"
+        markers.setdefault(mid, f'<marker id="{esc(mid)}" class="arh k-{esc(kind)} s-{esc(status)}" viewBox="0 0 10 10" '
+                                f'refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+                                f'<path d="M0,0 L10,5 L0,10 z"/></marker>')
+        text = ""
+        if e.get("label"):
+            word = cut(e["label"], 18)
+            tw = text_width(word, 10.5) + 12
+            rx0 = lx - tw / 2 if anchor == "middle" else lx - 6
+            text = (f'<rect class="tag" x="{_f(rx0)}" y="{_f(ly - 11)}" width="{_f(tw)}" height="15" rx="7.5"/>'
+                    f'<text x="{_f(rx0 + tw / 2)}" y="{_f(ly)}" text-anchor="middle">{esc(word)}</text>')
+        dash = ' stroke-dasharray="5 4"' if status == "removed" or kind == "network" else ""
+        body.append(f'<g class="ae k-{esc(kind)} s-{esc(status)}" data-id="e:{esc(s)}&gt;{esc(t)}">'
+                    f'<path d="{d}"{dash} marker-end="url(#{esc(mid)})"/>{text}'
+                    f'<title>{esc(s)} → {esc(t)}{(" · " + esc(e["label"])) if e.get("label") else ""}</title></g>')
+
+    # legend: only what the picture shows
+    statuses = {n.get("status", "same") for n in nodes} | {i.get("status", "same") for n in nodes
+                                                          for i in n.get("items") or []} \
+        | {e.get("status", "same") for e in model.get("edges", [])}
+    kinds_ = {e.get("kind", "call") for e in model.get("edges", []) if e.get("from") in pos and e.get("to") in pos}
+    agent = any(n.get("agent") for n in nodes) or any(i.get("agent") for n in nodes for i in n.get("items") or [])
+    lx, ly = APAD + 2.0, bottom + 14
+    for kind, key, text in ARCH_LEGEND:
+        if (kind == "op" and key not in statuses) or (kind == "agent" and not agent) or \
+                (kind == "line" and key not in kinds_):
+            continue
+        if kind == "line":
+            body.append(f'<g class="ae k-{key}"><path d="M{_f(lx)},{_f(ly - 4)} L{_f(lx + 22)},{_f(ly - 4)}"/></g>')
+            lx += 28
+        label_text = f"{OP[key]} {text}" if kind == "op" else text
+        cls = f"lg s-{key}" if kind == "op" else "lg agent" if kind == "agent" else "lg"
+        body.append(f'<text class="{cls}" x="{_f(lx)}" y="{_f(ly)}">{esc(label_text)}</text>')
+        lx += text_width(label_text, 12.5) + 20
+    width = max(width, lx + APAD)
+    height = ly + 14
+    w, h = int(round(width)), int(round(height))
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" class="sd-arch" viewBox="0 0 {w} {h}" '
+            f'preserveAspectRatio="xMidYMin meet" role="img" aria-label="{esc(label)}">\n'
+            f'<style>{ARCH_CSS}</style>\n<defs>{"".join(markers.values())}</defs>\n'
+            f'<rect class="bg" x="0" y="0" width="{w}" height="{h}" rx="12"/>\n'
+            + "\n".join(body) + "\n</svg>\n")
+
+
 # ── stages: a process, left to right ──────────────────────────────────────────
 #
 # spec = {"stages": [{"title", "lines": [text | {"code": text}], "hi": bool}], "width": 170,

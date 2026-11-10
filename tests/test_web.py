@@ -38,29 +38,50 @@ def served(repo):
 
 
 @pytest.mark.parametrize("view", ["now", "review", "agents", "topics"])
-def test_each_view_is_a_page_of_the_pane(served, view):
-    status, body = _get(served + f"pane?view={view}&width=120&zoom=1")
+def test_each_view_is_data_for_the_page(served, view):
+    status, body = _get(served + f"web?view={view}&zoom=1")
     page = json.loads(body)
-    assert status == 200 and page["protocol"] == 2 and page["view"] == view and page["zoom"] == 1
-    assert page["width"] == 120 and isinstance(page["rows"], list) and isinstance(page["blocks"], list)
+    assert status == 200 and page["view"] == view
+    for key in ("part", "title", "headline", "diagram", "sections", "send"):
+        assert key in page
+    assert page["send"] == []
+    if view == "now":
+        assert set(page["status"]) >= {"working", "doing", "part", "prompt"}
+    d = page["diagram"]
+    assert set(d) >= {"svg", "title", "aside", "lights", "details", "enter", "pick"}
+    assert isinstance(d["svg"], str) and isinstance(d["lights"], dict) and isinstance(d["details"], dict)
+    kinds = {"notes", "steps", "lanes", "chips", "lines"}
+    for s in page["sections"]:
+        assert s["kind"] in kinds and isinstance(s["items"], list) and "title" in s
 
 
-def test_the_pane_defaults_and_refuses_what_it_does_not_know(served):
-    page = json.loads(_get(served + "pane")[1])
-    assert page["view"] == "now" and page["width"] == 140 and page["zoom"] == 0   # wide: full diagrams
-    with pytest.raises(urllib.error.HTTPError) as bad:
-        _get(served + "pane?view=nowhere")
-    assert bad.value.code == 400
+def test_the_web_data_refuses_what_it_does_not_know(served):
+    page = json.loads(_get(served + "web")[1])
+    assert page["view"] == "now"
+    for bad in ("web?view=nowhere", "web?view=map", "web?zoom=x", "web?zoom=7"):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            _get(served + bad)
+        assert e.value.code == 400
 
 
-def test_the_page_paints_the_pane_and_the_classic_page_is_kept(served):
+def test_the_web_data_leaves_what_was_sent_for_the_pane(served, repo):
+    watch.outbox_put(repo, "please add a health check")
+    assert json.loads(_get(served + "web?view=now")[1])["send"] == []
+    assert "please add a health check" in (git_dir(repo) / "outbox.jsonl").read_text()
+
+
+def test_the_page_is_one_app_that_draws_the_views(served):
     status, html = _get(served)
     assert status == 200
-    for tab in ("Now", "Review", "Agents", "Topics", "Follow Claude", "Back", "Mark as seen"):
-        assert tab in html
-    assert "<script>" in html and 'fetch("pane?' in html and "src=" not in html   # all inline
-    status, classic = _get(served + "classic")
-    assert status == 200 and "state?since=" in classic and "Mark as seen" in classic
+    for word in ("Now", "Review", "Agents", "Topics", "Follow Claude", "Back", "Mark as seen", "Send to Claude"):
+        assert word in html
+    assert 'id="dia"' in html and 'fetch("web?' in html and "data-id" in html
+    assert "prefers-color-scheme: dark" in html
+    assert "<script>" in html and "src=" not in html and "href=\"http" not in html   # all inline, nothing external
+    for gone in ("classic", "pane"):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            _get(served + gone)
+        assert e.value.code == 404
 
 
 def test_where_it_listens_is_written_while_it_serves(repo):

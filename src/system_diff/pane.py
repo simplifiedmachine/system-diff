@@ -16,7 +16,7 @@ import os
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import activity, agents, architecture, canvas, config, design, graph, inside, profile
 from .compare import checkpoint_sha, compare, turn_sha
@@ -34,14 +34,14 @@ def _name(nid: str, *bps: dict) -> str:
     return design.name_of(nid, *bps)
 
 
-def _diagram(page: canvas.Page, c, model: Dict[str, Any], width: int, centre: bool = False) -> canvas.Grid:
-    """The diagram on the page, every box a block: Enter zooms in on it; its detail says what it uses and what uses
-    it, all of it (the diagram draws each box's main flows)."""
-    g = canvas.layered(model["nodes"], model["edges"], model["columns"], width=width, centre=centre, zoom=ZOOM)
+def _explain(c, model: Dict[str, Any]) -> Tuple[Dict[str, dict], Dict[str, Tuple[str, str]]]:
+    """Each box of a diagram: what Enter does on it ({bid: {"enter": {"zoom": id}}}), and its detail, what it uses and
+    what uses it, as (lead, text) ({bid: (lead, text)}), in the diagram's order."""
     conns = graph.connections(c.after)
     names = {n["id"]: n["title"] for n in model["nodes"]}
     names.update({i["id"]: i["title"] for n in model["nodes"] for i in n.get("items") or []})
     on: Dict[str, dict] = {}
+    said: Dict[str, Tuple[str, str]] = {}
     for n in model["nodes"]:
         for nid, title in [(n["id"], n["title"])] + [(i["id"], i["title"]) for i in n.get("items") or []]:
             bid = "b:" + nid
@@ -53,14 +53,12 @@ def _diagram(page: canvas.Page, c, model: Dict[str, Any], width: int, centre: bo
                 serves = [line["text"] for line in n.get("lines") or [] if not line["text"].startswith("reads ")]
                 if serves:
                     words.append(f"serves {design.and_list(serves, 3)}")
-                g.details[bid] = canvas.detail_rows(" · ".join(words) or "stands alone in its part", page.width,
-                                                    "muted", (f"{nid[2:]}  ", "bold"))
+                said[bid] = (f"{nid[2:]}  ", " · ".join(words) or "stands alone in its part")
                 continue
             on[bid] = {"enter": {"zoom": nid}}
             if nid.startswith("a:"):
                 uses = sorted({names.get(e["to"], e["to"]) for e in model["edges"] if e["from"] == nid})
-                g.details[bid] = canvas.detail_rows(f"uses {design.and_list(uses, 5)}", page.width, "muted",
-                                                    (f"{title}  ", "bold"))
+                said[bid] = (f"{title}  ", f"uses {design.and_list(uses, 5)}")
                 continue
             inside = [i["id"] for i in n.get("items") or []] if nid == n["id"] and n.get("items") else [nid]
             outs = sorted({_name(t, c.after, c.before) for (s, t), _k in conns.items() if s in inside
@@ -72,8 +70,17 @@ def _diagram(page: canvas.Page, c, model: Dict[str, Any], width: int, centre: bo
                 words.append("uses " + design.and_list(outs, 4))
             if ins:
                 words.append("used by " + design.and_list(ins, 4))
-            g.details[bid] = canvas.detail_rows(" · ".join(words) or "connects to nothing in the system",
-                                                page.width, "muted", (f"{title}  ", "bold"))
+            said[bid] = (f"{title}  ", " · ".join(words) or "connects to nothing in the system")
+    return on, said
+
+
+def _diagram(page: canvas.Page, c, model: Dict[str, Any], width: int, centre: bool = False) -> canvas.Grid:
+    """The diagram on the page, every box a block: Enter zooms in on it; its detail says what it uses and what uses
+    it, all of it (the diagram draws each box's main flows)."""
+    g = canvas.layered(model["nodes"], model["edges"], model["columns"], width=width, centre=centre, zoom=ZOOM)
+    on, said = _explain(c, model)
+    for bid, (lead, text) in said.items():
+        g.details[bid] = canvas.detail_rows(text, page.width, "muted", (lead, "bold"))
     page.grid(g, slot=SLOT, on=on)
     return g
 
@@ -102,16 +109,11 @@ def _status(page: canvas.Page, now: Dict[str, Any], cfg: Dict[str, Any]) -> None
         page.add(["  You asked  ", "muted"], [canvas.cut(now["prompt"], page.width - 13), ""])
 
 
-def _learn(page: canvas.Page, root: Path, c, reading: design.Reading, part: str, learning: set) -> None:
-    """How the part is designed, as a designer would point it out; and the basics only of the technology new to the
-    system this turn, or that the person marked new to them."""
-    P = reading.name(part)
-    page.heading(f"LEARN · how {P} is designed")
+def _learn_parts(c, reading: design.Reading, part: str, learning: set) -> Dict[str, Any]:
+    """What LEARN says about a part: its principle (role, text) or None, its shape notes, where it sits (one
+    sentence), and the technology to teach: [(key, title, what, tag)]."""
     role = reading.principle(part)
-    if role:
-        page.para(role[1], "", first=(f" ◆ {role[0][0].upper() + role[0][1:]}  ", "accent"))
     notes = reading.shape_notes(part)
-    _notes(page, notes, 3)
     s = reading.shape(part)
     where = []
     if part.startswith("x:"):
@@ -128,7 +130,6 @@ def _learn(page: canvas.Page, root: Path, c, reading: design.Reading, part: str,
                 [reading.name(x) + ("" if x in direct else " (through others)") for x in s["outside"]], 3))
         if not s["uses"] and s["used_by"]:
             where.append("a leaf: it depends on nothing in the system, so it changes freely")
-    page.para("; ".join(where) + ".", "", indent=0, first=(" ◆ Where it sits  ", "accent"))
     # technology: new to the system this turn, or marked new to you, used here
     before, after = c.before.get("stack") or {}, c.after.get("stack") or {}
     had = {tech_key(n) for p in before.values() for n in p} - {None}
@@ -137,11 +138,24 @@ def _learn(page: canvas.Page, root: Path, c, reading: design.Reading, part: str,
     if not part.startswith("x:") and part in c.after["components"]:
         mine = {tech_key(n) for n in (after.get(part) or {})} - {None}
     teach = [k for k in new if k in TECH] + sorted(k for k in (mine & learning) if k in TECH and k not in new)
-    for key in teach[:3]:
-        title, what, _link = TECH[key]
-        tag = "new in the system" if key in new else "★ new to you"
+    tech = [(k, TECH[k][0], TECH[k][1], ("new in the system" if k in new else "★ new to you")
+             + (f" · {ROLE_OF[k]}" if k in ROLE_OF else "")) for k in teach[:3]]
+    return {"name": reading.name(part), "role": role, "notes": notes, "where": "; ".join(where) + ".", "tech": tech}
+
+
+def _learn(page: canvas.Page, root: Path, c, reading: design.Reading, part: str, learning: set) -> None:
+    """How the part is designed, as a designer would point it out; and the basics only of the technology new to the
+    system this turn, or that the person marked new to them."""
+    L = _learn_parts(c, reading, part, learning)
+    page.heading(f"LEARN · how {L['name']} is designed")
+    role = L["role"]
+    if role:
+        page.para(role[1], "", first=(f" ◆ {role[0][0].upper() + role[0][1:]}  ", "accent"))
+    _notes(page, L["notes"], 3)
+    page.para(L["where"], "", indent=0, first=(" ◆ Where it sits  ", "accent"))
+    for _key, title, what, tag in L["tech"]:
         page.para(what, "muted", first=(f" {title}  ", "good bold"))
-        page.add(["   " + tag + (f" · {ROLE_OF[key]}" if key in ROLE_OF else ""), "muted"])
+        page.add(["   " + tag, "muted"])
 
 
 def steps(events: List[dict], code: Code, cfg: Dict[str, Any], most: int = 6) -> List[Dict[str, Any]]:
@@ -219,6 +233,27 @@ def _steps(page: canvas.Page, events: List[dict], code: Code, cfg: Dict[str, Any
                      [canvas.cut("Claude finished" + (f": {said}" if said else ""), page.width - 9), "good"])
 
 
+def _now_model(c, root: Path, part: str, now: Dict[str, Any], marks) -> Tuple[Dict[str, Any], str, str]:
+    """The diagram Now draws: the part zoomed in on (a component's modules, a container's components), else the
+    system; with its heading and aside."""
+    agent = now["part"]
+    if part and part in c.after["components"]:          # a component: its modules, and what is around them
+        model = inside.internals(c, root, part, now.get("path", "") if agent == part else "", marks)
+        if model:
+            holder = architecture.groups_of(c.after, c.cfg, design.kinds(c.after, c.cfg)).get(part, "")
+            where = f" · in {holder[2:]}" if holder else ""
+            more = f", {model['more']} more not drawn" if model["more"] else ""
+            return model, f"Inside {model['title']}", (f"{model['files']} modules{more}{where} · b back · f follow "
+                                                        "Claude · ↵ zoom in")
+    if part:
+        model = architecture.container(c, part, marks, agent)
+        if model:
+            return model, f"Zoomed in on {model['title']}", ("its components · b back · f follow Claude · ↵ "
+                                                             "a component's insides")
+    return (architecture.system(c, marks, agent), "System",
+            "● Claude · + new · ~ changed · − gone · click, then ← ↑ ↓ → and ↵")
+
+
 def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
     cfg = config.lenient(root)
     code = Code(cfg)
@@ -238,23 +273,8 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
         _notes(page, urgent, 3, ask=True)
 
     agent = now["part"]
-    model = None
-    if part and part in c.after["components"]:          # a component: its modules, and what is around them
-        model = inside.internals(c, root, part, now.get("path", "") if agent == part else "", marks)
-        if model:
-            holder = architecture.groups_of(c.after, c.cfg, design.kinds(c.after, c.cfg)).get(part, "")
-            where = f" · in {holder[2:]}" if holder else ""
-            more = f", {model['more']} more not drawn" if model["more"] else ""
-            page.heading(f"Inside {model['title']}", f"{model['files']} modules{more}{where} · b back · f follow "
-                         "Claude · ↵ zoom in")
-    if model is None and part:
-        model = architecture.container(c, part, marks, agent)
-        if model:
-            page.heading(f"Zoomed in on {model['title']}", "its components · b back · f follow Claude · ↵ "
-                         "a component's insides")
-    if model is None:
-        model = architecture.system(c, marks, agent)
-        page.heading("System", "● Claude · + new · ~ changed · − gone · click, then ← ↑ ↓ → and ↵")
+    model, title, aside = _now_model(c, root, part, now, marks)
+    page.heading(title, aside)
     badges(model, root, events, code)
     g = _diagram(page, c, model, width, centre=bool(part))
     ids = {b["id"] for b in g.blocks}
@@ -280,9 +300,8 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
     return page.json(view="now", part=part or "")
 
 
-def view_review(root: Path, width: int) -> Dict[str, Any]:
-    """Everything you have not marked as seen: the system diagram since your checkpoint, its changes coloured, then
-    each change read for design, then the exact list. Mark it seen and the next review starts from here."""
+def _review_base(root: Path) -> Tuple[str, str]:
+    """What Review compares against, and how to say it: the checkpoint; before one, the commit before the last."""
     base, since = "checkpoint", "since your checkpoint"
     if not checkpoint_sha(root):   # nothing marked as seen yet: what the last commit did, and what is not committed
         try:
@@ -291,6 +310,13 @@ def view_review(root: Path, width: int) -> Dict[str, Any]:
             base, since = "HEAD~1", f"since before the last commit ({canvas.cut(last, 50)})"
         except Exception:   # a first commit: from there
             since = "since the last commit"
+    return base, since
+
+
+def view_review(root: Path, width: int) -> Dict[str, Any]:
+    """Everything you have not marked as seen: the system diagram since your checkpoint, its changes coloured, then
+    each change read for design, then the exact list. Mark it seen and the next review starts from here."""
+    base, since = _review_base(root)
     c = compare(root, base, ".")
     agent = activity.now(activity.events(root, 200), Code(c.cfg))["part"]
     page = canvas.Page(width)
@@ -343,31 +369,47 @@ def stack(source, bp: dict, cfg: Dict[str, Any]) -> Dict[str, Dict[str, int]]:
     return {k: dict(v) for k, v in out.items()}
 
 
-def view_topics(root: Path, width: int) -> Dict[str, Any]:
-    c = compare(root, "checkpoint", ".")
+def _stack_view(c, root: Path) -> Dict[str, Any]:
+    """What Topics shows: each technology (key -> {part: files}), in its layer's row, most used first (the standard
+    library last); the system diagram; and for each box the technology it uses."""
     cfg = c.cfg
     agent = activity.now(activity.events(root, 200), Code(cfg))["part"]
-    learning = profile.learning()
     techs = stack(GitSource(c.head_sha, root), c.after, cfg)
     kind = design.kinds(c.after, cfg)
-    heading = dict(cfg["picture"]["columns"])
-    page = canvas.Page(width)
-    page.heading("The stack", "pick one to light where it is used · space: ★ new to me")
-    rows: Dict[str, List[dict]] = defaultdict(list)
+    rows: Dict[str, List[str]] = defaultdict(list)
     model = architecture.system(c, None, agent)
     holder = {i["id"]: n["id"] for n in model["nodes"] for i in n.get("items") or []}
     for key in sorted(techs, key=lambda k: (k.split(".")[0] in STDLIB, -sum(techs[k].values()), TECH[k][0].lower())):
-        parts = techs[key]
         col = Counter()
-        for p, n in parts.items():
+        for p, n in techs[key].items():
             col[kind.get(p, "logic")] += n
-        where = col.most_common(1)[0][0]
-        std = key.split(".")[0] in STDLIB
-        rows[where].append({"id": "t:" + key, "text": ("★ " if key in learning else "") + TECH[key][0],
-                            "style": "good bold" if key in learning else "muted" if std else "bold"})
-    order = [k for k, _h in cfg["picture"]["columns"] if rows.get(k)]
-    g = canvas.chips([(heading.get(k, k), rows[k]) for k in order], width, label_w=18)
-    names = {cid: comp["label"] for cid, comp in c.after["components"].items()}
+        rows[col.most_common(1)[0][0]].append(key)
+    order = [(k, h) for k, h in cfg["picture"]["columns"] if rows.get(k)]
+    parts = {key: sorted({"b:" + p for p in ps} | {"b:" + holder[p] for p in ps if p in holder})
+             for key, ps in techs.items()}
+    boxes: Dict[str, Tuple[str, List[str]]] = {}
+    for n in model["nodes"]:                  # a part (or container): the technology it uses, most first
+        for box in [n] + list(n.get("items") or []):
+            inside = {i["id"] for i in n.get("items") or []} if box is n and n.get("items") else {box["id"]}
+            used = sorted((k for k in techs if inside & set(techs[k])),
+                          key=lambda k: (-sum(techs[k].get(p, 0) for p in inside), TECH[k][0].lower()))
+            if used:
+                boxes["b:" + box["id"]] = (box["title"], used)
+    return {"techs": techs, "rows": rows, "order": order, "model": model, "parts": parts, "boxes": boxes,
+            "learning": profile.learning(), "names": {cid: comp["label"] for cid, comp in c.after["components"].items()}}
+
+
+def view_topics(root: Path, width: int) -> Dict[str, Any]:
+    c = compare(root, "checkpoint", ".")
+    S = _stack_view(c, root)
+    techs, learning, model = S["techs"], S["learning"], S["model"]
+    page = canvas.Page(width)
+    page.heading("The stack", "pick one to light where it is used · space: ★ new to me")
+    rows = {k: [{"id": "t:" + key, "text": ("★ " if key in learning else "") + TECH[key][0],
+                 "style": "good bold" if key in learning else "muted" if key.split(".")[0] in STDLIB else "bold"}
+                for key in keys] for k, keys in S["rows"].items()}
+    g = canvas.chips([(h, rows[k]) for k, h in S["order"]], width, label_w=18)
+    names = S["names"]
     for key, parts in techs.items():
         title, what, link = TECH[key]
         users = sorted(parts, key=lambda p: (-parts[p], names.get(p, p)))
@@ -379,22 +421,17 @@ def view_topics(root: Path, width: int) -> Dict[str, Any]:
                           f"{'' if files == 1 else 's'}", width - len(title) - 3), "muted"]]]
             + ([[["  " + canvas.cut(role, width - 3), ""]]] if role else [])
             + canvas.detail_rows(what + f"  {link}", width, "muted", ("  ", "")))[:4]
-        g.lights["t:" + key] = sorted({"b:" + p for p in parts} | {"b:" + holder[p] for p in parts if p in holder})
+        g.lights["t:" + key] = S["parts"][key]
     page.grid(g, slot=4, on={"t:" + k: {"space": {"learn": k}} for k in techs})
     page.pick = g.blocks[0]["id"] if g.blocks else ""
     page.heading("Where it is used", "the picked technology's parts light up; a picked part lights what it uses")
     d = _diagram(page, c, model, width)
-    for n in model["nodes"]:                  # a part (or container) picked: the technology it uses, lit and named
-        for box in [n] + list(n.get("items") or []):
-            inside = {i["id"] for i in n.get("items") or []} if box is n and n.get("items") else {box["id"]}
-            used = sorted((k for k in techs if inside & set(techs[k])),
-                          key=lambda k: (-sum(techs[k].get(p, 0) for p in inside), TECH[k][0].lower()))
-            bid = "b:" + box["id"]
-            if not used or bid not in d.details:
-                continue
-            page.lights[bid] = list(dict.fromkeys(page.lights.get(bid, []) + ["t:" + k for k in used]))
-            page.details[bid] = canvas.detail_rows("uses " + design.and_list([TECH[k][0] for k in used], 6), width,
-                                                   "muted", (f"{box['title']}  ", "bold"))[:SLOT]
+    for bid, (title, used) in S["boxes"].items():   # a part picked: the technology it uses, lit and named
+        if bid not in d.details:
+            continue
+        page.lights[bid] = list(dict.fromkeys(page.lights.get(bid, []) + ["t:" + k for k in used]))
+        page.details[bid] = canvas.detail_rows("uses " + design.and_list([TECH[k][0] for k in used], 6), width,
+                                               "muted", (f"{title}  ", "bold"))[:SLOT]
     return page.json(view="topics", part="")
 
 
@@ -556,18 +593,13 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
 LANE = {"change": ("▲", 4), "message": ("✉", 3), "edit": ("✎", 2), "read": ("◎", 1)}
 
 
-def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who: Dict[str, Dict[str, Any]],
-              colour: Dict[str, int], width: int) -> None:
-    """The team at work, live: a lane per agent in its colour, time left to right since the turn began, a mark where
-    it read (◎), edited (✎), changed the system's structure (▲) or told the others something (✉); then what it is
-    doing now and how far it has got."""
+def _lanes(root: Path, events: List[dict], who: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """The team at work since the turn began: when it began, how long it has run, and for each agent its marks
+    [(at, kind)], what it is doing now ("" when idle), when it last acted, and how far it has got."""
     st = agents.state(root)
     start = max((e["at"] for e in events if e.get("event") == activity.PROMPT
                  and not activity.is_system(e.get("text", ""))), default=time.time() - 600)
     now = time.time()
-    span = max(120.0, now - start)
-    label_w = min(14, max(len(n) for n in who) + 2)
-    cells = max(10, min(60, width - label_w - 34))
     marks: Dict[str, List[tuple]] = defaultdict(list)
     last: Dict[str, dict] = {}
 
@@ -584,11 +616,36 @@ def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who
         if m["at"] >= start and m["from"] in who:
             marks[m["from"]].append((m["at"], "change" if m.get("kind") == "change" else "message"))
     changes = {n: sum(1 for _at, k in ms if k == "change") for n, ms in marks.items()}
+    lanes: Dict[str, Dict[str, Any]] = {}
+    for name, a in who.items():
+        e = last.get(name)
+        doing = ""
+        if e and now - e["at"] < 90:
+            doing = ("✎ editing " if e["event"] == activity.EDIT else "◎ reading ") + e["path"].rsplit("/", 1)[-1]
+        owned = set(a["blocks"])
+        touched = len(owned & set(a["edits"])) if owned else len(a["edits"])
+        progress = (f" · {touched}/{len(owned)} blocks" if owned else f" · {touched} blocks") + (
+            f" · {changes.get(name, 0)} changes" if changes.get(name) else "")
+        lanes[name] = {"marks": marks.get(name, []), "doing": doing, "last": e["at"] if e else 0.0,
+                       "progress": progress}
+    return {"start": start, "now": now, "span": max(120.0, now - start), "lanes": lanes}
+
+
+def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who: Dict[str, Dict[str, Any]],
+              colour: Dict[str, int], width: int) -> None:
+    """The team at work, live: a lane per agent in its colour, time left to right since the turn began, a mark where
+    it read (◎), edited (✎), changed the system's structure (▲) or told the others something (✉); then what it is
+    doing now and how far it has got."""
+    L = _lanes(root, events, who)
+    start, span = L["start"], L["span"]
+    label_w = min(14, max(len(n) for n in who) + 2)
+    cells = max(10, min(60, width - label_w - 34))
     page.heading("Live", "since the turn began · ◎ read  ✎ edit  ▲ changed the system  ✉ told the others")
     for name in sorted(who, key=lambda n: colour[n]):
         lane = ["·"] * cells
         rank = [0] * cells
-        for at, kind in marks.get(name, []):
+        me = L["lanes"][name]
+        for at, kind in me["marks"]:
             i = min(cells - 1, int((at - start) / span * cells))
             glyph, r = LANE[kind]
             if r > rank[i]:
@@ -597,19 +654,13 @@ def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who
         runs = [[canvas.cut(name, label_w - 1).ljust(label_w), style + " bold"]]
         for ch in lane:
             runs.append([ch, "muted" if ch == "·" else style + (" bold" if ch == "▲" else "")])
-        e = last.get(name)
-        if e and now - e["at"] < 90:
-            doing = ("✎ editing " if e["event"] == activity.EDIT else "◎ reading ") + e["path"].rsplit("/", 1)[-1]
-            runs.append(["  ● " + doing, "accent"])
+        if me["doing"]:
+            runs.append(["  ● " + me["doing"], "accent"])
         else:
-            runs.append([f"  ○ idle{' since ' + time.strftime('%H:%M', time.localtime(e['at'])) if e else ''}",
+            at = me["last"]
+            runs.append([f"  ○ idle{' since ' + time.strftime('%H:%M', time.localtime(at)) if at else ''}",
                          "muted"])
-        a = who[name]
-        owned = set(a["blocks"])
-        touched = len(owned & set(a["edits"])) if owned else len(a["edits"])
-        progress = (f" · {touched}/{len(owned)} blocks" if owned else f" · {touched} blocks") + (
-            f" · {changes.get(name, 0)} changes" if changes.get(name) else "")
-        runs.append([progress, "muted"])
+        runs.append([me["progress"], "muted"])
         page.add(*runs)
 
 
@@ -691,3 +742,232 @@ def _show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = 
     if view == "topics":
         return view_topics(root, width)
     return view_now(root, width, part or "")
+
+
+# ── the same views for a web page ─────────────────────────────────────────────
+
+def _web_note(n: Dict[str, Any]) -> Dict[str, str]:
+    sign = n["sign"] if n["sign"] in "+−~" else SIGN.get(n["status"], n["sign"])
+    return {"sign": sign, "status": n.get("status", ""), "text": n.get("text", ""), "why": n.get("why", "") or "",
+            "ask": n.get("ask", "") or ""}
+
+
+def _web_section(title: str, kind: str, items: List[Dict[str, Any]], aside: str = "") -> Dict[str, Any]:
+    return {"title": title, "aside": aside, "kind": kind, "items": items}
+
+
+def _web_diagram(c, model: Dict[str, Any], title: str, aside: str, zoom: int, pick: List[str]) -> Dict[str, Any]:
+    """The diagram for the web page: its SVG (pictures.architecture_svg), and what each box lights, says and zooms
+    into, as the pane's diagram (the same model, the same _explain)."""
+    g = canvas.layered(model["nodes"], model["edges"], model["columns"], width=100, zoom=max(0, min(2, zoom)))
+    on, said = _explain(c, model)
+    ids = {b["id"] for b in g.blocks}
+    svg = ""
+    try:
+        from . import pictures
+        draw = getattr(pictures, "architecture_svg", None)
+        svg = draw(model, label=title) if draw else ""
+    except Exception:
+        svg = ""
+    return {"svg": svg or "", "title": title, "aside": aside, "lights": dict(g.lights),
+            "details": {bid: text for bid, (_lead, text) in said.items()},
+            "enter": {bid: o["enter"]["zoom"] for bid, o in on.items()},
+            "pick": next((b for b in pick if b in ids), "")}
+
+
+def _web_steps(events: List[dict], code: Code, cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    out = []
+    for st in steps(events, code, cfg):
+        at = time.strftime("%H:%M", time.localtime(st["at"]))
+        if st["kind"] == "change":
+            item = st["item"]
+            sign = item["sign"] if item["sign"] in "+−~▲↺" else SIGN.get(item["status"], item["sign"])
+            out.append({"at": at, "kind": "change", "sign": sign, "status": item.get("status", ""),
+                        "text": item["text"], "why": item.get("why", "") or "", "file": st.get("file", "")})
+        elif st["kind"] == "edit":
+            files = sorted(st["files"])
+            what = "" if st["part"] is None else files[0] if len(files) == 1 else f"{len(files)} files"
+            out.append({"at": at, "kind": "edit", "sign": "✎", "status": "muted",
+                        "text": f"Claude edited {st['name']}" + (f" ({what})" if what else "")
+                        + ": no change to the structure", "why": "", "file": ", ".join(files)})
+        elif st["kind"] == "prompt":
+            out.append({"at": at, "kind": "prompt", "sign": "›", "status": "muted",
+                        "text": "You asked: " + st["text"], "why": "", "file": ""})
+        else:
+            said = st.get("text", "")
+            out.append({"at": at, "kind": "stop", "sign": "✓", "status": "good",
+                        "text": "Claude finished" + (f": {said}" if said else ""), "why": "", "file": ""})
+    return out
+
+
+def _web_now(root: Path, part: str, zoom: int) -> Dict[str, Any]:
+    cfg = config.lenient(root)
+    code = Code(cfg)
+    events = activity.events(root, 200)
+    now = activity.now(events, code)
+    c = compare(root, "turn" if turn_sha(root) else "checkpoint", ".")
+    marks = graph.change_marks(c.diff, c.before, c.after)
+    reading = design.Reading(c)
+    notes = reading.notes()
+    agent = now["part"]
+    name = activity.label(cfg, agent) if agent else ""
+    if agent:
+        headline = (("Claude is editing " if now["doing"] == "editing" else "Claude is reading ") + name
+                    if now["working"] else f"Claude is waiting for you, last on {name}")
+    else:
+        headline = "Waiting for Claude to read or edit code"
+    sections = []
+    urgent = [n for n in notes if n["weight"] >= design.ATTENTION] + collisions(root, events, code, cfg)
+    if urgent:
+        sections.append(_web_section("Needs your attention", "notes", [_web_note(n) for n in urgent],
+                                     "worth a look before Claude goes on"))
+    model, title, aside = _now_model(c, root, part, now, marks)
+    badges(model, root, events, code)
+    diagram = _web_diagram(c, model, title, aside, zoom, ["b:" + (part or ""), "b:" + (agent or "")])
+    rest = design.summarize([n for n in notes if n not in urgent])
+    base = "this turn" if c.base == "the start of this turn" else f"since {c.base}"
+    parts = len(design.summarize(notes))
+    sections.append(_web_section("This turn", "notes", [_web_note(n) for n in rest],
+                                 f"{len(notes)} change{'' if len(notes) == 1 else 's'} to the design, in {parts} "
+                                 f"part{'' if parts == 1 else 's'}" if notes else base))
+    shown = part or agent
+    if shown and (shown in c.after["components"] or shown.startswith("x:")):
+        L = _learn_parts(c, reading, shown, profile.learning())
+        items = []
+        if L["role"]:
+            role = L["role"]
+            items.append({"sign": "◆", "status": "info", "text": role[0][0].upper() + role[0][1:], "why": role[1],
+                          "ask": ""})
+        items += [_web_note(n) for n in L["notes"][:3]]
+        items.append({"sign": "◆", "status": "info", "text": "Where it sits", "why": L["where"], "ask": ""})
+        items += [{"sign": "★" if tag.startswith("★") else "+", "status": "added", "text": title_,
+                   "why": f"{what} ({tag.lstrip('★ ')})", "ask": ""} for _k, title_, what, tag in L["tech"]]
+        sections.append(_web_section(f"Learn · how {L['name']} is designed", "notes", items))
+    told = _web_steps(events, code, cfg)
+    if told:
+        sections.append(_web_section("What just happened", "steps", told, "the system diff, step by step"))
+    return {"view": "now", "part": part or "", "title": "Now", "headline": headline,
+            "status": {"working": bool(now["working"]), "doing": now["doing"] or "", "part": agent or "",
+                       "prompt": now.get("prompt", "") or ""},
+            "diagram": diagram, "sections": sections}
+
+
+def _web_review(root: Path, zoom: int) -> Dict[str, Any]:
+    base, since = _review_base(root)
+    c = compare(root, base, ".")
+    agent = activity.now(activity.events(root, 200), Code(c.cfg))["part"]
+    diagram = _web_diagram(c, architecture.system(c, None, agent), "System " + since, "click a box · zoom in",
+                           zoom, ["b:" + agent] if agent else [])
+    notes = design.Reading(c).notes()
+    short = since.split(" (")[0]
+    sections = [_web_section("Every change " + since, "notes", [_web_note(n) for n in notes],
+                             f"{len(notes)} to the design" if notes else f"no change to the system's structure {short}")]
+    if notes:
+        sections.append(_web_section("The exact list", "lines",
+                                     [{"text": line, "style": "muted"} for line in c.diff["plan"].splitlines()],
+                                     "Seen it all? Tell Claude \"mark it as seen\": the next review starts from here"))
+    edited = [ch for ch in c.diff["changes"] if ch["entity"] in ("component", "deploy") and ch["op"] == "change"]
+    if edited:
+        sections.append(_web_section("Code changed " + short, "lines",
+                                     [{"text": f"~ {ch['label']}" + (f"  {ch['detail'][0]}" if ch["detail"] else ""),
+                                       "style": "changed"} for ch in edited],
+                                     "inside these parts, their structure the same"))
+    return {"view": "review", "part": "", "title": "Review", "headline": c.diff["headline"],
+            "diagram": diagram, "sections": sections}
+
+
+def _web_agents(root: Path, zoom: int) -> Dict[str, Any]:
+    cfg = config.lenient(root)
+    code = Code(cfg)
+    events = activity.events(root, 400)
+    c = compare(root, "turn" if turn_sha(root) else "checkpoint", ".")
+    st = agents.state(root)
+    who = team(root, events, code)
+    task = (st["plan"] or {}).get("task", "")
+    model = architecture.system(c, None, activity.now(events, code)["part"])
+    holder = {i["id"]: n["id"] for n in model["nodes"] for i in n.get("items") or []}
+    drawn = {n["id"] for n in model["nodes"]} | set(holder)
+    colour = colours(who)
+    L = _lanes(root, events, who) if who else {"start": 0.0, "span": 1.0, "lanes": {}}
+    lanes, lit = [], {}
+    for name, a in sorted(who.items(), key=lambda kv: (kv[0] != agents.MAIN, -kv[1]["at"], kv[0])):
+        parts = list(dict.fromkeys(list(a["edits"]) + list(a["blocks"])))
+        blocks = sorted({"b:" + p for p in parts if p in drawn} | {"b:" + holder[p] for p in parts if p in holder})
+        lit["ag:" + name] = blocks
+        me = L["lanes"].get(name, {"marks": [], "doing": "", "progress": ""})
+        lanes.append({"name": name, "colour": colour[name], "area": a["area"],
+                      "live": bool(a["at"] and time.time() - a["at"] < 120), "doing": me["doing"],
+                      "progress": me["progress"].lstrip(" ·"), "unread": unread_count(root, name),
+                      "marks": [{"pos": max(0.0, min(1.0, (at - L["start"]) / L["span"])), "kind": kind}
+                                for at, kind in sorted(me["marks"])],
+                      "blocks": blocks})
+    sections = [_web_section("The team", "lanes", lanes, f"plan: {task}" if task else
+                             "no plan yet: Claude makes one with plan_agents")]
+    clash = collisions(root, events, code, cfg)
+    if clash:
+        sections.append(_web_section("In each other's way", "notes", [_web_note(n) for n in clash]))
+    badges(model, root, events, code)
+    owners(model, who, colour)
+    diagram = _web_diagram(c, model, "Who works where", "each box in the colour of its agent", zoom, [])
+    diagram["lights"].update(lit)
+    bus = []
+    for m in agents.messages(root)[-10:][::-1]:
+        style = {"change": "changed", "warning": "attention", "plan": "accent"}.get(m.get("kind", ""), "")
+        bus.append({"text": f"{time.strftime('%H:%M', time.localtime(m['at']))} {m['from']} → {m['topic']}: "
+                            f"{m['text']}" + (f" ({m['why']})" if m.get("why") else ""), "style": style})
+    sections.append(_web_section("The bus", "lines", bus, "what agents told each other, newest first"))
+    return {"view": "agents", "part": "", "title": "Agents",
+            "headline": task or "no plan yet: Claude makes one with plan_agents", "diagram": diagram,
+            "sections": sections}
+
+
+def _web_topics(root: Path, zoom: int) -> Dict[str, Any]:
+    c = compare(root, "checkpoint", ".")
+    S = _stack_view(c, root)
+    techs, learning = S["techs"], S["learning"]
+    names = S["names"]
+    chips = []
+    for k, heading in S["order"]:
+        for key in S["rows"][k]:
+            title, what, link = TECH[key]
+            chips.append({"key": key, "title": title, "learning": key in learning,
+                          "stdlib": key.split(".")[0] in STDLIB, "layer": heading, "parts": S["parts"][key],
+                          "role": ROLE_OF.get(key, ""), "what": what, "link": link})
+    diagram = _web_diagram(c, S["model"], "Where it is used",
+                           "the picked technology's parts light up; a picked part lights what it uses", zoom, [])
+    for key, parts in techs.items():
+        diagram["lights"]["t:" + key] = S["parts"][key]
+        users = sorted(parts, key=lambda p: (-parts[p], names.get(p, p)))
+        files = sum(parts.values())
+        diagram["details"]["t:" + key] = (f"used by {design.and_list([names.get(p, p) for p in users], 3)} · "
+                                          f"{files} file{'' if files == 1 else 's'}")
+    for bid, (_title, used) in S["boxes"].items():
+        if bid in diagram["details"]:
+            diagram["lights"][bid] = list(dict.fromkeys(diagram["lights"].get(bid, []) + ["t:" + k for k in used]))
+            diagram["details"][bid] = "uses " + design.and_list([TECH[k][0] for k in used], 6)
+    diagram["pick"] = "t:" + chips[0]["key"] if chips else ""
+    return {"view": "topics", "part": "", "title": "Topics",
+            "headline": f"{len(chips)} technolog{'y' if len(chips) == 1 else 'ies'} in the system",
+            "diagram": diagram,
+            "sections": [_web_section("The stack", "chips", chips, "pick one to light where it is used")]}
+
+
+def web_view(root: Path, view: str = "now", part: str = "", zoom: int = 0) -> Dict[str, Any]:
+    """A view of the pane (now, review, agents, topics) structured for a web page instead of rows of text:
+    {"view", "part", "title", "headline", "status" (Now only), "diagram": {"svg", "title", "aside", "lights",
+    "details", "enter", "pick"}, "sections": [{"title", "aside", "kind", "items"}], "web", "send"}. Section kinds:
+    notes {sign, status, text, why, ask}; steps {at, kind, sign, status, text, why, file}; lanes {name, colour,
+    area, live, doing, progress, unread, marks [{pos, kind}], blocks}; chips {key, title, learning, stdlib, layer,
+    parts, role, what, link}; lines {text, style}. Never takes the outbox: "send" is always []."""
+    root = Path(root)
+    if view == "agents":
+        out = _web_agents(root, zoom)
+    elif view in ("review", "map", "changes"):
+        out = _web_review(root, zoom)
+    elif view == "topics":
+        out = _web_topics(root, zoom)
+    else:
+        out = _web_now(root, part or "", zoom)
+    out["web"] = web_url(root)
+    out["send"] = []
+    return out

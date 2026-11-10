@@ -201,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 938,
+   "lines": 1218,
    "hub": false,
    "quiet": false
   },
@@ -213,7 +213,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 550,
+   "lines": 842,
    "hub": true,
    "quiet": false
   },
@@ -297,7 +297,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 826,
+   "lines": 967,
    "hub": false,
    "quiet": false
   }
@@ -386,6 +386,7 @@
   "panel>extract": 2,
   "panel>graph": 2,
   "panel>learn": 4,
+  "panel>pictures": 1,
   "panel>sources": 3,
   "panel>textmap": 1,
   "panel>watch": 1,
@@ -727,8 +728,8 @@
   ],
   "panel>activity": [
    "events",
-   "label",
    "now",
+   "label",
    "EDIT",
    "PROMPT",
    "is_system"
@@ -751,8 +752,8 @@
    "Page",
    "detail_rows",
    "Grid",
-   "chips",
-   "layered"
+   "layered",
+   "chips"
   ],
   "panel>compare": [
    "compare",
@@ -766,8 +767,8 @@
    "and_list",
    "Reading",
    "summarize",
-   "kinds",
    "ATTENTION",
+   "kinds",
    "name_of"
   ],
   "panel>extract": [
@@ -788,6 +789,9 @@
    "ROLE_OF",
    "STDLIB",
    "TECH"
+  ],
+  "panel>pictures": [
+   "architecture_svg"
   ],
   "panel>sources": [
    "GitSource",
@@ -899,7 +903,7 @@
    "one_line"
   ],
   "watch>panel": [
-   "show"
+   "web_view"
   ],
   "watch>pictures": [
    "map_svg"
@@ -1148,6 +1152,7 @@
   "tests/test_capture.py": 1,
   "tests/test_checkpoint_watch_mcp.py": 1,
   "tests/test_design_and_pane.py": 1,
+  "tests/test_svg.py": 1,
   "tests/test_system_diff.py": 1,
   "tests/test_terminal_and_learning.py": 1,
   "tests/test_web.py": 1

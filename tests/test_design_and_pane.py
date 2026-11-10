@@ -488,3 +488,56 @@ def test_what_the_web_page_sends_comes_back_once_in_the_page_and_the_outbox_is_e
     assert not box.exists() and not list(git_dir(repo).glob("outbox.jsonl*"))
     assert pane.show(repo, view="agents")["send"] == []         # taken once
     assert pane.take_outbox(repo) == []
+
+
+def test_web_view_gives_each_view_as_structured_json_agreeing_with_the_pane(repo, files):
+    import json
+    from system_diff import agents, pane, pictures
+    agents.plan(repo, compare(repo, "HEAD", "."), "make the API faster")
+    agents.tie(repo, "a1", "api")
+    activity.record(repo, {"event": "prompt", "text": "let people refund an order"})
+    files(repo, {"app/api/refund.py": REFUND, "app/api/health.py": HEALTH_ROUTE})
+    activity.record(repo, {"event": "edit", "path": "app/api/refund.py", "agent": "a1"})
+    activity.record(repo, {"event": "change", "path": "app/api/refund.py", "source": "hook", "items": [
+        {"text": "API now answers POST /api/orders/{id}/refund", "why": "it creates or acts", "sign": "+",
+         "status": "added"}]})
+    box = __import__("system_diff.sources", fromlist=["git_dir"]).git_dir(repo) / "outbox.jsonl"
+    box.write_text(json.dumps({"id": "1", "text": "hi"}) + "\n", encoding="utf-8")
+    kinds = {"notes": {"sign", "status", "text", "why", "ask"}, "steps": {"at", "kind", "sign", "text", "why", "file"},
+             "lanes": {"name", "colour", "area", "live", "doing", "progress", "unread", "marks", "blocks"},
+             "chips": {"key", "title", "learning", "stdlib", "layer", "parts", "role", "what", "link"},
+             "lines": {"text", "style"}}
+    for view in ("now", "review", "agents", "topics"):
+        web = pane.web_view(repo, view)
+        json.dumps(web)                                                         # all of it JSON
+        assert {"view", "part", "title", "headline", "diagram", "sections", "web", "send"} <= set(web)
+        assert web["view"] == view and web["send"] == []                         # never takes the outbox
+        assert ("status" in web) == (view == "now")
+        d = web["diagram"]
+        assert {"svg", "title", "aside", "lights", "details", "enter", "pick"} <= set(d)
+        if getattr(pictures, "architecture_svg", None):
+            assert d["svg"].startswith("<svg")
+        for s in web["sections"]:
+            assert {"title", "aside", "kind", "items"} <= set(s) and s["kind"] in kinds
+            for item in s["items"]:
+                assert kinds[s["kind"]] <= set(item), (view, s["title"], item)
+        shown = pane.show(repo, 100, view, zoom=0, take=False)
+        for bid, lit in d["lights"].items():                                    # lights as the pane's
+            assert sorted(lit) == sorted(shown["lights"][bid]), (view, bid)
+        entered = {b["id"]: b["enter"]["zoom"] for b in shown["blocks"] if b.get("enter")}
+        assert d["enter"] == entered and d["pick"] == shown["pick"]
+    assert box.exists()                                                         # still there for the pane
+    now = pane.web_view(repo, "now")
+    assert now["status"]["prompt"] == "let people refund an order" and now["status"]["part"] == "api"
+    happened = next(s for s in now["sections"] if s["title"] == "What just happened")
+    assert happened["kind"] == "steps"
+    assert happened["items"][0]["text"] == "API now answers POST /api/orders/{id}/refund"
+    assert happened["items"][0]["file"] == "refund.py" and len(happened["items"][0]["at"]) == 5
+    team = next(s for s in pane.web_view(repo, "agents")["sections"] if s["kind"] == "lanes")
+    api = next(i for i in team["items"] if i["name"] == "api")
+    assert "b:api" in api["blocks"] and any(m["kind"] == "edit" and 0 <= m["pos"] <= 1 for m in api["marks"])
+    topics = pane.web_view(repo, "topics")
+    fastapi = next(i for i in topics["sections"][0]["items"] if i["key"] == "fastapi")
+    assert "b:api" in fastapi["parts"] and "t:fastapi" in topics["diagram"]["lights"]["b:api"]
+    zoomed = pane.web_view(repo, "now", part="api")
+    assert zoomed["part"] == "api" and zoomed["diagram"]["title"].startswith(("Inside", "Zoomed"))
