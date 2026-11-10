@@ -16,7 +16,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import activity, architecture, canvas, config, design, graph, inside, profile
+from . import activity, agents, architecture, canvas, config, design, graph, inside, profile
 from .compare import compare, turn_sha
 from .extract import Code, first_party, outside_imports
 from .learn import STDLIB, BASIC
@@ -229,7 +229,7 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
     page = canvas.Page(width)
     _status(page, now, cfg)
 
-    urgent = [n for n in notes if n["weight"] >= design.ATTENTION]
+    urgent = [n for n in notes if n["weight"] >= design.ATTENTION] + collisions(root, events, code, cfg)
     if urgent:
         page.heading("▲ Needs your attention", "worth a look before Claude goes on")
         page.rows[-1][0][1] = "attention"
@@ -253,6 +253,7 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
     if model is None:
         model = architecture.system(c, marks, agent)
         page.heading("System", "● Claude · + new · ~ changed · − gone · click, then ← ↑ ↓ → and ↵")
+    badges(model, root, events, code)
     g = _diagram(page, c, model, width, centre=bool(part))
     ids = {b["id"] for b in g.blocks}
     page.pick = next((b for b in ("b:" + (part or ""), "b:" + (agent or "")) if b in ids), "")
@@ -373,7 +374,111 @@ def view_topics(root: Path, width: int) -> Dict[str, Any]:
     return page.json(view="topics", part="")
 
 
+# ── a team of agents ──────────────────────────────────────────────────────────
+
+def team(root: Path, events: List[dict], code: Code) -> Dict[str, Dict[str, Any]]:
+    """Every agent: its plan entry (area, blocks, brief), the parts it edited and read this turn, when it last acted,
+    by the name it goes by."""
+    st = agents.state(root)
+    out: Dict[str, Dict[str, Any]] = {}
+    for g in (st["plan"].get("agents") or []):
+        out[g["name"]] = {"area": g.get("area", ""), "blocks": g.get("blocks", []), "edits": [], "reads": [], "at": 0.0}
+    for aid, seen in agents.who_worked(events, code).items():
+        name = st["ids"].get(aid) or (agents.MAIN if aid == agents.MAIN else "agent-" + aid[:6])
+        a = out.setdefault(name, {"area": "", "blocks": [], "edits": [], "reads": [], "at": 0.0})
+        a["edits"] = sorted(set(a["edits"]) | set(seen["edits"]))
+        a["reads"] = sorted(set(a["reads"]) | set(seen["reads"]))
+        a["at"] = max(a["at"], seen["at"])
+    return out
+
+
+def badges(model: Dict[str, Any], root: Path, events: List[dict], code: Code) -> None:
+    """Who works where, on the diagram: each block's agents (those editing it, else those it is claimed for) after
+    its title, when more than one agent is about."""
+    who = team(root, events, code)
+    if len(who) < 2:
+        return
+    on: Dict[str, List[str]] = defaultdict(list)
+    for name, a in who.items():
+        for part in (a["edits"] or a["blocks"]):
+            if name not in on[part]:
+                on[part].append(name)
+    for n in model["nodes"]:
+        for box in [n] + list(n.get("items") or []):
+            if on.get(box["id"]):
+                box["title"] += "  " + " ".join(f"@{t}" for t in on[box["id"]][:2])
+
+
+def collisions(root: Path, events: List[dict], code: Code, cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Agents in each other's way this turn: two editing one block, or one editing a block claimed for another."""
+    who = team(root, events, code)
+    claims = agents.state(root)["claims"]
+    editors: Dict[str, List[str]] = defaultdict(list)
+    for name, a in who.items():
+        for part in a["edits"]:
+            editors[part].append(name)
+    out = []
+    for part, names in sorted(editors.items()):
+        P = activity.label(cfg, part)
+        if len(names) > 1:
+            out.append({"sign": "▲", "status": "warn", "weight": 9, "text": f"{design.and_list(names)} all edit {P}",
+                        "why": "two agents changing one block can undo each other's work", "ask":
+                        f"Should {P} be left to {claims.get(part) or names[0]}, the others publishing what they need?"})
+        elif claims.get(part) and claims[part] not in names and names != [agents.MAIN]:
+            out.append({"sign": "▲", "status": "warn", "weight": 8, "text": f"{names[0]} edits {P}, claimed for "
+                        f"{claims[part]}", "why": "outside its own blocks", "ask": ""})
+    return out
+
+
+def view_agents(root: Path, width: int) -> Dict[str, Any]:
+    cfg = config.lenient(root)
+    code = Code(cfg)
+    events = activity.events(root, 400)
+    c = compare(root, "turn" if turn_sha(root) else "checkpoint", ".")
+    st = agents.state(root)
+    who = team(root, events, code)
+    page = canvas.Page(width)
+    task = (st["plan"] or {}).get("task", "")
+    page.heading("The team", f"plan: {canvas.cut(task, width - 22)}" if task else
+                 "no plan yet: Claude makes one with plan_agents")
+    clash = collisions(root, events, code, cfg)
+    if clash:
+        _notes(page, clash, 4, ask=True)
+    for name, a in sorted(who.items(), key=lambda kv: (kv[0] != agents.MAIN, -kv[1]["at"], kv[0])):
+        live = a["at"] and time.time() - a["at"] < 120
+        page.add(["● " if live else "○ ", "accent" if live else "muted"], [name, "bold"],
+                 [f"  {a['area']}" if a["area"] else "", "muted"],
+                 [f"  {time.strftime('%H:%M', time.localtime(a['at']))}" if a["at"] else "  not started", "muted"])
+        mine = [activity.label(cfg, b) for b in a["blocks"]]
+        if mine:
+            page.para("owns " + design.and_list(mine, 5), "muted", indent=4)
+        if a["edits"]:
+            page.para("edited " + design.and_list([activity.label(cfg, b) for b in a["edits"]], 5), "", indent=4)
+        unread = len(agents.inbox(root, name, mark=False))
+        if unread:
+            page.add([f"    {unread} unread on the bus", "attention"])
+    if not who:
+        page.add(["   no agent has touched the code yet", "muted"])
+    page.heading("Who works where", "@name after a block: the agents on it")
+    model = architecture.system(c, None, activity.now(events, code)["part"])
+    badges(model, root, events, code)
+    _diagram(page, c, model, width)
+    page.heading("The bus", "what agents told each other, newest first")
+    msgs = agents.messages(root)[-10:][::-1]
+    for m in msgs:
+        style = {"change": "changed", "warning": "attention", "plan": "accent"}.get(m.get("kind", ""), "")
+        page.add([time.strftime("%H:%M ", time.localtime(m["at"])), "muted"], [m["from"], "bold"],
+                 [f" → {m['topic']}: ", "muted"], [canvas.cut(m["text"], width - 20 - len(m["topic"])), style])
+        if m.get("why"):
+            page.add(["        " + canvas.cut(m["why"], width - 9), "muted"])
+    if not msgs:
+        page.add(["   nothing yet: changes to a block are published here as agents make them", "muted"])
+    return page.json(view="agents", part="")
+
+
 def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None) -> Dict[str, Any]:
+    if view == "agents":
+        return view_agents(root, width)
     if view == "map":
         return view_map(root, width)
     if view == "changes":

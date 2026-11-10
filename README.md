@@ -68,6 +68,9 @@ Claude is changing in it. `/system-diff close` (or "× close" in its tab row) hi
   - **What just happened**: the system diff, step by step. Each change an edit made is said in plain words, with why
     it matters and the file it came from. Edits that changed no structure are told once.
 - **Map**: the system diagram since your checkpoint, every box to pick and zoom into.
+- **Agents**: the team at work. Each agent's area, the blocks it owns and edited, and unread messages; the system
+  diagram with `@agent` after each block it works on; the bus, newest first; and a warning when two agents edit one
+  block, or one edits a block claimed for another.
 - **Changes**: every change since your checkpoint, and this turn, read for design. Once you have understood it, tell
   Claude "mark it as seen" (or run `system-diff checkpoint`): from then on you see only what is new to you.
 - **Topics**: the stack, technology by technology. Pick one and the parts that use it light up in the diagram; space
@@ -83,6 +86,25 @@ One meaning per colour, so your eye goes where it should:
 - **Red:** only what was taken away.
 
 `n` `m` `c` `t` switch views.
+
+### A team of agents, by the system's blocks
+
+Claude does most work alone unless asked otherwise, so system-diff asks it to plan a team:
+
+- **Planning:** at each prompt, the hook tells Claude to call `plan_agents` with the task. The plan splits the task by
+  the system's blocks, one agent per area it touches (a container, else a part). Each agent gets the blocks it owns
+  (claimed for it), the blocks it depends on, and a brief to launch it with. Claude then launches the agents in
+  parallel as subagents. Turn this off with `[agents] orchestrate = false` in `system-diff.toml`.
+- **The bus:** an async publish/subscribe channel whose topics are the blocks. Each agent follows the blocks its own
+  depend on. Every change an agent makes to a block's structure is published on that block's topic as it happens
+  ("API no longer answers DELETE /orders/{id}"), with why it matters. Agents publish their own notes with `publish`
+  (to a block, to "all", or to "agent:<name>"). Each agent's unread messages reach it with its next tool result:
+  nobody waits on anybody.
+- **Claims:** `claim` gives an agent its blocks. An edit to someone else's block is published to its owner and shown
+  under Needs your attention.
+
+The MCP tools: `plan_agents`, `claim`, `publish`, `subscribe`, `inbox`, `team`. It all stays in `.git/system-diff/`
+(`agents.json`, `bus.jsonl`), never pushed.
 
 ### In the conversation
 

@@ -88,7 +88,8 @@ def test_the_mcp_tools_answer_with_the_plan_and_the_picture(repo, files, monkeyp
     monkeypatch.chdir(repo)
     files(repo, {"app/api/health.py": HEALTH})
     names = {t.name for t in asyncio.run(mcp_server.build().list_tools())}
-    assert names == {"system_map", "system_diff", "explain", "draw", "checkpoint"}
+    assert names == {"system_map", "system_diff", "explain", "draw", "checkpoint", "plan_agents", "claim", "publish",
+                     "subscribe", "inbox", "team"}
     d = mcp_server.tool_diff(repo)
     assert "GET /health" in d["plan"] and Path(d["picture"]).is_file() and ".git" in Path(d["picture"]).parts
     m = mcp_server.tool_map(repo)

@@ -137,8 +137,8 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
       surface.post({ back: true })
     } else if (e.key === 'f') {
       surface.post({ follow: true })
-    } else if (['n', 'm', 'c', 't'].includes(e.key)) {
-      surface.post({ view: { n: 'now', m: 'map', c: 'changes', t: 'topics' }[e.key] ?? 'now' })
+    } else if (['n', 'm', 'a', 'c', 't'].includes(e.key)) {
+      surface.post({ view: { n: 'now', m: 'map', a: 'agents', c: 'changes', t: 'topics' }[e.key] ?? 'now' })
     }
   })
   // The detail of the picked block, in the slot under its picture.

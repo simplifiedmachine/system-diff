@@ -128,6 +128,8 @@ test('the arrows pick a block, Enter zooms in, b goes back', async ($, on) => {
   await ui.key({ key: 'return', in: 'page' })           // zoomed in again: Follow Claude shows
   await ui.key({ key: 'm', in: 'page' })
   expect(last()).toContain('--view map')
+  await ui.press({ key: 'view-agents' })
+  expect(last()).toContain('--view agents')
   await ui.press({ key: 'follow' })
   expect(last().endsWith('--view now --part ')).toBe(true)
   await ui.unmount()

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="756" height="998" viewBox="0 0 756 998" role="img" aria-label="System map">
+<svg xmlns="http://www.w3.org/2000/svg" width="756" height="1058" viewBox="0 0 756 1058" role="img" aria-label="System map">
 <style>
 text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 .bg { fill: #f8f9fb; stroke: #e1e5eb; }
@@ -47,23 +47,28 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 .note .box { fill: #fff3dd; stroke: #e9c98f; } .note text { font-size: 11.5px; fill: #9a5600; }
 </style>
 <defs><marker id="ar-call-same" class="ar k-call s-same" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
-<rect class="bg" x="0.5" y="0.5" width="755" height="997" rx="10"/>
+<rect class="bg" x="0.5" y="0.5" width="755" height="1057" rx="10"/>
 <text class="col" x="14" y="18">ENTRY POINTS</text>
 <text class="col" x="278" y="18">LOGIC</text>
 <text class="col" x="542" y="18">DATA ACCESS</text>
 <path class="be k-call s-same" d="M542,112 C513,112 513,248 484,248" marker-end="url(#ar-call-same)"><title>activity → diff</title></path>
 <path class="be k-call s-same" d="M542,112 C513,112 513,188 484,188" marker-end="url(#ar-call-same)"><title>activity → extract</title></path>
-<path class="be k-call s-same" d="M542,112 C513,112 513,728 484,728" marker-end="url(#ar-call-same)"><title>activity → learn</title></path>
+<path class="be k-call s-same" d="M542,112 C513,112 513,788 484,788" marker-end="url(#ar-call-same)"><title>activity → learn</title></path>
 <path class="be k-call s-same" d="M742,112 C778,112 778,52 748,52" marker-end="url(#ar-call-same)"><title>activity → sources</title></path>
 <path class="be k-call s-same" d="M214,172 C246,172 246,159 278,159 L478,159 C507,159 507,112 536,112" marker-end="url(#ar-call-same)"><title>agent → activity</title></path>
-<path class="be k-call s-same" d="M214,172 C243,172 243,848 272,848" marker-end="url(#ar-call-same)"><title>agent → companion</title></path>
+<path class="be k-call s-same" d="M214,172 C243,172 243,488 272,488" marker-end="url(#ar-call-same)"><title>agent → agents</title></path>
+<path class="be k-call s-same" d="M214,172 C243,172 243,908 272,908" marker-end="url(#ar-call-same)"><title>agent → companion</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,52 272,52" marker-end="url(#ar-call-same)"><title>agent → compare</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,128 272,128" marker-end="url(#ar-call-same)"><title>agent → config</title></path>
-<path class="be k-call s-same" d="M214,172 C243,172 243,488 272,488" marker-end="url(#ar-call-same)"><title>agent → design</title></path>
+<path class="be k-call s-same" d="M214,172 C243,172 243,548 272,548" marker-end="url(#ar-call-same)"><title>agent → design</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,188 272,188" marker-end="url(#ar-call-same)"><title>agent → extract</title></path>
-<path class="be k-call s-same" d="M214,172 C243,172 243,728 272,728" marker-end="url(#ar-call-same)"><title>agent → learn</title></path>
+<path class="be k-call s-same" d="M214,172 C243,172 243,788 272,788" marker-end="url(#ar-call-same)"><title>agent → learn</title></path>
 <path class="be k-call s-same" d="M214,172 C246,172 246,99 278,99 L478,99 C507,99 507,52 536,52" marker-end="url(#ar-call-same)"><title>agent → sources</title></path>
-<path class="be k-call s-same" d="M478,428 C514,428 514,488 484,488" marker-end="url(#ar-call-same)"><title>architecture → design</title></path>
+<path class="be k-call s-same" d="M478,488 C507,488 507,112 536,112" marker-end="url(#ar-call-same)"><title>agents → activity</title></path>
+<path class="be k-call s-same" d="M478,488 C514,488 514,428 484,428" marker-end="url(#ar-call-same)"><title>agents → architecture</title></path>
+<path class="be k-call s-same" d="M478,488 C514,488 514,548 484,548" marker-end="url(#ar-call-same)"><title>agents → design</title></path>
+<path class="be k-call s-same" d="M478,488 C507,488 507,52 536,52" marker-end="url(#ar-call-same)"><title>agents → sources</title></path>
+<path class="be k-call s-same" d="M478,428 C524,428 524,548 484,548" marker-end="url(#ar-call-same)"><title>architecture → design</title></path>
 <path class="be k-call s-same" d="M478,428 C524,428 524,308 484,308" marker-end="url(#ar-call-same)"><title>architecture → graph</title></path>
 <path class="be k-call s-same" d="M478,428 C534,428 534,248 484,248" marker-end="url(#ar-call-same)"><title>architecture → diff</title></path>
 <path class="be k-call s-same" d="M478,428 C544,428 544,188 484,188" marker-end="url(#ar-call-same)"><title>architecture → extract</title></path>
@@ -72,37 +77,38 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,52 C243,52 243,128 272,128" marker-end="url(#ar-call-same)"><title>cli → config</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,188 272,188" marker-end="url(#ar-call-same)"><title>cli → extract</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,308 272,308" marker-end="url(#ar-call-same)"><title>cli → graph</title></path>
-<path class="be k-call s-same" d="M214,52 C243,52 243,728 272,728" marker-end="url(#ar-call-same)"><title>cli → learn</title></path>
+<path class="be k-call s-same" d="M214,52 C243,52 243,788 272,788" marker-end="url(#ar-call-same)"><title>cli → learn</title></path>
 <path class="be k-call s-same" d="M214,52 C246,52 246,99 278,99 L478,99 C507,99 507,112 536,112" marker-end="url(#ar-call-same)"><title>cli → activity</title></path>
-<path class="be k-call s-same" d="M214,52 C243,52 243,848 272,848" marker-end="url(#ar-call-same)"><title>cli → companion</title></path>
+<path class="be k-call s-same" d="M214,52 C243,52 243,908 272,908" marker-end="url(#ar-call-same)"><title>cli → companion</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,52 272,52" marker-end="url(#ar-call-same)"><title>cli → compare</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,248 272,248" marker-end="url(#ar-call-same)"><title>cli → diff</title></path>
 <path class="be k-call s-same" d="M214,52 C250,52 250,112 220,112" marker-end="url(#ar-call-same)"><title>cli → mcp</title></path>
-<path class="be k-call s-same" d="M478,848 C507,848 507,52 536,52" marker-end="url(#ar-call-same)"><title>companion → sources</title></path>
+<path class="be k-call s-same" d="M478,908 C507,908 507,52 536,52" marker-end="url(#ar-call-same)"><title>companion → sources</title></path>
 <path class="be k-call s-same" d="M478,52 C516.7,52 516.7,128 484,128" marker-end="url(#ar-call-same)"><title>compare → config</title></path>
 <path class="be k-call s-same" d="M478,52 C536.7,52 536.7,248 484,248" marker-end="url(#ar-call-same)"><title>compare → diff</title></path>
 <path class="be k-call s-same" d="M478,52 C526.7,52 526.7,188 484,188" marker-end="url(#ar-call-same)"><title>compare → extract</title></path>
 <path class="be k-call s-same" d="M478,52 C507,52 507,52 536,52" marker-end="url(#ar-call-same)"><title>compare → sources</title></path>
-<path class="be k-call s-same" d="M478,488 C534,488 534,308 484,308" marker-end="url(#ar-call-same)"><title>design → graph</title></path>
+<path class="be k-call s-same" d="M478,548 C544,548 544,308 484,308" marker-end="url(#ar-call-same)"><title>design → graph</title></path>
 <path class="be k-call s-same" d="M478,248 C514,248 514,188 484,188" marker-end="url(#ar-call-same)"><title>diff → extract</title></path>
 <path class="be k-call s-same" d="M478,248 C507,248 507,52 536,52" marker-end="url(#ar-call-same)"><title>diff → sources</title></path>
 <path class="be k-call s-same" d="M478,188 C514,188 514,128 484,128" marker-end="url(#ar-call-same)"><title>extract → config</title></path>
 <path class="be k-call s-same" d="M478,308 C514,308 514,248 484,248" marker-end="url(#ar-call-same)"><title>graph → diff</title></path>
-<path class="be k-call s-same" d="M478,728 C507,728 507,112 536,112" marker-end="url(#ar-call-same)"><title>learn → activity</title></path>
-<path class="be k-call s-same" d="M478,728 C544,728 544,248 484,248" marker-end="url(#ar-call-same)"><title>learn → diff</title></path>
-<path class="be k-call s-same" d="M478,728 C544,728 544,188 484,188" marker-end="url(#ar-call-same)"><title>learn → extract</title></path>
-<path class="be k-call s-same" d="M478,728 C544,728 544,308 484,308" marker-end="url(#ar-call-same)"><title>learn → graph</title></path>
-<path class="be k-call s-same" d="M478,728 C514,728 514,668 484,668" marker-end="url(#ar-call-same)"><title>learn → narrate</title></path>
-<path class="be k-call s-same" d="M478,728 C507,728 507,52 536,52" marker-end="url(#ar-call-same)"><title>learn → sources</title></path>
+<path class="be k-call s-same" d="M478,788 C507,788 507,112 536,112" marker-end="url(#ar-call-same)"><title>learn → activity</title></path>
+<path class="be k-call s-same" d="M478,788 C544,788 544,248 484,248" marker-end="url(#ar-call-same)"><title>learn → diff</title></path>
+<path class="be k-call s-same" d="M478,788 C544,788 544,188 484,188" marker-end="url(#ar-call-same)"><title>learn → extract</title></path>
+<path class="be k-call s-same" d="M478,788 C544,788 544,308 484,308" marker-end="url(#ar-call-same)"><title>learn → graph</title></path>
+<path class="be k-call s-same" d="M478,788 C514,788 514,728 484,728" marker-end="url(#ar-call-same)"><title>learn → narrate</title></path>
+<path class="be k-call s-same" d="M478,788 C507,788 507,52 536,52" marker-end="url(#ar-call-same)"><title>learn → sources</title></path>
 <path class="be k-call s-same" d="M214,112 C243,112 243,188 272,188" marker-end="url(#ar-call-same)"><title>mcp → extract</title></path>
 <path class="be k-call s-same" d="M214,112 C246,112 246,99 278,99 L478,99 C507,99 507,112 536,112" marker-end="url(#ar-call-same)"><title>mcp → activity</title></path>
+<path class="be k-call s-same" d="M214,112 C243,112 243,488 272,488" marker-end="url(#ar-call-same)"><title>mcp → agents</title></path>
 <path class="be k-call s-same" d="M214,112 C243,112 243,52 272,52" marker-end="url(#ar-call-same)"><title>mcp → compare</title></path>
 <path class="be k-call s-same" d="M214,112 C243,112 243,128 272,128" marker-end="url(#ar-call-same)"><title>mcp → config</title></path>
 <path class="be k-call s-same" d="M214,112 C243,112 243,308 272,308" marker-end="url(#ar-call-same)"><title>mcp → graph</title></path>
-<path class="be k-call s-same" d="M214,112 C243,112 243,728 272,728" marker-end="url(#ar-call-same)"><title>mcp → learn</title></path>
+<path class="be k-call s-same" d="M214,112 C243,112 243,788 272,788" marker-end="url(#ar-call-same)"><title>mcp → learn</title></path>
 <path class="be k-call s-same" d="M214,112 C246,112 246,99 278,99 L478,99 C507,99 507,52 536,52" marker-end="url(#ar-call-same)"><title>mcp → sources</title></path>
-<path class="be k-call s-same" d="M214,112 C243,112 243,788 272,788" marker-end="url(#ar-call-same)"><title>mcp → textmap</title></path>
-<path class="be k-call s-same" d="M214,368 C243,368 243,728 272,728" marker-end="url(#ar-call-same)"><title>panel → learn</title></path>
+<path class="be k-call s-same" d="M214,112 C243,112 243,848 272,848" marker-end="url(#ar-call-same)"><title>mcp → textmap</title></path>
+<path class="be k-call s-same" d="M214,368 C243,368 243,788 272,788" marker-end="url(#ar-call-same)"><title>panel → learn</title></path>
 <path class="be k-call s-same" d="M214,368 C246,368 246,219 278,219 L478,219 C507,219 507,112 536,112" marker-end="url(#ar-call-same)"><title>panel → activity</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,428 272,428" marker-end="url(#ar-call-same)"><title>panel → architecture</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,52 272,52" marker-end="url(#ar-call-same)"><title>panel → compare</title></path>
@@ -110,26 +116,26 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,368 C243,368 243,188 272,188" marker-end="url(#ar-call-same)"><title>panel → extract</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,308 272,308" marker-end="url(#ar-call-same)"><title>panel → graph</title></path>
 <path class="be k-call s-same" d="M214,368 C246,368 246,219 278,219 L478,219 C507,219 507,52 536,52" marker-end="url(#ar-call-same)"><title>panel → sources</title></path>
-<path class="be k-call s-same" d="M214,368 C243,368 243,548 272,548" marker-end="url(#ar-call-same)"><title>panel → canvas</title></path>
-<path class="be k-call s-same" d="M214,368 C243,368 243,488 272,488" marker-end="url(#ar-call-same)"><title>panel → design</title></path>
+<path class="be k-call s-same" d="M214,368 C243,368 243,488 272,488" marker-end="url(#ar-call-same)"><title>panel → agents</title></path>
+<path class="be k-call s-same" d="M214,368 C243,368 243,608 272,608" marker-end="url(#ar-call-same)"><title>panel → canvas</title></path>
 <path class="be k-call s-same" d="M214,428 C246,428 246,279 278,279 L478,279 C507,279 507,112 536,112" marker-end="url(#ar-call-same)"><title>statusline → activity</title></path>
 <path class="be k-call s-same" d="M214,428 C243,428 243,128 272,128" marker-end="url(#ar-call-same)"><title>statusline → config</title></path>
 <path class="be k-call s-same" d="M214,428 C243,428 243,188 272,188" marker-end="url(#ar-call-same)"><title>statusline → extract</title></path>
 <path class="be k-call s-same" d="M214,428 C246,428 246,219 278,219 L478,219 C507,219 507,52 536,52" marker-end="url(#ar-call-same)"><title>statusline → sources</title></path>
-<path class="be k-call s-same" d="M214,428 C243,428 243,788 272,788" marker-end="url(#ar-call-same)"><title>statusline → textmap</title></path>
+<path class="be k-call s-same" d="M214,428 C243,428 243,848 272,848" marker-end="url(#ar-call-same)"><title>statusline → textmap</title></path>
 <path class="be k-call s-same" d="M214,308 C246,308 246,219 278,219 L478,219 C507,219 507,112 536,112" marker-end="url(#ar-call-same)"><title>tui → activity</title></path>
-<path class="be k-call s-same" d="M214,308 C243,308 243,848 272,848" marker-end="url(#ar-call-same)"><title>tui → companion</title></path>
+<path class="be k-call s-same" d="M214,308 C243,308 243,908 272,908" marker-end="url(#ar-call-same)"><title>tui → companion</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,308 272,308" marker-end="url(#ar-call-same)"><title>tui → graph</title></path>
-<path class="be k-call s-same" d="M214,308 C243,308 243,728 272,728" marker-end="url(#ar-call-same)"><title>tui → learn</title></path>
+<path class="be k-call s-same" d="M214,308 C243,308 243,788 272,788" marker-end="url(#ar-call-same)"><title>tui → learn</title></path>
 <path class="be k-call s-same" d="M214,308 C246,308 246,159 278,159 L478,159 C507,159 507,52 536,52" marker-end="url(#ar-call-same)"><title>tui → sources</title></path>
-<path class="be k-call s-same" d="M214,308 C243,308 243,788 272,788" marker-end="url(#ar-call-same)"><title>tui → textmap</title></path>
+<path class="be k-call s-same" d="M214,308 C243,308 243,848 272,848" marker-end="url(#ar-call-same)"><title>tui → textmap</title></path>
 <path class="be k-call s-same" d="M214,308 C250,308 250,248 220,248" marker-end="url(#ar-call-same)"><title>tui → watch</title></path>
 <path class="be k-call s-same" d="M214,248 C246,248 246,159 278,159 L478,159 C507,159 507,112 536,112" marker-end="url(#ar-call-same)"><title>watch → activity</title></path>
 <path class="be k-call s-same" d="M214,248 C243,248 243,52 272,52" marker-end="url(#ar-call-same)"><title>watch → compare</title></path>
 <path class="be k-call s-same" d="M214,248 C243,248 243,248 272,248" marker-end="url(#ar-call-same)"><title>watch → diff</title></path>
 <path class="be k-call s-same" d="M214,248 C243,248 243,188 272,188" marker-end="url(#ar-call-same)"><title>watch → extract</title></path>
 <path class="be k-call s-same" d="M214,248 C243,248 243,308 272,308" marker-end="url(#ar-call-same)"><title>watch → graph</title></path>
-<path class="be k-call s-same" d="M214,248 C243,248 243,728 272,728" marker-end="url(#ar-call-same)"><title>watch → learn</title></path>
+<path class="be k-call s-same" d="M214,248 C243,248 243,788 272,788" marker-end="url(#ar-call-same)"><title>watch → learn</title></path>
 <path class="be k-call s-same" d="M214,248 C246,248 246,159 278,159 L478,159 C507,159 507,52 536,52" marker-end="url(#ar-call-same)"><title>watch → sources</title></path>
 <g class="bn t-component s-same" transform="translate(14,30)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Command line</text><text x="12" y="35" class="bn-s">3 files</text><title>Command line</title></g>
 <g class="bn t-component s-same" transform="translate(14,90)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">MCP server</text><text x="12" y="35" class="bn-s">1 file</text><title>MCP server</title></g>
@@ -145,16 +151,17 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <g class="bn t-component s-same" transform="translate(278,286)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Map layout</text><text x="12" y="35" class="bn-s">1 file</text><title>Map layout</title></g>
 <g class="bn t-component s-same" transform="translate(278,346)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">SVG pictures</text><text x="12" y="35" class="bn-s">used across the code</text><title>SVG pictures</title></g>
 <g class="bn t-component s-same" transform="translate(278,406)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">System diagram</text><text x="12" y="35" class="bn-s">2 files</text><title>System diagram</title></g>
-<g class="bn t-component s-same" transform="translate(278,466)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Design notes</text><text x="12" y="35" class="bn-s">1 file</text><title>Design notes</title></g>
-<g class="bn t-component s-same" transform="translate(278,526)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Pane pictures</text><text x="12" y="35" class="bn-s">1 file</text><title>Pane pictures</title></g>
-<g class="bn t-component s-same" transform="translate(278,586)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">README section</text><text x="12" y="35" class="bn-s">1 file</text><title>README section</title></g>
-<g class="bn t-component s-same" transform="translate(278,646)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">LLM summary</text><text x="12" y="35" class="bn-s">1 file</text><title>LLM summary</title></g>
-<g class="bn t-component s-same" transform="translate(278,706)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Lessons and topics</text><text x="12" y="35" class="bn-s">3 files</text><title>Lessons and topics</title></g>
-<g class="bn t-component s-same" transform="translate(278,766)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Terminal pictures</text><text x="12" y="35" class="bn-s">1 file</text><title>Terminal pictures</title></g>
-<g class="bn t-component s-same" transform="translate(278,826)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Panes beside the agent</text><text x="12" y="35" class="bn-s">1 file</text><title>Panes beside the agent</title></g>
-<g class="bn t-component s-same" transform="translate(278,886)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">PNG rendering</text><text x="12" y="35" class="bn-s">1 file</text><title>PNG rendering</title></g>
+<g class="bn t-component s-same" transform="translate(278,466)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Agent team</text><text x="12" y="35" class="bn-s">1 file</text><title>Agent team</title></g>
+<g class="bn t-component s-same" transform="translate(278,526)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Design notes</text><text x="12" y="35" class="bn-s">1 file</text><title>Design notes</title></g>
+<g class="bn t-component s-same" transform="translate(278,586)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Pane pictures</text><text x="12" y="35" class="bn-s">1 file</text><title>Pane pictures</title></g>
+<g class="bn t-component s-same" transform="translate(278,646)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">README section</text><text x="12" y="35" class="bn-s">1 file</text><title>README section</title></g>
+<g class="bn t-component s-same" transform="translate(278,706)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">LLM summary</text><text x="12" y="35" class="bn-s">1 file</text><title>LLM summary</title></g>
+<g class="bn t-component s-same" transform="translate(278,766)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Lessons and topics</text><text x="12" y="35" class="bn-s">3 files</text><title>Lessons and topics</title></g>
+<g class="bn t-component s-same" transform="translate(278,826)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Terminal pictures</text><text x="12" y="35" class="bn-s">1 file</text><title>Terminal pictures</title></g>
+<g class="bn t-component s-same" transform="translate(278,886)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Panes beside the agent</text><text x="12" y="35" class="bn-s">1 file</text><title>Panes beside the agent</title></g>
+<g class="bn t-component s-same" transform="translate(278,946)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">PNG rendering</text><text x="12" y="35" class="bn-s">1 file</text><title>PNG rendering</title></g>
 <g class="bn t-component s-same" transform="translate(542,30)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Git and folder sources</text><text x="12" y="35" class="bn-s">1 file</text><title>Git and folder sources</title></g>
 <g class="bn t-component s-same" transform="translate(542,90)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Agent activity</text><text x="12" y="35" class="bn-s">1 file</text><title>Agent activity</title></g>
-<path class="be k-call" d="M16,972 L36,972" style="opacity:1"/>
-<text x="42" y="976" class="lg">calls</text>
+<path class="be k-call" d="M16,1032 L36,1032" style="opacity:1"/>
+<text x="42" y="1036" class="lg">calls</text>
 </svg>

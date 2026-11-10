@@ -193,7 +193,7 @@ def parser() -> argparse.ArgumentParser:
                                 "the end of a turn one line on what it changed in the system")
     pn = sub.add_parser("panel", help="what a pane beside the agent shows, as JSON (for the Claude Code mod)")
     pn.add_argument("--width", type=int, default=80)
-    pn.add_argument("--view", default="now", choices=["now", "map", "changes", "topics"])
+    pn.add_argument("--view", default="now", choices=["now", "map", "changes", "topics", "agents"])
     pn.add_argument("--part", default="", help="the part to zoom in on (default: the one the agent works on)")
     pn.add_argument("--protocol", type=int, default=1, help="2: a page of runs and pickable blocks (the mod's painter)")
     pf = sub.add_parser("profile", help="what you want explained: technologies marked new to you")

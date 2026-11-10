@@ -140,6 +140,14 @@ group = "Engine"
 paths = ["src/system_diff/architecture.py", "src/system_diff/inside.py"]
 
 [[components]]
+id = "agents"
+label = "Agent team"
+kind = "logic"
+group = "Explaining"
+about = "plans, claims, the bus"
+paths = ["src/system_diff/agents.py"]
+
+[[components]]
 id = "design"
 label = "Design notes"
 kind = "logic"

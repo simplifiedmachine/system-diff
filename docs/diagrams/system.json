@@ -17,7 +17,7 @@
    "label": "Agent activity",
    "layer": "",
    "kind": "data",
-   "order": 23,
+   "order": 24,
    "container": "",
    "declared": true,
    "files": 1,
@@ -33,7 +33,19 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 436,
+   "lines": 456,
+   "hub": false,
+   "quiet": false
+  },
+  "agents": {
+   "label": "Agent team",
+   "layer": "",
+   "kind": "logic",
+   "order": 14,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 296,
    "hub": false,
    "quiet": false
   },
@@ -53,7 +65,7 @@
    "label": "Pane pictures",
    "layer": "",
    "kind": "logic",
-   "order": 15,
+   "order": 16,
    "container": "",
    "declared": true,
    "files": 1,
@@ -65,7 +77,7 @@
    "label": "Panes beside the agent",
    "layer": "",
    "kind": "logic",
-   "order": 20,
+   "order": 21,
    "container": "",
    "declared": true,
    "files": 1,
@@ -101,7 +113,7 @@
    "label": "Design notes",
    "layer": "",
    "kind": "logic",
-   "order": 14,
+   "order": 15,
    "container": "",
    "declared": true,
    "files": 1,
@@ -149,7 +161,7 @@
    "label": "Lessons and topics",
    "layer": "",
    "kind": "logic",
-   "order": 18,
+   "order": 19,
    "container": "",
    "declared": true,
    "files": 3,
@@ -165,7 +177,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 240,
+   "lines": 282,
    "hub": false,
    "quiet": false
   },
@@ -173,7 +185,7 @@
    "label": "LLM summary",
    "layer": "",
    "kind": "logic",
-   "order": 17,
+   "order": 18,
    "container": "",
    "declared": true,
    "files": 1,
@@ -189,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 627,
+   "lines": 732,
    "hub": false,
    "quiet": false
   },
@@ -209,7 +221,7 @@
    "label": "PNG rendering",
    "layer": "",
    "kind": "logic",
-   "order": 21,
+   "order": 22,
    "container": "",
    "declared": true,
    "files": 1,
@@ -221,7 +233,7 @@
    "label": "README section",
    "layer": "",
    "kind": "logic",
-   "order": 16,
+   "order": 17,
    "container": "",
    "declared": true,
    "files": 1,
@@ -233,7 +245,7 @@
    "label": "Git and folder sources",
    "layer": "",
    "kind": "data",
-   "order": 22,
+   "order": 23,
    "container": "",
    "declared": true,
    "files": 1,
@@ -257,7 +269,7 @@
    "label": "Terminal pictures",
    "layer": "",
    "kind": "logic",
-   "order": 19,
+   "order": 20,
    "container": "",
    "declared": true,
    "files": 1,
@@ -296,6 +308,7 @@
   "activity>learn": 1,
   "activity>sources": 1,
   "agent>activity": 1,
+  "agent>agents": 1,
   "agent>companion": 1,
   "agent>compare": 1,
   "agent>config": 1,
@@ -303,6 +316,10 @@
   "agent>extract": 1,
   "agent>learn": 1,
   "agent>sources": 1,
+  "agents>activity": 1,
+  "agents>architecture": 1,
+  "agents>design": 1,
+  "agents>sources": 1,
   "architecture>design": 2,
   "architecture>diff": 1,
   "architecture>extract": 1,
@@ -347,6 +364,7 @@
   "learn>narrate": 1,
   "learn>sources": 1,
   "mcp>activity": 1,
+  "mcp>agents": 1,
   "mcp>compare": 1,
   "mcp>config": 1,
   "mcp>extract": 2,
@@ -356,6 +374,7 @@
   "mcp>sources": 1,
   "mcp>textmap": 1,
   "panel>activity": 2,
+  "panel>agents": 1,
   "panel>architecture": 2,
   "panel>canvas": 1,
   "panel>compare": 2,
@@ -412,6 +431,10 @@
    "write_state",
    "READ"
   ],
+  "agent>agents": [
+   "ORCHESTRATE",
+   "after_edit"
+  ],
   "agent>companion": [
    "add_vscode_task",
    "open_beside",
@@ -440,6 +463,27 @@
   ],
   "agent>sources": [
    "git"
+  ],
+  "agents>activity": [
+   "EDIT",
+   "_replace",
+   "PROMPT",
+   "READ",
+   "is_system",
+   "part_of"
+  ],
+  "agents>architecture": [
+   "groups_of"
+  ],
+  "agents>design": [
+   "depends",
+   "and_list",
+   "fan_in",
+   "kinds",
+   "summarize"
+  ],
+  "agents>sources": [
+   "git_dir"
   ],
   "architecture>design": [
    "kinds"
@@ -617,6 +661,14 @@
    "events",
    "now"
   ],
+  "mcp>agents": [
+   "claim",
+   "inbox",
+   "messages",
+   "plan",
+   "publish",
+   "state"
+  ],
   "mcp>compare": [
    "compare",
    "checkpoint",
@@ -659,11 +711,18 @@
   ],
   "panel>activity": [
    "events",
-   "now",
    "label",
+   "now",
    "EDIT",
    "PROMPT",
    "STOP"
+  ],
+  "panel>agents": [
+   "MAIN",
+   "state",
+   "inbox",
+   "messages",
+   "who_worked"
   ],
   "panel>architecture": [
    "system",
@@ -672,8 +731,8 @@
    "internals"
   ],
   "panel>canvas": [
-   "Page",
    "cut",
+   "Page",
    "detail_rows",
    "Grid",
    "chips",
@@ -868,6 +927,13 @@
    "shutil": 1,
    "subprocess": 1,
    "sys": 1,
+   "typing": 1
+  },
+  "agents": {
+   "json": 1,
+   "pathlib": 1,
+   "re": 1,
+   "time": 1,
    "typing": 1
   },
   "architecture": {

@@ -225,3 +225,46 @@ def test_many_changes_are_told_a_part_at_a_time():
     assert told[0]["why"].startswith("it creates or acts")          # the weightiest change's reason
     new = design.summarize(_reading(_bp(components={"api": comps["api"]}), b).notes())
     assert any(t["text"].startswith("New part Core") for t in new)
+
+
+def test_a_team_plan_splits_work_by_block_and_the_bus_carries_changes_between_agents(repo, files):
+    from system_diff import agent, agents
+    plan = agents.plan(repo, compare(repo, "HEAD", "."), "make the API and the store faster")
+    names = {a["name"]: a for a in plan["agents"]}
+    assert set(names) == {"api", "store"} and "launch" in plan["how"].lower()
+    assert names["api"]["blocks"] == ["api"] and "store" in names["store"]["blocks"]
+    assert "claim" in names["api"]["brief"] and agents.owner(repo, "api") == "api"
+    agents.subscribe(repo, "web", ["api"])                    # the front end's agent follows the API
+    agent.run_hook(json.dumps({"cwd": str(repo), "hook_event_name": "UserPromptSubmit", "prompt": "go"}),
+                   emit=lambda _s: None)
+    files(repo, {"app/api/health.py": HEALTH_ROUTE.replace("rules.everything()", '"ok"')})
+    said: list = []
+    agent.run_hook(json.dumps({"cwd": str(repo), "hook_event_name": "PostToolUse", "tool_name": "Write",
+                               "agent_id": "a1", "tool_input": {"file_path": str(repo / "app/api/health.py")}}),
+                   emit=said.append)
+    assert agents.name_of(repo, "a1") == "api"                 # it edited a block claimed for "api": that is it
+    new = [m for m in agents.inbox(repo, "web") if m["kind"] == "change"]
+    assert [m["text"] for m in new] == ["API now answers GET /health"] and new[0]["from"] == "api"
+    assert agents.inbox(repo, "web") == []                     # read once
+    agents.publish(repo, "agent:api", "please keep GET /api/orders", sender="web")
+    files(repo, {"app/api/health.py": HEALTH_ROUTE.replace("rules.everything()", '"fine"')})
+    said.clear()
+    agent.run_hook(json.dumps({"cwd": str(repo), "hook_event_name": "PostToolUse", "tool_name": "Edit",
+                               "agent_id": "a1", "tool_input": {"file_path": str(repo / "app/api/health.py")}}),
+                   emit=said.append)
+    context = json.loads(said[-1])["hookSpecificOutput"]["additionalContext"]
+    assert "web on agent:api: please keep GET /api/orders" in context   # delivered with its next tool result
+
+
+def test_the_agents_tab_shows_each_agent_and_warns_when_two_edit_one_block(repo, capsys):
+    from system_diff import agents
+    agents.plan(repo, compare(repo, "HEAD", "."), "make the API and the store faster")
+    agents.tie(repo, "a1", "api")
+    agents.tie(repo, "a2", "store")
+    activity.record(repo, {"event": "prompt", "text": "go"})
+    activity.record(repo, {"event": "edit", "path": "app/api/routes.py", "agent": "a1"})
+    activity.record(repo, {"event": "edit", "path": "app/api/routes.py", "agent": "a2"})
+    out, text = page(capsys, repo, "--view", "agents")
+    assert any(t.startswith("THE TEAM  plan: make the API") for t in text)
+    assert any("api and store all edit API" in t for t in text)
+    assert "● API  @api @st" in "\n".join(text)               # who works where, on the diagram

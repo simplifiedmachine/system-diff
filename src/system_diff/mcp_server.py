@@ -16,7 +16,7 @@ try:  # the MCP SDK's 2.x name; 1.x called it FastMCP, with the same constructor
 except ImportError:  # pragma: no cover - mcp 1.x
     from mcp.server.fastmcp import FastMCP as Server
 
-from . import activity, config, graph, learn, pictures, textmap
+from . import activity, agents, config, graph, learn, pictures, textmap
 from . import compare as cmp
 from .extract import Code as CodeOf  # the spec's own Code, below, is a line of a picture
 from .extract import extract
@@ -29,7 +29,9 @@ INSTRUCTIONS = (
     "this turn changed. Use explain when the person asks what a part is or does, or about a technology in it: it "
     "gives the facts to teach from and a diagram to paste in a code block. Use system_map for the whole system, and "
     "draw for a picture of something else (a process, a sequence). Call checkpoint only when the person says they "
-    "have seen and understood the current state."
+    "have seen and understood the current state. For work that touches more than one part, plan a team with "
+    "plan_agents and launch its agents in parallel as subagents; agents claim their blocks with claim, tell others "
+    "about changes with publish (topics are block ids), and read what others published with inbox."
 )
 WIDTH = 100  # the columns a diagram is drawn for
 
@@ -232,6 +234,46 @@ def build() -> Server:
         only what is new to them. Only when the person says they have seen and understood the current state."""
         sha = cmp.checkpoint(repo_root(), ref or None)
         return {"checkpoint": sha[:9], "of": ref or "the working tree"}
+
+    @server.tool()
+    def plan_agents(task: str, most: int = 4, focus: List[str] = []) -> Dict[str, Any]:  # noqa: B006
+        """Split a task across a team of agents by the system's blocks: one agent per area the task touches (a
+        container, else a part), at most `most`, each with the blocks it owns, the blocks it depends on (it is
+        subscribed to them on the bus) and a brief to launch it with. `focus`: block ids to include. Claims the
+        blocks. Then launch the agents in parallel as subagents, each with its brief as its prompt."""
+        root = repo_root()
+        c = cmp.compare(root, "checkpoint", ".")
+        return agents.plan(root, c, task, most, focus)
+
+    @server.tool()
+    def claim(agent: str, blocks: List[str]) -> Dict[str, Any]:
+        """Take blocks (part ids) for `agent` (its name in the plan), so other agents keep out of them. Returns the
+        blocks another agent had."""
+        return {"agent": agent, "taken_from_others": agents.claim(repo_root(), agent, blocks)}
+
+    @server.tool()
+    def publish(agent: str, topic: str, text: str) -> Dict[str, Any]:
+        """Tell the other agents something, async: on a block's topic (its id: those working on what depends on it
+        read it with their next tool result), "all", or "agent:<name>" for one agent. Changes to a block's structure
+        are published by system-diff itself; publish plans, contracts and questions."""
+        return agents.publish(repo_root(), topic, text, sender=agent)
+
+    @server.tool()
+    def subscribe(agent: str, topics: List[str]) -> Dict[str, Any]:
+        """Follow more topics (block ids). An agent already follows its own blocks and the blocks they depend on."""
+        return {"agent": agent, "topics": agents.subscribe(repo_root(), agent, topics)}
+
+    @server.tool()
+    def inbox(agent: str = "main") -> Dict[str, Any]:
+        """`agent`'s unread messages from the other agents (and marks them read)."""
+        return {"agent": agent, "messages": agents.inbox(repo_root(), agent)}
+
+    @server.tool()
+    def team() -> Dict[str, Any]:
+        """The plan, who claims which block, and the latest messages on the bus."""
+        root = repo_root()
+        st = agents.state(root)
+        return {"plan": st["plan"], "claims": st["claims"], "messages": agents.messages(root)[-20:]}
 
     return server
 

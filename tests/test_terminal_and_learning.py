@@ -30,6 +30,8 @@ def test_the_hooks_follow_a_turn_and_say_only_what_it_changed(repo, files):
     said: list = []
     assert _hook(repo, said, "UserPromptSubmit", prompt="Add a  health\ncheck") == 0
     assert cmp.turn_sha(repo)
+    told = json.loads(said.pop())["hookSpecificOutput"]                # Claude is asked to plan a team of agents
+    assert told["hookEventName"] == "UserPromptSubmit" and "plan_agents" in told["additionalContext"]
     files(repo, {"app/api/health.py": HEALTH})
     _hook(repo, said, "PostToolUse", tool_name="Write", tool_input={"file_path": str(repo / "app/api/health.py")})
     assert [json.loads(s)["systemMessage"] for s in said] == [   # the edit that changed the structure says so
@@ -58,6 +60,7 @@ def test_the_hooks_follow_a_turn_and_say_only_what_it_changed(repo, files):
     assert activity.read_state(repo)["since"] == "HEAD (no checkpoint yet)"
 
     _hook(repo, said, "UserPromptSubmit", prompt="Tidy the rules")       # code edited, structure the same
+    said.pop()                                                           # the team-planning context, to Claude
     files(repo, {"app/core/rules.py": (repo / "app/core/rules.py").read_text() + "# tidied\n"})
     _hook(repo, said, "PostToolUse", tool_name="Edit", tool_input={"file_path": str(repo / "app/core/rules.py")})
     _hook(repo, said, "Stop")
@@ -65,6 +68,7 @@ def test_the_hooks_follow_a_turn_and_say_only_what_it_changed(repo, files):
         "System diff, this turn: Claude edited Core; nothing in the system's structure changed.")
 
     _hook(repo, said, "UserPromptSubmit", prompt="Explain the API")      # a turn that edits no code
+    said.pop()
     assert activity.read_state(repo)["turn"]["story"] == []
     _hook(repo, said, "Stop", last_assistant_message="The API is …")
     assert len(said) == 3                                                  # says nothing
@@ -332,7 +336,7 @@ def test_setup_wires_three_hooks_and_a_status_line_and_leaves_someone_elses_alon
         {"matcher": "Read", "hooks": [{"type": "command", "command": "system-diff hook", "async": True}]},
         {"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [
             {"type": "command", "command": "system-diff hook", "timeout": 15}]}]
-    assert data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["async"] is True
+    assert data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 10   # waited for: it tells Claude
     assert data["statusLine"] == {"type": "command", "command": "system-diff statusline"}
     agent.setup_claude(repo, "local", undo=True, out=said.append)
     assert json.loads(path.read_text()) == {}

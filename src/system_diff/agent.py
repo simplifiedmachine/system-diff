@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from . import activity, companion, config, design, learn
+from . import activity, agents, companion, config, design, learn
 from .compare import compare_worktree, mark_turn, turn_sha
 from .extract import Code
 from .sources import git
@@ -121,18 +121,22 @@ def on_start(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[st
     return companion.open_beside(root, env) or None
 
 
-def on_prompt(root: Path, payload: Dict[str, Any]) -> None:
-    """The person sent a prompt: a new turn starts. A notice Claude Code sends as a prompt (a background task done)
+def on_prompt(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """The person sent a prompt: a new turn starts, and Claude is told to plan the work for a team of agents (unless
+    the config says `[agents] orchestrate = false`). A notice Claude Code sends as a prompt (a background task done)
     is not one: the turn goes on."""
     if activity.is_system(payload.get("prompt") or ""):
-        return
+        return None
     mark_turn(root)
     activity.new_turn(root)
     activity.record(root, {"event": activity.PROMPT, "text": _clip(payload.get("prompt"), 300),
-                           "session": payload.get("session_id", "")})
+                           "session": payload.get("session_id", ""), "agent": payload.get("agent_id") or ""})
+    if (config.lenient(root).get("agents") or {}).get("orchestrate", True) is False or payload.get("agent_id"):
+        return None
+    return {"context": agents.ORCHESTRATE}
 
 
-def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[str]:
+def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
     """Note the file and keep a brief of its part for the status line. After an edit to code, look at what the turn
     has done to the system so far, and say what this edit added to it (one hook at a time: they can overlap)."""
     tool = payload.get("tool_name", "")
@@ -143,8 +147,9 @@ def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[str]:
     if not path:
         return None
     edit = tool in EDIT_TOOLS
+    agent_id = payload.get("agent_id") or ""
     activity.record(root, {"event": activity.EDIT if edit else activity.READ, "path": path, "tool": tool,
-                           "session": payload.get("session_id", "")})
+                           "session": payload.get("session_id", ""), "agent": agent_id})
     cfg = config.lenient(root)
     part = activity.part_of(path, Code(cfg))
     if part is None:
@@ -160,9 +165,13 @@ def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[str]:
         before = last.get("told") or [s["text"] for s in last.get("story") or []]
         since, turn = compare_worktree(root, ["checkpoint", "turn"])
         notes = design.Reading(turn).notes()
-        record_step(root, path, part, last.get("noted") or [], notes)
+        noted = set(last.get("noted") or [])
+        record_step(root, path, part, noted, notes)
         activity.write_state(root, since.diff, since.base, turn.diff, noted=[n["text"] for n in notes])
-        return step_message(before, learn.story(turn.diff))
+        said = step_message(before, learn.story(turn.diff))
+    team = agents.after_edit(root, agent_id, part, [n for n in notes if n["text"] not in noted], turn.after)
+    message = "; ".join(m for m in (said, f"System diff: {team['warn']}" if team["warn"] else "") if m)
+    return {"message": message, "context": team["context"]}
 
 
 def record_step(root: Path, path: str, part: str, before: Iterable[str], notes: List[Dict[str, Any]]) -> None:
@@ -206,9 +215,19 @@ def run_hook(stdin_text: str, emit: Callable[[str], None] = print) -> int:
         if event == "SessionStart":
             message = on_start(root, payload)
         elif event == "UserPromptSubmit":
-            on_prompt(root, payload)
+            said = on_prompt(root, payload) or {}
+            if said.get("context"):
+                emit(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                                        "additionalContext": said["context"]}}))
         elif event == "PostToolUse":
-            message = on_tool(root, payload)
+            said = on_tool(root, payload) or {}
+            message = said.get("message") or None
+            if said.get("context"):   # what other agents published, for this agent to read with its tool result
+                out = {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": said["context"]}}
+                if message:
+                    out["systemMessage"] = message
+                emit(json.dumps(out))
+                message = None
         elif event == "Stop":
             message = on_stop(root, payload)
         if message:
@@ -225,7 +244,8 @@ HOOKS = (  # event, matcher, how it runs, what it does
     ("SessionStart", "startup|resume", {"timeout": 10},
      "when a session starts, opens the terminal view beside Claude where the terminal can split (tmux, zellij, "
      "WezTerm, kitty, Windows Terminal)"),
-    ("UserPromptSubmit", None, {"async": True}, "marks where each turn starts (in the background)"),
+    ("UserPromptSubmit", None, {"timeout": 10},
+     "marks where each turn starts, and asks Claude to plan the work for a team of agents"),
     ("PostToolUse", "|".join(READ_TOOLS), {"async": True},
      "notes the files Claude reads, for the terminal view and the status line (in the background)"),
     # Not in the background: only a hook Claude Code waits for can show you a line in the conversation. A timeout
