@@ -42,8 +42,7 @@ hooks it added before, and frees `/system-diff` for the pane.
 ### The System diff pane
 
 A tab beside Claude Code's own file diff: your system drawn the way a system designer draws it, live, with what
-Claude is changing in it. It opens as wide as Claude Code docks a pane (45% of the terminal). To resize it, give it
-the keys (ctrl+x tab, or a click) and press ctrl+x ← to widen or ctrl+x → to narrow.
+Claude is changing in it. `/system-diff close` (or "× close" in its tab row) hides it; `/system-diff` brings it back.
 
 - **Now** follows Claude, in the order your attention needs it:
   - **What Claude is doing** ("● Claude is working ✎ Editing API") and what you asked.

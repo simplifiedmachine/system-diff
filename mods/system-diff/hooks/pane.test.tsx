@@ -166,3 +166,19 @@ test('/system-diff and /system-diff-pane both open it, at the width the person k
   }
   expect(opened.every(o => o.columns === undefined)).toBe(true) // the width is the person's
 })
+
+test('/system-diff close closes the pane, and so does its close button', async ($, on) => {
+  const closed: string[] = []
+  answer(on, [])
+  on('ui.close', (_: unknown, e: { id: string }) => {
+    closed.push(e.id)
+    return { value: undefined }
+  })
+  const got = await $.command.run({ ...RUN, args: 'close' })
+  expect((got as { text?: string }).text).toContain('closed')
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'close' })
+  expect(closed).toEqual(['system-diff', 'system-diff'])
+  await ui.unmount()
+})

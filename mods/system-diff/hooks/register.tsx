@@ -162,7 +162,8 @@ export const register: Register = on => {
     // `/system-diff` opens it; `/system-diff-pane` too, the name it had first. A name someone else holds is skipped.
     for (const name of COMMANDS) {
       try {
-        await $.command.register({ name, description: 'Show the System diff pane beside the chat' })
+        await $.command.register({ name, description: 'Show the System diff pane beside the chat (close: hide it)',
+                                   argumentHint: '[close]' })
       } catch {
         // taken
       }
@@ -173,7 +174,11 @@ export const register: Register = on => {
   })
 
   for (const command of COMMANDS) {
-    on('command.run', { command }, async $ => {
+    on('command.run', { command }, async ($, e) => {
+      if (e.args.trim().toLowerCase() === 'close') {
+        await $.ui.close({ id: PANE })
+        return { text: 'System diff pane closed. /system-diff opens it again.' }
+      }
       await refresh($)
       await open($)
       return { text: 'System diff pane opened.' }
@@ -270,7 +275,7 @@ export const register: Register = on => {
           {behind.length > 0 && (
             <Button key="back" hotkey="b" plain onPress={() => void goBack($)}><Text dimColor>← Back</Text></Button>
           )}
-          <Text dimColor>⇆ resize: ctrl+x ← →</Text>
+          <Button key="close" plain onPress={() => void $.ui.close({ id: PANE })}><Text dimColor>× close</Text></Button>
         </Box>
         {said !== '' && <Text dimColor>{said}</Text>}
         {drawn !== null && Client !== undefined && (

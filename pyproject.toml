@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "system-diff"
-version = "0.3.3"
+version = "0.3.4"
 description = "Draws your system from its code (parts, entry points, data, outside systems) and what each change adds, changes or removes. No dependencies; SVG pictures for PRs and READMEs."
 readme = "README.md"
 license = "MIT"
