@@ -64,9 +64,11 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,172 C243,172 243,188 272,188" marker-end="url(#ar-call-same)"><title>agent → extract</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,788 272,788" marker-end="url(#ar-call-same)"><title>agent → learn</title></path>
 <path class="be k-call s-same" d="M214,172 C246,172 246,99 278,99 L478,99 C507,99 507,52 536,52" marker-end="url(#ar-call-same)"><title>agent → sources</title></path>
-<path class="be k-call s-same" d="M478,488 C507,488 507,112 536,112" marker-end="url(#ar-call-same)"><title>agents → activity</title></path>
 <path class="be k-call s-same" d="M478,488 C514,488 514,428 484,428" marker-end="url(#ar-call-same)"><title>agents → architecture</title></path>
+<path class="be k-call s-same" d="M478,488 C507,488 507,112 536,112" marker-end="url(#ar-call-same)"><title>agents → activity</title></path>
+<path class="be k-call s-same" d="M478,488 C544,488 544,128 484,128" marker-end="url(#ar-call-same)"><title>agents → config</title></path>
 <path class="be k-call s-same" d="M478,488 C514,488 514,548 484,548" marker-end="url(#ar-call-same)"><title>agents → design</title></path>
+<path class="be k-call s-same" d="M478,488 C544,488 544,188 484,188" marker-end="url(#ar-call-same)"><title>agents → extract</title></path>
 <path class="be k-call s-same" d="M478,488 C507,488 507,52 536,52" marker-end="url(#ar-call-same)"><title>agents → sources</title></path>
 <path class="be k-call s-same" d="M478,428 C524,428 524,548 484,548" marker-end="url(#ar-call-same)"><title>architecture → design</title></path>
 <path class="be k-call s-same" d="M478,428 C524,428 524,308 484,308" marker-end="url(#ar-call-same)"><title>architecture → graph</title></path>

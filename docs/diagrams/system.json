@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 313,
+   "lines": 314,
    "hub": false,
    "quiet": false
   },
@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 456,
+   "lines": 462,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +45,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 296,
+   "lines": 368,
    "hub": false,
    "quiet": false
   },
@@ -69,7 +69,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 521,
+   "lines": 531,
    "hub": false,
    "quiet": false
   },
@@ -201,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 732,
+   "lines": 745,
    "hub": false,
    "quiet": false
   },
@@ -317,8 +317,10 @@
   "agent>learn": 1,
   "agent>sources": 1,
   "agents>activity": 1,
-  "agents>architecture": 1,
+  "agents>architecture": 2,
+  "agents>config": 1,
   "agents>design": 1,
+  "agents>extract": 1,
   "agents>sources": 1,
   "architecture>design": 2,
   "architecture>diff": 1,
@@ -433,7 +435,8 @@
   ],
   "agent>agents": [
    "ORCHESTRATE",
-   "after_edit"
+   "after_edit",
+   "deliver"
   ],
   "agent>companion": [
    "add_vscode_task",
@@ -466,21 +469,27 @@
   ],
   "agents>activity": [
    "EDIT",
-   "_replace",
    "PROMPT",
-   "READ",
+   "_replace",
    "is_system",
-   "part_of"
+   "part_of",
+   "READ"
   ],
   "agents>architecture": [
    "groups_of"
   ],
+  "agents>config": [
+   "lenient"
+  ],
   "agents>design": [
    "depends",
+   "kinds",
    "and_list",
    "fan_in",
-   "kinds",
    "summarize"
+  ],
+  "agents>extract": [
+   "Code"
   ],
   "agents>sources": [
    "git_dir"
