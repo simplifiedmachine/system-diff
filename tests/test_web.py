@@ -173,3 +173,11 @@ def test_the_web_page_refreshing_never_swallows_what_was_sent_to_claude(repo):
     watch.outbox_put(repo, "please add a health check")
     assert pane.show(repo, 120, "now", take=False)["send"] == []        # the page's own look: left for the pane
     assert [m["text"] for m in pane.show(repo, 120, "now")["send"]] == ["please add a health check"]
+
+
+def test_in_a_codespace_the_page_is_linked_and_sent_from_its_forwarded_address():
+    from system_diff import watch
+    env = {"CODESPACE_NAME": "fancy-name", "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": "app.github.dev"}
+    assert watch.forwarded(8765, env) == "https://fancy-name-8765.app.github.dev/"
+    assert "https://fancy-name-8765.app.github.dev" in watch.origins(8765, env)
+    assert watch.forwarded(8765, {}) == "" and watch.origins(8765, {}) == {"http://127.0.0.1:8765", "http://localhost:8765"}

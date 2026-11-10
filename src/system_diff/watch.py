@@ -791,15 +791,15 @@ def handler(w: Watcher):
         def _same_origin(self) -> bool:
             """The request comes from this server's own page: its Origin (else its Referer) is this origin. A page
             on another site the person visits can reach localhost, but its browser sends that site's origin."""
-            own = f"http://127.0.0.1:{self.server.server_address[1]}"
+            own = origins(self.server.server_address[1])
             origin = self.headers.get("Origin")
             if origin is not None:
-                return origin.rstrip("/") == own
+                return origin.rstrip("/") in own
             referer = self.headers.get("Referer")
             if not referer:
                 return False
             r = urlsplit(referer)
-            return f"{r.scheme}://{r.netloc}" == own
+            return f"{r.scheme}://{r.netloc}" in own
 
         def _post_send(self):
             if self.headers.get("X-Token") != w.token or not self._same_origin():
@@ -878,6 +878,21 @@ def _answers(port: int, timeout: float = 0.3) -> bool:
         return False
 
 
+def forwarded(port: int, env=os.environ) -> str:
+    """The page's address in the person's own browser when this machine is a GitHub Codespace (the port forwarded
+    to https://<codespace>-<port>.<domain>), else ""."""
+    name, domain = env.get("CODESPACE_NAME", ""), env.get("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", "")
+    return f"https://{name}-{port}.{domain}/" if name and domain else ""
+
+
+def origins(port: int, env=os.environ) -> set:
+    """Where this server's own page can be opened from: on this machine, or forwarded to the person's browser."""
+    out = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+    if forwarded(port, env):
+        out.add(forwarded(port, env).rstrip("/"))
+    return out
+
+
 def web_url(root: Path) -> Optional[str]:
     """The URL of the page a watcher for this repository serves, if one is running (its process alive, its port
     answering); else None, and a file left by one that is gone is removed."""
@@ -891,7 +906,7 @@ def web_url(root: Path) -> Optional[str]:
         except (OSError, ValueError, KeyError, TypeError):
             url, port, pid = "", 0, 0
         if port and _alive(pid) and _answers(port):
-            return url
+            return forwarded(port) or url   # in a Codespace, the address the person's browser can open
         try:
             f.unlink()
         except OSError:

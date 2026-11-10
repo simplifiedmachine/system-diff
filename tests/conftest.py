@@ -121,5 +121,6 @@ def files():
 def plain_terminal(monkeypatch):
     """No test sees the terminal it runs in (VS Code, tmux…), so none opens a real pane or depends on where it runs."""
     for var in ("TMUX", "ZELLIJ", "WEZTERM_PANE", "KITTY_WINDOW_ID", "WT_SESSION", "TERM_PROGRAM",
-                "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ATTENDED"):
+                "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ATTENDED", "CODESPACE_NAME",
+                "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"):
         monkeypatch.delenv(var, raising=False)
