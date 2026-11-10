@@ -225,3 +225,14 @@ test('what the web page sends is submitted as the person\'s words, once', async 
   expect(submitted).toEqual([{ text: 'hi', asUser: true }])
   await ui.unmount()
 })
+
+test('a pane opens at once on the page last seen in this project, until the fresh one is read', async ($, on) => {
+  answer(on, [], 127) // nothing reads the system this time: what shows is the kept page
+  on('session.root', () => ({ value: '/work/shop' }))
+  on('store.get', (_: unknown, e: { key: string }) =>
+    ({ value: e.key === 'page:/work/shop' ? JSON.stringify(page('', 110)) : undefined }))
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' }) // the surface that draws the rows as text
+  expect(await ui.find({ type: 'Text', text: /API now answers GET \/health/ })).toBeDefined()
+  await ui.unmount()
+})

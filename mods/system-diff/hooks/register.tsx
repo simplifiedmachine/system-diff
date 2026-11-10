@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.11' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.5.12' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -135,6 +135,54 @@ function deliver($: EngineInterface, send: Page['send']): void {
   }
 }
 
+// The last page of each project, kept across sessions: a pane opens on it at once, and the fresh one replaces it when
+// it is read (a large repository takes a few seconds even when nothing changed). The few most recent projects.
+const KEPT = 6
+let restored = false
+
+async function projectKey($: EngineInterface): Promise<string> {
+  try {
+    return 'page:' + (await $.session.root())
+  } catch {
+    return ''
+  }
+}
+
+async function restore($: EngineInterface): Promise<void> {
+  if (restored) return
+  restored = true
+  if ((await read($, page)) !== null) return
+  const key = await projectKey($)
+  if (!key) return
+  try {
+    const kept = await $.store.get(key)
+    if (typeof kept !== 'string') return
+    const data = JSON.parse(kept) as Page
+    await update($, page, () => ({ ...data, send: [] })) // what it once had to send was sent then
+    await update($, note, () => 'As you last saw it: reading the system for what changed since…')
+  } catch {
+    // only a head start
+  }
+}
+
+let keptAt = 0
+
+async function keep($: EngineInterface, out: string): Promise<void> {
+  if (Date.now() - keptAt < 15000) return // at most every few seconds: a head start need not be the very last page
+  keptAt = Date.now()
+  const key = await projectKey($)
+  if (!key) return
+  try {
+    await $.store.set(key, out)
+    const order = ((await $.store.get('pages')) as string[] | undefined ?? []).filter(k => k !== key)
+    order.unshift(key)
+    for (const old of order.slice(KEPT)) await $.store.delete(old)
+    await $.store.set('pages', order.slice(0, KEPT))
+  } catch {
+    // only a head start
+  }
+}
+
 async function refresh($: EngineInterface): Promise<void> {
   if (busy) {
     again = true // asked while a look runs: look again right after
@@ -142,6 +190,7 @@ async function refresh($: EngineInterface): Promise<void> {
   }
   busy = true
   try {
+    await restore($)
     do {
       again = false
       const argv = ['panel', '--protocol', '2', '--width', String(columns), '--view', await read($, view),
@@ -162,6 +211,7 @@ async function refresh($: EngineInterface): Promise<void> {
         if (got.out !== last) {
           last = got.out
           await update($, page, () => data)
+          void keep($, got.out)
         }
         if ((await read($, note)) !== '') await update($, note, () => '')
       } else {
