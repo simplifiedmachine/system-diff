@@ -201,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1216,
+   "lines": 1311,
    "hub": false,
    "quiet": false
   },
@@ -249,7 +249,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2046,
+   "lines": 2062,
    "hub": false,
    "quiet": false
   },
@@ -495,7 +495,7 @@
   "panel>graph": 3,
   "panel>human": 1,
   "panel>learn": 5,
-  "panel>live": 2,
+  "panel>live": 3,
   "panel>objectives": 1,
   "panel>pictures": 1,
   "panel>regroup": 1,
@@ -1088,8 +1088,10 @@
    "ROLE_OF"
   ],
   "panel>live": [
+   "saved_page",
    "client_progress",
    "progress_text",
+   "save_page",
    "starting"
   ],
   "panel>objectives": [

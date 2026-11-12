@@ -60,6 +60,13 @@ repository is in use. A cold start reads the repository in the background, publi
 - Recombining is cheap counting over cached facts. When the structure is unchanged, the previous layout is kept and
   only the change markers move, so boxes do not jump around.
 
+### One cache of pages, shared
+
+Pages drawn from a complete read are kept in `.git/system-diff/pages/`, shared by the engine, the pane, the
+terminal view and the web page. While the system is read again (an engine starting after a reboot or an
+upgrade, or none yet), every view opens on the page last kept, marked "as you last saw it", until the fresh
+one is ready.
+
 ### Views are thin clients
 
 - `system-diff panel` (what the pane runs) asks the engine for the page and waits for the next version (long poll),

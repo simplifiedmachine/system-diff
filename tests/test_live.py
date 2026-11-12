@@ -230,3 +230,50 @@ def test_quit_needs_the_token_and_no_browser(served):
     assert _call(url + "quit", "POST", body={})[0] == 403
     assert _call(url + "quit", "POST", headers={"X-Token": served["w"].token, "Origin": url.rstrip("/")},
                  body={})[0] == 403
+
+
+def test_the_shared_pages_cache_keeps_complete_pages_and_marks_what_it_serves(repo):
+    key = ("pane", "now", 100, -1, "")
+    page = {"protocol": 2, "view": "now", "rows": [[["SYSTEM", "heading"]]], "blocks": [{"id": "b:api", "y": 0,
+            "slot": [3, 2]}], "wide": 100, "send": [{"id": "x", "text": "secret for Claude"}], "version": 7}
+    live._saved_at.clear()
+    live.save_page(repo, ("pane", "now", 100, -1, "partial"), {**page, "reading": {"done": 1, "total": 9}})
+    assert live.saved_page(repo, ("pane", "now", 100, -1, "partial")) is None      # a partial page is never kept
+    live.save_page(repo, key, page)
+    got = live.saved_page(repo, key, "12 of 430 files")
+    assert got["reading"]["stale"] and got["send"] == [] and "version" not in got
+    assert got["rows"][0][0][0].startswith("◐ As you last saw it") and "12 of 430 files" in got["rows"][0][0][0]
+    assert got["rows"][3] == [["SYSTEM", "heading"]] and got["blocks"][0]["y"] == 3   # the blocks move down with it
+    assert "secret" not in (git_dir(repo) / "pages").joinpath(live._page_name(key) + ".json").read_text()
+    other = live.saved_page(repo, ("pane", "now", 140, -1, ""))                     # another width: the newest of
+    assert other is not None and other["reading"]["stale"]                            # the same view
+
+
+def test_while_the_engine_reads_again_it_serves_the_page_last_kept(repo):
+    from system_diff import panel
+    key = ("pane", "now", 80, -1, "")
+    live._saved_at.clear()
+    live.save_page(repo, key, {"protocol": 2, "view": "now", "rows": [[["last time", ""]]], "blocks": [], "wide": 80})
+
+    class Busy:   # an engine after a restart: started, not done reading
+        root = repo
+        version = 3
+        ready, done, stopped = threading.Event(), threading.Event(), threading.Event()
+
+        def progress(self):
+            return {"stage": "Reading the code", "done": 40, "total": 430, "seconds": 2}
+    pages = live.Pages(Busy(), build=lambda k: {"rows": [], "fresh": True}, placeholder=lambda k: {"placeholder": 1})
+    served = pages.build(key)
+    assert served["reading"]["stale"] and served["rows"][3] == [["last time", ""]]
+    Busy.done.set(); Busy.ready.set()
+    assert pages.build(key) == {"rows": [], "fresh": True}
+
+    # the pane's client, while an engine answers but has no page yet: the same cache
+    import system_diff.live as lv
+    real = lv.client_progress
+    lv.client_progress = lambda root: {"stage": "Reading the code", "done": 40, "total": 430, "seconds": 2}
+    try:
+        page = panel.waiting(repo, 80, "now", None)
+    finally:
+        lv.client_progress = real
+    assert page["reading"]["stale"] and page["rows"][3] == [["last time", ""]]

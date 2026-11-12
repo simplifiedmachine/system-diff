@@ -149,9 +149,9 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,308 C243,308 243,248 272,248" marker-end="url(#ar-call-same)"><title>panel → extract</title></path>
 <path class="be k-call s-same" d="M214,308 C246,308 246,219 278,219 L478,219 C507,219 507,172 536,172" marker-end="url(#ar-call-same)"><title>panel → activity</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,368 272,368" marker-end="url(#ar-call-same)"><title>panel → graph</title></path>
+<path class="be k-call s-same" d="M214,308 C243,308 243,52 272,52" marker-end="url(#ar-call-same)"><title>panel → live</title></path>
 <path class="be k-call s-same" d="M214,308 C246,308 246,219 278,219 L478,219 C507,219 507,112 536,112" marker-end="url(#ar-call-same)"><title>panel → sources</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,488 272,488" marker-end="url(#ar-call-same)"><title>panel → architecture</title></path>
-<path class="be k-call s-same" d="M214,308 C243,308 243,52 272,52" marker-end="url(#ar-call-same)"><title>panel → live</title></path>
 <path class="be k-call s-same" d="M214,308 C250,308 250,248 220,248" marker-end="url(#ar-call-same)"><title>panel → watch</title></path>
 <path class="be k-call s-same" d="M478,1148 C507,1148 507,112 536,112" marker-end="url(#ar-call-same)"><title>png → sources</title></path>
 <path class="be k-call s-same" d="M478,968 C544,968 544,188 484,188" marker-end="url(#ar-call-same)"><title>regroup → config</title></path>

@@ -86,6 +86,93 @@ def _git_dir(root: Path) -> Optional[Path]:
     return r.gitdir if r is not None else None
 
 
+# ── the pages cache every view shares ────────────────────────────────────────
+# One cache for the engine, the pane's thin client, the terminal view and the web page: .git/system-diff/pages/.
+# A page drawn from a complete read is kept there; while the system is being read (an engine starting after a
+# reboot or an upgrade, or no engine yet), every view opens on the page last kept, marked as such, until the fresh
+# one is ready. Keys: ("pane", view, width, zoom, part) and ("web", view, zoom, part).
+
+PAGES = "pages"
+SAVE_EVERY = 10.0
+_saved_at: Dict[str, float] = {}
+
+
+def _page_name(key: tuple) -> str:
+    return f"{key[0]}-{key[1]}-" + hashlib.sha1(json.dumps([str(k) for k in key]).encode()).hexdigest()[:16]
+
+
+def save_page(root: Path, key: tuple, page: Dict[str, Any]) -> None:
+    """Keep a page drawn from a complete read (not a "reading" one), at most every SAVE_EVERY seconds per key.
+    Never raises: only a head start."""
+    try:
+        if not isinstance(page, dict) or page.get("reading"):
+            return
+        name = _page_name(key)
+        now = time.monotonic()
+        if now - _saved_at.get(name, -SAVE_EVERY) < SAVE_EVERY:
+            return
+        _saved_at[name] = now
+        g = _git_dir(root)
+        if g is None:
+            return
+        d = g / "system-diff" / PAGES
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = d / f".{name}.{os.getpid()}.tmp"
+        page = {k: v for k, v in page.items() if k not in ("send", "version")}   # never what was sent to Claude
+        tmp.write_text(json.dumps({"key": [str(k) for k in key], "at": time.time(), "page": page},
+                                  ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, d / f"{name}.json")
+        kept = sorted(d.glob("*.json"), key=lambda f: f.stat().st_mtime)
+        for old in kept[:-48]:   # the views and widths asked for lately
+            old.unlink()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def saved_page(root: Path, key: tuple, progress: str = "") -> Optional[Dict[str, Any]]:
+    """The page last kept for `key` (for a pane page, else the newest of the same view at another width), marked as
+    the last one seen while the system is read again; None when there is none."""
+    try:
+        g = _git_dir(root)
+        if g is None:
+            return None
+        d = g / "system-diff" / PAGES
+        f = d / f"{_page_name(key)}.json"
+        if not f.exists() and key[0] == "pane":
+            alike = sorted(d.glob(f"pane-{key[1]}-*.json"), key=lambda x: x.stat().st_mtime)
+            f = alike[-1] if alike else f
+        data = json.loads(f.read_text(encoding="utf-8"))
+        page, at = data["page"], float(data.get("at") or 0)
+    except Exception:  # noqa: BLE001
+        return None
+    ago = _ago(time.time() - at)
+    head = f"◐ As you last saw it ({ago}): reading what changed since" + (f" · {progress}" if progress else "")
+    stale = {"stale": True, "at": at, "stage": progress}
+    if key[0] == "pane" and isinstance(page.get("rows"), list):
+        said = [[[head, "attention"]], [["  The page updates by itself once the read is done.", "muted"]], []]
+        page["rows"] = said + page["rows"]
+        for block in page.get("blocks") or []:
+            if isinstance(block.get("y"), int):
+                block["y"] += len(said)
+            if isinstance(block.get("slot"), list) and block["slot"]:
+                block["slot"] = [block["slot"][0] + len(said), *block["slot"][1:]]
+        page["wide"] = max(int(page.get("wide") or 0), len(head))
+    else:
+        page["headline"] = head + (" · " + page["headline"] if page.get("headline") else "")
+    page["reading"], page["send"] = stale, []
+    return page
+
+
+def _ago(seconds: float) -> str:
+    if seconds < 90:
+        return "just now"
+    if seconds < 5400:
+        return f"{int(seconds // 60)} min ago"
+    if seconds < 172800:
+        return f"{int(seconds // 3600)} h ago"
+    return f"{int(seconds // 86400)} days ago"
+
+
 def engine_info(root: Path) -> Optional[dict]:
     """web.json of the repository's engine: {"url", "port", "pid", "id", "token"}, or None."""
     g = _git_dir(root)
@@ -1135,11 +1222,19 @@ class Pages:
         self._painter: Optional[threading.Thread] = None
 
     def build(self, key: tuple) -> dict:
-        """Draw a page: before the engine has its first blueprint, the placeholder (where the start is), never a
-        comparison that would wait for it."""
+        """Draw a page. Until the engine has read every file (after a reboot or an upgrade): the page last kept in the
+        shared cache, marked as such, else the placeholder (where the start is) before its first blueprint — never a
+        comparison that would wait for it. A page drawn from a complete read is kept for next time."""
+        if not self.engine.done.is_set():
+            saved = saved_page(self.engine.root, key, progress_text(self.engine.progress()))
+            if saved is not None:
+                return saved
         if self.placeholder is not None and not self.engine.ready.is_set():
             return self.placeholder(key)
-        return self._build(key)
+        page = self._build(key)
+        if self.engine.done.is_set():
+            save_page(self.engine.root, key, page)
+        return page
 
     def get(self, key: tuple) -> Tuple[int, dict]:
         """(version, page) for `key`: from memory when drawn at the current version, else drawn now. Never long: while

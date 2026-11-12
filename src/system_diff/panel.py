@@ -310,6 +310,9 @@ def waiting(root: Path, width: int, view: str, part: Optional[str]) -> Optional[
         line = live.progress_text(got)
     except Exception:  # noqa: BLE001 - an older engine module: read here, as before
         return None
+    saved = live.saved_page(root, ("pane", view, width, -1, part or ""), line)   # the shared cache: the last page
+    if saved is not None:
+        return saved
     rows = [[["◐ Reading the system… " + line, "attention"]],
             [["  system-diff's engine reads the repository once and keeps it; this page updates by itself.",
               "muted"]]]
@@ -345,8 +348,21 @@ def build(root: Path, width: int, view: str, part: Optional[str], zoom: int, tak
     progress.begin(root)   # a long first read says where it is, for the pane to show meanwhile
     comparing.time_box(extract.COLD_BUDGET)
     try:
+        try:
+            from . import live   # the shared pages cache (absent in an older install: read as before)
+        except ImportError:
+            live = None
+        key = ("pane", view, width, zoom, part or "")
         page = pane.show(root, width, view, part or None, zoom, take=take)
-        still_reading(page, comparing.partial())
+        partial = comparing.partial()
+        if live is not None and partial:   # a partial read here: the page last kept says more, when there is one
+            saved = live.saved_page(root, key, f"{partial.get('done', 0):,} of {partial.get('total', 0):,} files")
+            if saved is not None:
+                saved["send"] = page.get("send") or []
+                return saved
+        elif live is not None:
+            live.save_page(root, key, page)
+        still_reading(page, partial)
         return page
     finally:
         comparing.time_box(None)
