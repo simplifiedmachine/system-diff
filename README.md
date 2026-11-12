@@ -180,7 +180,8 @@ that did not change keeps its place.
 
 ## Roadmap
 
-Where system-diff is going. Every item is an issue: comment on it to take it on, or open a new one. Good places to
+Where system-diff is going, also as a board: **[system-diff roadmap](https://github.com/users/simplifiedmachine/projects/1)**. Every item is an issue: comment on
+it to take it on, or open a new one. Good places to
 start are labelled [`good first issue`](https://github.com/simplifiedmachine/system-diff/labels/good%20first%20issue).
 
 **Next: reach more systems**
