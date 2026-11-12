@@ -26,12 +26,18 @@ def _get(url: str):
 def served(repo):
     up = {}
     t = threading.Thread(target=watch.serve, kwargs={"root": repo, "port": 0, "interval": 0.2,
-                                                     "ready": lambda url, server, w: up.update(url=url, server=server)},
+                                                     "ready": lambda url, server, w: up.update(url=url, server=server,
+                                                                                               w=w)},
                          daemon=True)
     t.start()
     deadline = time.time() + 15
     while "url" not in up and time.time() < deadline:
         time.sleep(0.05)
+    # the engine answers at once with a "reading" page until its first read is done (slower on Windows runners):
+    # these tests are about the views, so they wait for it
+    engine = getattr(up.get("w"), "engine", None)
+    if engine is not None:
+        assert engine.done.wait(60)
     yield up["url"]
     up["server"].shutdown()
     t.join(5)
