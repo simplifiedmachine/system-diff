@@ -74,6 +74,14 @@ group = "Engine"
 paths = ["src/system_diff/live.py"]
 
 [[components]]
+id = "gitfs"
+label = "Git, read directly"
+kind = "data"
+about = "refs, objects and the index read in Python, so few git processes start"
+group = "Engine"
+paths = ["src/system_diff/gitfs.py"]
+
+[[components]]
 id = "panel"
 label = "Pane beside the chat"
 kind = "interface"

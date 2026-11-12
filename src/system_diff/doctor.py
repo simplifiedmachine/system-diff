@@ -17,7 +17,7 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .sources import run_hidden
 
@@ -28,6 +28,62 @@ def _git(root: Path, *args: str) -> str:
                               errors="replace", timeout=120).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
+
+
+SLOW_START = 0.5   # seconds to start one program: above this, every git call is felt
+
+
+def start_cost(argv: List[str], times: int) -> Optional[float]:
+    """The median time to start `argv` and see it end, or None when it cannot be started."""
+    took = []
+    for _ in range(times):
+        began = time.perf_counter()
+        try:
+            run_hidden(argv, capture_output=True, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        took.append(time.perf_counter() - began)
+    took.sort()
+    return took[len(took) // 2]
+
+
+def _secs(t: Optional[float]) -> str:
+    return "could not start it" if t is None else f"{t:.2f}s"
+
+
+def engine_report(root: Path, say, doing) -> None:
+    """Whether the repository's engine answers, its version and where it is, and the git calls one look costs
+    against it: in the client (none) and in the engine (none once it has read the repository)."""
+    try:
+        from . import live, sources
+        doing("asking the resident engine (GET /progress)")
+        info = live.engine_info(root) or {}
+        got = live.client_progress(root, timeout=5.0)
+        if got is None:
+            say("engine: none answers" + (" (one is being started)" if live.starting(root) else "")
+                + " · the pane starts one; with none, every look reads the system itself")
+            return
+        say(f"engine: {info.get('version') or '?'} on port {info.get('port')} · {live.progress_text(got)}"
+            + (" · has read everything" if got.get("complete") else " · still reading")
+            + (f" · error: {got['error']}" if got.get("error") else ""))
+        calls = got.get("engine_git_calls") or []
+        if calls:
+            say(f"  git calls the engine made itself: {len(calls)} ({', '.join(sorted(set(calls)))})")
+        before = int(got.get("git_spawns") or 0)
+        mine = sources.SPAWNS["git"]
+        began = time.time()
+        width = 80 + int(time.time()) % 37   # a width not drawn yet: the engine draws the page for this look
+        page = live.client_page(root, "now", width, timeout=60.0)
+        took = time.time() - began
+        after = (live.client_progress(root, timeout=5.0) or {}).get("git_spawns")
+        engine_calls = "?" if after is None else str(max(0, int(after) - before - 0))
+        say(f"a look against the engine: {took:.2f}s · git calls: {sources.SPAWNS['git'] - mine} here, "
+            f"{engine_calls} in the engine" + ("" if page else " · it gave no page"))
+        if after is not None and int(after) - before > 0 and got.get("complete"):
+            say("  ! the engine ran git for a look: a comparison it had not made before (a new checkpoint or "
+                "commit) runs `git log` once; more than that on every look is a bug worth reporting")
+    except Exception as exc:  # noqa: BLE001 - a report, never a failure
+        say(f"(could not ask the engine: {exc})")
 
 
 def main(root: Path) -> int:
@@ -44,6 +100,16 @@ def main(root: Path) -> int:
         f" · bash: {shutil.which('bash') or 'not found'}")
     say(f"repository: {root}")
 
+    doing("timing how long starting a program takes here (git --version ×3, python ×2)")
+    git_start = start_cost(["git", "--version"], 3)
+    py_start = start_cost([sys.executable, "-c", "pass"], 2)
+    say(f"starting git: {_secs(git_start)} (median of 3) · starting Python: {_secs(py_start)}")
+    slow = max(git_start or 0.0, py_start or 0.0)
+    if slow >= SLOW_START:
+        say(f"  ! starting a program takes {slow:.1f} s here — usually endpoint security scanning each launch, or a "
+            "home folder on a network drive; system-diff keeps git calls to a minimum (its engine makes a handful "
+            "when it starts and none per look), but the first read still pays a few")
+
     doing("counting files (git ls-files)")
     tracked = _git(root, "ls-files", "-z").count("\0")
     untracked = [f for f in _git(root, "ls-files", "-z", "-o", "--exclude-standard").split("\0") if f]
@@ -55,7 +121,7 @@ def main(root: Path) -> int:
             say("  ! git hashes these on every look: add folders like these to .gitignore if they are not your code")
 
     from . import compare, extract, panel, progress
-    doing("taking a snapshot of the working tree, as every look does")
+    doing("taking a snapshot of the working tree, as a look without the engine does")
     t = time.time()
     compare.worktree_tree(root)
     say(f"snapshot of the working tree: {time.time() - t:.2f}s")
@@ -110,6 +176,8 @@ def main(root: Path) -> int:
     finally:
         subprocess.run, progress.stage = run, stage
     say(f"cold-start budget per look: {extract.COLD_BUDGET:.0f}s")
+
+    engine_report(root, say, doing)
 
     try:
         from . import activity, watch

@@ -2,36 +2,52 @@
 tree in memory so that no view has to snapshot it again (docs/design.md, "One resident engine" and "Changes arrive as
 events").
 
+Git calls are what costs on a slow machine (starting any program can take seconds where endpoint security scans each
+launch), so the engine makes a handful when it starts and none per look, per tick or per edit:
+
+  at start   `git config -l -z` (core.autocrlf, core.filemode, core.symlinks)
+             `git ls-files -z -c -o --exclude-standard --eol` (every file git would add, with its eol attributes)
+             `git cat-file --batch`, one process kept open for the engine's life (gitfs.CatFile), for blobs in packs
+             (+ `git check-attr` once, only when an attributes file names a filter (git-lfs), ident or an encoding)
+  per tick   none: git's own files (HEAD, the index, refs) are read in Python (gitfs), files and folders are stat'ed
+  per edit   none; a new file: one `git ls-files -o --exclude-standard --eol -- <paths>` (would git add it?)
+  per look   none: refs, the checkpoint and the turn read in Python, comparisons served from memory, line counts
+             counted in Python, commit messages asked once per range (compare.commit_log)
+  a mark     one `git update-ref` (a checkpoint, the start of a turn): the commit itself is written in Python
+
 What it holds: every file of the working tree as git would commit it (`git add -A`: tracked files, and untracked ones
-that are not ignored), each with its git blob id; a commit of that tree, made from the engine's own index under the
-git dir (live.index), so git can diff and read it as it does a snapshot; and the blueprint combined from every file's
-facts (kept by blob id, extract.FactStore). compare.LIVE points at it, so compare(root, base, ".") in this process uses
-it instead of snapshotting; the result is the same as a snapshot's for the same files.
+that are not ignored), each with its git blob id, computed in Python (blob_id) after git's end-of-line conversion
+(to_git: core.autocrlf, the text and eol attributes; files a filter applies to are hashed by git); and the blueprint
+combined from every file's facts (kept by blob id, extract.FactStore). It makes no commit per change: comparisons
+name the working tree "live:<identity>", and sources.GitSource of that id is the engine's own LiveSource (from
+memory, git's store through the one cat-file, or the disk). compare.LIVE points at it, so compare(root, base, ".")
+in this process uses it instead of snapshotting; the result is the same as a snapshot's for the same files. When a
+commit must be kept in git (a checkpoint, the turn), materialize() writes its blobs, trees and commit as loose objects
+in Python (compare.COMMIT, POST /mark).
 
 How changes arrive:
-- POST /touch {"paths": [...]} (the plugin's hooks, the moment Claude's tool returns): those files are read from disk
-  and hashed in Python (sha1 of b"blob <len>\\0" + bytes, as git hashes a blob). The Python hash only decides whether
-  a file changed since it was last seen (or differs from the blob git's index has for it); the files that did are
-  then given to one `git hash-object -w --stdin-paths`, which writes their blobs (the commit needs them, and so do
-  git's line counts) and applies whatever git add would (core.autocrlf, .gitattributes eol and filters), so the ids
-  are git's own. Only the changed files are parsed again; the blueprint is recombined and the version goes up.
-- every `interval` seconds: `git --no-optional-locks status --porcelain=v1 -z --untracked-files=all`, which uses
-  the index's stat cache (cheap) and never writes the index, names what differs from the index: an edit in the
-  person's editor, a file made or deleted. When the index or HEAD moves (a commit, a checkout, a branch switch), the
-  index is listed again (`git ls-files -s`) and the whole tree is reconciled. Same path as /touch from there.
+- POST /touch {"paths": [...]} (the plugin's hooks, the moment Claude's tool returns): those files are looked at now.
+- every `interval` seconds, in Python: each known file's size and time (one that moved is read again; its blob id
+  recomputed; parsed again only if the id changed), each known folder's time (one that moved is listed: new files
+  are asked about in one git call, deleted ones dropped). When the index moves (git add, a commit, a checkout) it is
+  read again in Python; when an ignore or attributes rule changes, the start's listing runs again. On the start, a
+  file whose size and time are those the index has (and not racily so) is taken as the index's blob without reading.
 - the repository's other state the views show (the checkpoint and the turn, the activity log, the agents' bus, the
   LLM's regrouping, the person's learning profile) is watched by file time; a change bumps the version too.
 
 A cold start reads the code in the background in slices (extract's reading order: config and entry points first,
 every part in turn), publishing a partial blueprint ("partial": {"done", "total"}) after each, until all is read.
-Nothing waits for it.
+Nothing waits for it: until the first blueprint, pages are a placeholder saying where the engine is (progress(),
+GET /progress), and each step of the start moves the version, so a long poll follows it.
 
 Pages: `Pages` keeps the pages already drawn by (kind, view, width, zoom, part) with the version they were drawn
 from; a page asked for again at the same version is answered from memory, and the pages asked for lately are drawn
-again in the background as soon as the version moves, so a long poll (GET /page?since=V) answers at once.
+again in the background as soon as the version moves, so a long poll (GET /page?since=V) answers at once. A page
+being drawn when asked is waited for a moment (BUSY_WAIT), then the one drawn before is given.
 
 For clients (the thin pane client imports this at every look, so only the standard library is imported here at
-import time): client_page() asks the running engine for a page, touch() tells it of edited files.
+import time): client_page() asks the running engine for a page, client_progress() where it is, touch() tells it of
+edited files, client_mark() asks it to mark the turn or a checkpoint, starting() says whether one is being started.
 """
 from __future__ import annotations
 
@@ -40,7 +56,9 @@ import hmac
 import http.client
 import json
 import os
+import re
 import stat as stat_mod
+import struct
 import threading
 import time
 from pathlib import Path
@@ -55,32 +73,17 @@ PAGE_TTL = 15.0               # seconds a drawn page is served for at one versio
 WANTED_FOR = 120.0            # seconds a page asked for is kept drawn in the background as versions move
 RACY = 2.0                    # a file changed this recently is hashed again next time, whatever its size and time
 FIRST_WAIT = 20.0             # seconds a comparison waits for the engine's first blueprint before snapshotting
+BUSY_WAIT = 2.0               # seconds a page ask waits for a drawing under way before taking the one drawn before
 
 
 # ── for clients: stdlib only ──────────────────────────────────────────────────
 
 def _git_dir(root: Path) -> Optional[Path]:
-    """The repository's git dir, found without running git when it can be (a .git folder, or a .git file naming one,
-    as a linked worktree has)."""
-    root = Path(root)
-    g = root / ".git"
-    try:
-        if g.is_dir():
-            return g
-        if g.is_file():
-            text = g.read_text(encoding="utf-8", errors="replace").strip()
-            if text.startswith("gitdir:"):
-                p = Path(text[7:].strip())
-                return p if p.is_absolute() else (root / p).resolve()
-    except OSError:
-        pass
-    try:
-        from .sources import run_hidden
-        out = run_hidden(["git", "rev-parse", "--absolute-git-dir"], cwd=str(root), capture_output=True, text=True,
-                         encoding="utf-8", errors="replace", timeout=5)
-        return Path(out.stdout.strip()) if out.returncode == 0 and out.stdout.strip() else None
-    except Exception:  # noqa: BLE001 - no git, not a repository
-        return None
+    """The repository's git dir, found without running git when it can be (gitfs.locate: a .git folder, or a .git
+    file naming one, as a linked worktree has)."""
+    from . import gitfs
+    r = gitfs.locate(Path(root))
+    return r.gitdir if r is not None else None
 
 
 def engine_info(root: Path) -> Optional[dict]:
@@ -165,6 +168,69 @@ def touch(root: Path, paths: Iterable[str]) -> None:
         pass
 
 
+def _ask(root: Path, method: str, path: str, body: Optional[dict], timeout: float) -> Optional[dict]:
+    """A JSON request to the repository's engine (with its token), or None when none answers."""
+    info = engine_info(root)
+    if not info or not info.get("token"):
+        return None
+    conn = None
+    try:
+        conn = _connect(int(info["port"]), timeout)
+        headers = {"X-Token": str(info["token"]), "Accept": "application/json"}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        conn.request(method, path, body=data, headers=headers)
+        r = conn.getresponse()
+        raw = r.read()
+        if r.status != 200:
+            return None
+        got = json.loads(raw.decode("utf-8"))
+        return got if isinstance(got, dict) else None
+    except Exception:  # noqa: BLE001 - no engine
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def client_progress(root: Path, timeout: float = 2.0) -> Optional[dict]:
+    """Where the repository's engine is (GET /progress): {"stage", "done", "total", "version", "ready", "complete",
+    "seconds"}; None when no engine answers. It answers at once, however busy the engine is."""
+    got = _ask(root, "GET", "/progress", None, timeout)
+    return got if got is not None and "stage" in got else None
+
+
+def client_mark(root: Path, ref: str, timeout: float = 20.0) -> Optional[str]:
+    """Ask the engine to point one of system-diff's refs (the turn, a checkpoint) at the working tree as it holds it
+    (POST /mark): it writes the commit from memory, and one git call moves the ref. The commit, or None (no engine)."""
+    got = _ask(root, "POST", "/mark", {"ref": ref}, timeout)
+    sha = (got or {}).get("sha")
+    return sha if isinstance(sha, str) and sha else None
+
+
+def starting(root: Path, within: float = 60.0) -> bool:
+    """Whether an engine for this repository is being started (watch.start_detached's web.starting, written less
+    than `within` seconds ago): stdlib only, for the thin clients."""
+    g = _git_dir(root)
+    if g is None:
+        return False
+    try:
+        info = json.loads((g / "system-diff" / "web.starting").read_text(encoding="utf-8"))
+        return time.time() - float(info.get("at") or 0) < within
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
+def progress_text(got: Dict[str, Any]) -> str:
+    """"Reading the code: 120 of 430 files - 12s" from an engine's progress."""
+    text = str(got.get("stage") or "Starting")
+    if got.get("total"):
+        text += f": {int(got.get('done') or 0):,} of {int(got['total']):,} files"
+    return text + f" - {int(float(got.get('seconds') or 0))}s"
+
+
 def token_ok(given: Optional[str], token: str) -> bool:
     return bool(given) and bool(token) and hmac.compare_digest(str(given).encode(), token.encode())
 
@@ -183,9 +249,51 @@ def _byte_order(paths: Iterable[str]) -> List[str]:
     return sorted(paths, key=lambda p: p.encode("utf-8", "surrogateescape"))
 
 
+# bytes git counts as not printable when it guesses whether a file is text (convert.c, gather_stats)
+_CONTROL = bytes(c for c in range(32) if c not in (8, 9, 10, 13, 27, 12)) + b"\x7f"
+_NOT_CONTROL = bytes(c for c in range(256) if bytes([c]) not in _CONTROL)
+
+
+def _binary(data: bytes) -> bool:
+    """git's guess that a file is not text (convert.c, convert_is_binary): a NUL, a lone CR, or too many control
+    characters."""
+    if b"\0" in data:
+        return True
+    cr = data.count(b"\r")
+    if cr != data.count(b"\r\n"):
+        return True
+    nonprintable = len(data.translate(None, _NOT_CONTROL))
+    if data.endswith(b"\x1a"):
+        nonprintable -= 1
+    printable = len(data) - nonprintable - cr - data.count(b"\n")
+    return (printable >> 7) < nonprintable
+
+
+def to_git(data: bytes, attr: str, autocrlf: str, index_has_cr: Callable[[], bool]) -> bytes:
+    """The bytes `git add` would store for a file's content: CRLF made LF where git's end-of-line conversion applies
+    (core.autocrlf, the text and eol attributes as `git ls-files --eol` shows them), else as they are."""
+    if b"\r\n" not in data:
+        return data
+    words = attr.split()
+    if "-text" in words:
+        return data
+    if any(w == "text=auto" for w in words):
+        auto = True
+    elif "text" in words or any(w.startswith("eol=") for w in words):
+        auto = False
+    elif autocrlf in ("true", "input"):
+        auto = True
+    else:
+        return data
+    if auto and (_binary(data) or index_has_cr()):
+        return data   # a binary file, or one committed with CRs: git keeps it as it is ("safer autocrlf")
+    return data.replace(b"\r\n", b"\n")
+
+
 class Entry:
     """A file of the working tree: its mode and blob id as git would commit it, the (mtime_ns, size) it had when it
-    was last hashed (None: hash it again next time), and the Python hash of its raw bytes then."""
+    was last looked at (None: look again next time), and the Python hash of its raw bytes then (None: taken from the
+    index's stat data, not read)."""
     __slots__ = ("mode", "sha", "stamp", "raw")
 
     def __init__(self, mode: str, sha: str, stamp: Optional[tuple] = None, raw: Optional[str] = None):
@@ -196,52 +304,38 @@ class Entry:
 
 
 class LiveSource:
-    """The working tree's files as the engine holds them: files, blobs and root, like sources.GitSource, read from
-    git's object store by blob id (or from the bytes in hand when they are exactly the blob)."""
+    """The working tree's files as the engine holds them: files, blobs, root and label, like sources.GitSource. A
+    file whose blob git has (the index's, or one the engine wrote) is read from git's object store (a loose object, or
+    the one cat-file process); any other from the bytes the engine kept when it hashed it, or from the disk."""
 
-    def __init__(self, root: Path, files: List[str], blobs: Dict[str, str], mem: Dict[str, bytes]):
-        self.root, self.files, self.blobs, self.label = Path(root), files, blobs, "working tree"
-        self._mem = mem
+    def __init__(self, engine: "Engine", files: List[str], blobs: Dict[str, str], ref: str):
+        self.root, self.files, self.blobs, self.label, self.ref = engine.root, files, blobs, "working tree", ref
+        self._engine = engine
         self._cache: Dict[str, str] = {}
 
     def read_many(self, paths: Iterable[str]) -> Dict[str, str]:
-        from .sources import run_hidden
         paths = list(paths)
-        want = []
         for p in paths:
             if p in self._cache:
                 continue
             sha = self.blobs.get(p)
-            if not sha:
-                self._cache[p] = ""
-            elif sha in self._mem:
-                self._cache[p] = self._mem[sha].decode("utf-8", errors="replace")
-            else:
-                want.append(p)
-        if want:
-            out = run_hidden(["git", "cat-file", "--batch"], cwd=self.root, check=True, capture_output=True,
-                             input="".join(f"{self.blobs[p]}\n" for p in want).encode()).stdout
-            i = 0
-            for p in want:
-                end = out.index(b"\n", i)
-                head = out[i:end].split()
-                i = end + 1
-                if len(head) < 3 or head[1] == b"missing":
-                    self._cache[p] = ""
-                    continue
-                size = int(head[2])
-                self._cache[p] = out[i:i + size].decode("utf-8", errors="replace")
-                i += size + 1
+            data = self._engine.content(p, sha) if sha else None
+            self._cache[p] = data.decode("utf-8", errors="replace") if data is not None else ""
         return {p: self._cache.get(p, "") for p in paths}
 
     def read(self, path: str) -> str:
         return self.read_many([path])[path]
 
 
+MEM_MAX = 64 * 1024 * 1024      # bytes of changed files kept in memory (the rest is read from disk again)
+SCAN_SHARE = 0.1                # the stat scan takes at most this share of the time (a huge tree is scanned less often)
+
+
 class Engine:
     """The working tree of one repository, kept current in memory (see the module's doc)."""
 
     def __init__(self, root: Path, interval: float = INTERVAL, slice_seconds: float = SLICE):
+        from . import gitfs
         from .sources import git_dir
         self.root = Path(root).resolve()
         self.interval, self.slice = interval, slice_seconds
@@ -252,49 +346,72 @@ class Engine:
         self.ready = threading.Event()           # the first blueprint is there (partial or whole)
         self.done = threading.Event()            # the cold start has read every file
         self.entries: Dict[str, Entry] = {}
-        self.index: Dict[str, Tuple[str, str]] = {}   # the real index, as last listed: path -> (mode, sha)
-        self.reported: set = set()               # what `git status` named last time
+        self.index: Dict[str, Any] = {}          # the real index, as last read: path -> gitfs.IndexEntry
         self.held: Optional[Any] = None          # compare.Live
         self.error = ""
         self.parsed = 0                          # files whose facts were read (not taken from the store): for tests
         self.reads = 0                           # blueprints made: a new one, a new picture
-        self.tree = ""
-        self.commit = ""
         self.head: Optional[str] = None
-        self._mem: Dict[str, bytes] = {}         # blob id -> bytes in hand, for files hashed since the last read
+        self.git_calls: List[str] = []           # what this engine ran git for (the doctor and the tests count them)
+        self.stage, self.stage_done, self.stage_total = "Starting", 0, 0
+        self.started = time.time()
+        self._mem: Dict[str, bytes] = {}         # blob id -> bytes, for blobs git does not have (changed files)
+        self._mem_size = 0
+        self._stored: set = set()                # blob ids git has: the index's, and those the engine wrote
+        self._attrs: Dict[str, str] = {}         # path -> its eol attributes, as `git ls-files --eol` says them
+        self._filtered: set = set()              # paths a filter (git-lfs…), ident or encoding applies to: git hashes
+        self._filter_attrs = False               # an attributes file names a filter, ident or an encoding
+        self._dirs: Dict[str, Optional[int]] = {}   # folder -> its mtime_ns: a new or deleted file changes it
+        self._ignored: set = set()               # paths seen appear that git would not add (ignored)
+        self._pending: set = set()               # paths told of (POST /touch): looked at in the next scan, read
         self._fp: Optional[tuple] = None
+        self._index_stamp: Optional[tuple] = None
+        self._made: Optional[Tuple[tuple, str]] = None   # ((identity, head), commit) of the last commit made
+        self._scan_cost = 0.0
+        self._last_scan = 0.0
+        self._config: Dict[str, str] = {}
+        self._repo = gitfs.locate(self.root)
+        if self._repo is None:
+            raise ValueError(f"{self.root} is not a git repository")
         self._sd = git_dir(self.root)
-        self._index_file = self._sd / "live.index"
+        self._gitdir, self._common = self._repo.gitdir, self._repo.common
         self._thread: Optional[threading.Thread] = None
         self._filemode = self._symlinks = True
-        self._gitdir = Path(self._git_text("rev-parse", "--absolute-git-dir").strip())
-        common = self._git_text("rev-parse", "--git-common-dir").strip()
-        self._common = Path(common) if Path(common).is_absolute() else (self.root / common).resolve()
+        self._autocrlf = "false"
+        self._live_ids: List[str] = []
 
-    # git
-    def _git(self, *args: str, input: Optional[bytes] = None, index: bool = False, env: Optional[dict] = None) -> bytes:
+    # git: the few calls the engine makes, each noted
+    def _git(self, *args: str, input: Optional[bytes] = None, check: bool = True) -> bytes:
         from .sources import run_hidden
-        e = dict(os.environ)
-        if index:
-            e["GIT_INDEX_FILE"] = str(self._index_file)
-        if env:
-            e.update(env)
-        return run_hidden(["git", *args], cwd=self.root, capture_output=True, check=True, input=input, env=e).stdout
+        self.git_calls.append(" ".join(args[:3]))
+        r = run_hidden(["git", *args], cwd=self.root, capture_output=True, check=check, input=input)
+        return r.stdout
 
-    def _git_text(self, *args: str) -> str:
-        return self._git(*args).decode("utf-8", errors="replace")
-
-    def _config(self, name: str, default: bool) -> bool:
+    def _load_config(self) -> None:
+        """`git config -l -z`, once: what decides how a file is added (core.filemode, core.symlinks, core.autocrlf)."""
+        conf: Dict[str, str] = {}
         try:
-            v = self._git_text("config", "--type=bool", "--get", name).strip()
-        except Exception:  # noqa: BLE001 - not set
-            return default
-        return v == "true" if v else default
+            for rec in self._git("config", "-l", "-z").split(b"\0"):
+                if rec:
+                    k, _, v = rec.decode("utf-8", "replace").partition("\n")
+                    conf[k.lower()] = v
+        except Exception:  # noqa: BLE001 - git's defaults
+            pass
+        self._config = conf
+
+        def flag(name: str, default: bool) -> bool:
+            v = conf.get(name)
+            return default if v is None else v.lower() in ("true", "yes", "on", "1", "")
+        self._filemode = flag("core.filemode", True)
+        self._symlinks = flag("core.symlinks", True)
+        v = conf.get("core.autocrlf", "false").lower()
+        self._autocrlf = "input" if v == "input" else "true" if v in ("true", "yes", "on", "1", "") else "false"
 
     # life
     def start(self) -> "Engine":
         from . import compare
         compare.LIVE[compare.live_key(self.root)] = self.live
+        compare.COMMIT[compare.live_key(self.root)] = self.materialize
         self._thread = threading.Thread(target=self._run, name="system-diff engine", daemon=True)
         self._thread.start()
         return self
@@ -305,6 +422,8 @@ class Engine:
         key = compare.live_key(self.root)
         if compare.LIVE.get(key) == self.live:
             del compare.LIVE[key]
+        if compare.COMMIT.get(key) == self.materialize:
+            del compare.COMMIT[key]
         with self.cond:
             self.cond.notify_all()
 
@@ -314,11 +433,37 @@ class Engine:
             self.ready.wait(FIRST_WAIT)
         return self.held
 
+    @property
+    def commit(self) -> str:
+        """A commit of the working tree as it is now (made when asked: see materialize)."""
+        return self.materialize()
+
     def _bump(self) -> int:
         with self.cond:
             self.version += 1
             self.cond.notify_all()
             return self.version
+
+    def _say(self, stage: str, done: int = 0, total: int = 0, bump: bool = True) -> None:
+        moved = stage != self.stage
+        self.stage, self.stage_done, self.stage_total = stage, done, total
+        if moved and bump and not self.ready.is_set():
+            self._bump()   # the "reading" page says where the start is: a long poll answers with each step
+
+    def progress(self) -> Dict[str, Any]:
+        """Where the engine is: {"stage", "done", "total", "version", "ready", "complete", "seconds", "error",
+        "engine_git_calls" (the last of the git calls the engine made itself), "git_spawns" (every git process its
+        server's process started: the engine's, and the pages')}."""
+        held = self.held
+        part = (held.blueprint.get("partial") if held is not None else None) or {}
+        done, total = self.stage_done, self.stage_total
+        if part:
+            done, total = int(part.get("done") or 0), int(part.get("total") or 0)
+        from .sources import SPAWNS
+        return {"stage": self.stage, "done": done, "total": total, "version": self.version,
+                "ready": self.ready.is_set(), "complete": self.done.is_set(),
+                "seconds": round(time.time() - self.started, 1), "error": self.error,
+                "engine_git_calls": list(self.git_calls[-20:]), "git_spawns": SPAWNS["git"]}
 
     def poke(self) -> None:
         """Wake the long polls (something they also wait for, the outbox, has arrived)."""
@@ -338,12 +483,14 @@ class Engine:
 
     def _run(self) -> None:
         try:
-            self._filemode = self._config("core.filemode", True)
-            self._symlinks = self._config("core.symlinks", True)
             with self.lock:
+                self._say("Looking at the repository")
+                self._load_config()
                 self._fp = self._fingerprint()
                 self.head = self._head()
-                self._reconcile(full=True, read=False)
+                self._read_index()
+                self._relist()
+                self._say("Reading the code")
             last = time.monotonic()
             while not self.stopped.is_set() and not self.done.is_set():
                 with self.lock:
@@ -352,15 +499,20 @@ class Engine:
                 if time.monotonic() - last >= self.interval:
                     self.tick()
                     last = time.monotonic()
+            self._say("Ready", bump=False)
             self._warm_bases()
         except Exception as exc:  # noqa: BLE001 - the views fall back to reading for themselves
             self.error = f"{type(exc).__name__}: {exc}"
             self.ready.set()
-        while not self.stopped.wait(self.interval):
+        while not self.stopped.wait(self._pause()):
             try:
                 self.tick()
             except Exception as exc:  # noqa: BLE001 - next time
                 self.error = f"{type(exc).__name__}: {exc}"
+
+    def _pause(self) -> float:
+        # a scan of a huge tree takes a while: then it runs less often, so it never takes more than its share
+        return max(self.interval, self._scan_cost / SCAN_SHARE)
 
     def _warm_bases(self) -> None:
         """Read the checkpoint's and the turn's blueprints now, so the first page does not."""
@@ -375,7 +527,7 @@ class Engine:
             except Exception:  # noqa: BLE001 - only a head start
                 pass
 
-    # what else the views show: file times
+    # what else the views show, and git's own state: file times, read in Python
     def _fingerprint(self) -> tuple:
         def st(p: Path) -> Optional[tuple]:
             try:
@@ -400,7 +552,7 @@ class Engine:
             prof = st(profile.path())
         except Exception:  # noqa: BLE001
             prof = None
-        git_state = (head_ref, st(branch) if branch else None, st(c / "packed-refs"), st(g / "index"))
+        git_state = (head_ref, st(branch) if branch else None, st(c / "packed-refs"))
         # this branch's own checkpoint (one per branch), and the others' (a branch with none starts from them)
         mine = (g / "refs" / "worktree" / "system-diff" / "checkpoints" / head_ref[len("ref: refs/heads/"):].strip()
                 if head_ref.startswith("ref: refs/heads/") else None)
@@ -409,160 +561,404 @@ class Engine:
                  st(g / "refs" / "worktree" / "system-diff" / "turn"), st(c / "refs" / "system-diff" / "checkpoint"),
                  st(self._sd / "activity.jsonl"), st(self._sd / "agents.json"), st(self._sd / "bus.jsonl"),
                  listing(self._sd / "regroup"), listing(self._sd / "parts"), prof)
-        return git_state, views
+        rules = (st(c / "info" / "exclude"), st(c / "info" / "attributes"), st(g / "index"))
+        return git_state, views, rules
 
     def _head(self) -> Optional[str]:
+        from . import gitfs
         try:
-            return self._git_text("rev-parse", "-q", "--verify", "HEAD^{commit}").strip() or None
-        except Exception:  # noqa: BLE001 - no commit yet
-            return None
+            return gitfs.head(self.root)
+        except gitfs.Fallback:
+            try:
+                return self._git("rev-parse", "-q", "--verify", "HEAD^{commit}").decode().strip() or None
+            except Exception:  # noqa: BLE001 - no commit yet
+                return None
+
+    # the index and the listing: the start's calls, again only when git's own state moves
+    def _read_index(self) -> None:
+        """The real index: read in Python (gitfs.read_index), else `git ls-files -s`. Its blobs are in git's store."""
+        from . import gitfs
+        f = self._gitdir / "index"
+        try:
+            st = os.stat(f)
+            self._index_stamp = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            self._index_stamp = None
+            self.index = {}
+            return
+        try:
+            self.index, _unmerged = gitfs.read_index(f)
+        except (gitfs.Fallback, OSError, ValueError, struct.error):
+            out: Dict[str, Any] = {}
+            for rec in self._git("ls-files", "-s", "-z").split(b"\0"):
+                if not rec:
+                    continue
+                head, _, path = rec.partition(b"\t")
+                mode, sha, stage = head.decode().split()
+                p = path.decode("utf-8", "surrogateescape")
+                if stage == "0":
+                    out[p] = gitfs.IndexEntry(mode, sha, 0, (-1, -1), -1, False)
+                else:
+                    out.pop(p, None)
+            self.index = out
+        self._stored.update(e.sha for e in self.index.values())
+
+    def _relist(self) -> None:
+        """Every file git would add (`git ls-files -c -o --exclude-standard --eol`: tracked, and untracked but not
+        ignored, with their end-of-line attributes), each looked at on disk: the model from nothing, or again after
+        the ignore rules or the attributes changed."""
+        listed = self._ls(None)
+        self._ignored.clear()
+        self._read_filters(listed)
+        new: Dict[str, Optional[Entry]] = {}
+        old_attrs, self._attrs = self._attrs, {p: a for p, a in listed.items()}
+        paths = set(listed)
+        for p, ie in self.index.items():   # a sparse checkout's files not on disk still count, as git add -A keeps them
+            if ie.skip:
+                paths.add(p)
+        self._say("Looking at the files", 0, len(paths))
+        for i, p in enumerate(sorted(paths)):
+            force = old_attrs.get(p) != self._attrs.get(p) and p in self.entries
+            new[p] = self._from_disk(p, force=force)
+            if i % 200 == 0:
+                self._say("Looking at the files", i, len(paths), bump=False)
+        for p in set(self.entries) - paths:
+            new[p] = None
+        self._hash_filtered(new)
+        self._dirs = {}
+        for p, e in new.items():
+            if e is not None:
+                self._watch_dir(p.rpartition("/")[0])
+        self._watch_dir("")
+        self._apply(new, read=False, force=not self.entries)
+
+    def _ls(self, paths: Optional[List[str]]) -> Dict[str, str]:
+        """{path: eol attributes} of the files git would add: all of them (None), or those of `paths` (files, and
+        folders "dir/") that are untracked and not ignored. One git call."""
+        args = ["--literal-pathspecs", "ls-files", "-z", "--exclude-standard", "--eol"]
+        if paths is None:
+            args += ["-c", "-o"]
+            raw = self._git(*args)
+        else:
+            args += ["-o", "--"]
+            raw = self._git(*args, *paths)
+        out: Dict[str, str] = {}
+        for rec in raw.split(b"\0"):
+            if not rec:
+                continue
+            info, tab, path = rec.partition(b"\t")
+            if not tab:
+                continue
+            p = path.decode("utf-8", "surrogateescape")
+            if p.endswith("/"):
+                continue   # a repository inside this one: git add would record it as such, not its files
+            text = info.decode("utf-8", "replace")
+            at = text.find("attr/")
+            out[p] = text[at + 5:].strip() if at >= 0 else ""
+        return out
+
+    def _read_filters(self, listed: Dict[str, str]) -> None:
+        """Whether any attributes file names a filter (git-lfs), ident or a working-tree encoding; if so, which files
+        they apply to (`git check-attr`, once): those are hashed by git, not here."""
+        files = [p for p in listed if p == ".gitattributes" or p.endswith("/.gitattributes")]
+        texts = []
+        for f in [self.root / p for p in files] + [self._common / "info" / "attributes"]:
+            try:
+                texts.append(f.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                pass
+        glob = self._config.get("core.attributesfile")
+        for f in ([Path(os.path.expanduser(glob))] if glob else
+                  [Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "git" / "attributes"]):
+            try:
+                texts.append(f.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                pass
+        self._filter_attrs = any(re.search(r"\b(filter|ident|working-tree-encoding)\b", t) for t in texts)
+        self._filtered = self._check_filters(list(listed)) if self._filter_attrs else set()
+
+    def _check_filters(self, paths: List[str]) -> set:
+        if not paths:
+            return set()
+        raw = self._git("check-attr", "-z", "--stdin", "filter", "ident", "working-tree-encoding",
+                        input="".join(p + "\0" for p in paths).encode("utf-8", "surrogateescape"))
+        out, parts = set(), raw.split(b"\0")
+        for i in range(0, len(parts) - 2, 3):
+            if parts[i + 2] not in (b"unspecified", b"unset"):
+                out.add(parts[i].decode("utf-8", "surrogateescape"))
+        return out
+
+    def _watch_dir(self, d: str) -> None:
+        while True:
+            if d in self._dirs:
+                return
+            try:
+                self._dirs[d] = os.stat(self.root / d if d else self.root).st_mtime_ns
+            except OSError:
+                self._dirs[d] = None
+            if not d:
+                return
+            d = d.rpartition("/")[0]
 
     def tick(self) -> bool:
-        """One look: what `git status` names (all of the index again when it or HEAD moved), and the other state
-        the views show. True when the version moved."""
+        """One look, in Python: git's own files (HEAD, the index, refs, the ignore rules) by time, each known file and
+        folder by stat; a file whose size or time moved is read again, a folder whose time moved is listed for new
+        files (git asked only whether those would be added). True when the version moved."""
         with self.lock:
+            began = time.monotonic()
             fp = self._fingerprint()
-            moved_git = self._fp is None or fp[0] != self._fp[0]
             moved = fp != self._fp
-            self._fp = fp
-            if moved_git:
-                head = self._head()
-                head_moved, self.head = head != self.head, head
-            else:
-                head_moved = False
-            changed = self._reconcile(full=moved_git, head_moved=head_moved)
+            old, self._fp = self._fp, fp
+            relist = False
+            if old is None or fp[0] != old[0]:
+                self.head = self._head()
+            if old is None or fp[2] != old[2]:
+                relist = self._index_moved() or (old is not None and fp[2][:2] != old[2][:2])
+            changed = self._scan(relist)
+            self._scan_cost = time.monotonic() - began
+            self._last_scan = time.monotonic()
         if moved and not changed:
             self._bump()
         return changed or moved
+
+    def _index_moved(self) -> bool:
+        """The index changed (git add, a commit, a checkout): read it again (Python). True when what is tracked
+        changed so that git must say again what it would add (a file now tracked that was not known, or one no longer
+        tracked that is still here: it may be ignored)."""
+        try:
+            st = os.stat(self._gitdir / "index")
+            stamp: Optional[tuple] = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            stamp = None
+        if stamp == self._index_stamp:
+            return False
+        before = set(self.index)
+        self._read_index()
+        now = set(self.index)
+        return bool((now - before) - set(self.entries)) or bool((before - now) & set(self.entries))
 
     def sync(self) -> int:
         """Look now (instead of at the next tick); the version after it."""
         self.tick()
         return self.version
 
-    # the files
-    def _ls_index(self) -> Dict[str, Tuple[str, str]]:
-        out: Dict[str, Tuple[str, str]] = {}
-        for rec in self._git("ls-files", "-s", "-z").split(b"\0"):
-            if not rec:
-                continue
-            head, _, path = rec.partition(b"\t")
-            mode, sha, stage = head.decode().split()
-            p = path.decode("utf-8", "surrogateescape")
-            if stage == "0":
-                out[p] = (mode, sha)
-            else:
-                out.pop(p, None)   # unmerged: what is on disk counts (it is in `git status` too)
-        return out
-
-    def _status(self) -> Tuple[set, set]:
-        """(paths whose content on disk is to be read: changed, new or unmerged; paths deleted from the disk)."""
-        raw = self._git("--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all",
-                        "--no-renames", "--ignore-submodules=all")
-        dirty, gone = set(), set()
-        for rec in raw.split(b"\0"):
-            if len(rec) < 4:
-                continue
-            xy, p = rec[:2].decode(), rec[3:].decode("utf-8", "surrogateescape")
-            if p.endswith("/"):
-                continue   # a repository inside this one: git add would record it as such, not its files
-            if xy[1] == "D" or xy == "DD":
-                gone.add(p)
-            elif xy == "D ":
-                continue   # deleted from the index: if it is still on disk, it is listed again as untracked
-            elif xy == "??" or xy[1] in "MTA" or "U" in xy or xy == "AA":
-                dirty.add(p)
-        return dirty, gone
-
-    def _reconcile(self, full: bool, head_moved: bool = False, read: bool = True) -> bool:
-        """Bring the files up to date with the disk; True (and a new blueprint, unless `read` is False) when any
-        changed. `full`: list the index again and look at every file it has."""
-        if full:
-            self.index = self._ls_index()
-        dirty, gone = self._status()
+    def _scan(self, relist: bool = False) -> bool:
+        if relist:
+            before = {p: e.sha for p, e in self.entries.items()}
+            self._relist()
+            return self._model_moved(before)
         new: Dict[str, Optional[Entry]] = {}
-        if full:
-            for p, (mode, sha) in self.index.items():
-                if p not in dirty and p not in gone:
-                    old = self.entries.get(p)
-                    new[p] = old if old is not None and old.mode == mode and old.sha == sha else Entry(mode, sha)
-            for p in set(self.entries) - set(self.index) - dirty:
-                new[p] = None
-        else:
-            for p in self.reported - dirty - gone:   # back to what the index has (or gone, if it has nothing)
-                got = self.index.get(p)
-                new[p] = Entry(*got) if got else None
-        for p in gone:
-            new[p] = None
-        new.update(self._from_disk(dirty))
-        self.reported = dirty | gone
-        return self._apply(new, read=read, force=full and not self.entries) or (head_moved and self._recommit(read))
-
-    def _from_disk(self, paths: Iterable[str]) -> Dict[str, Optional[Entry]]:
-        """The entries of these files as they are on disk now: hashed in Python, and given to git (which writes the
-        blob and applies its conversions) only when they changed."""
-        out: Dict[str, Optional[Entry]] = {}
-        regular: List[Tuple[str, str, Optional[tuple], str, bytes]] = []
-        now = time.time()
-        for p in paths:
-            full = self.root / p
-            try:
-                s = os.lstat(full)
-            except OSError:
-                out[p] = None
+        rules = False
+        for p, e in self.entries.items():
+            if e.mode == "160000":
                 continue
-            old = self.entries.get(p)
-            if stat_mod.S_ISLNK(s.st_mode) and self._symlinks:
-                try:
-                    data = os.fsencode(os.readlink(full))
-                except OSError:
-                    out[p] = None
+            force = p in self._pending
+            try:
+                s = os.lstat(self.root / p)
+                stamp = (s.st_mtime_ns, s.st_size)
+            except OSError:
+                ie = self.index.get(p)
+                if ie is not None and ie.skip:
                     continue
-                sha = blob_id(data)
-                if not (old and old.sha == sha):
-                    self._git("hash-object", "-w", "--stdin", "--no-filters", input=data)
-                out[p] = Entry("120000", sha)
+                new[p] = None
+                rules = rules or _is_rules(p)
                 continue
-            if not stat_mod.S_ISREG(s.st_mode):
-                if stat_mod.S_ISDIR(s.st_mode):
-                    out[p] = old   # a folder named by itself (a nested repository): as it was
-                else:
-                    out[p] = None
-                continue
-            stamp = (s.st_mtime_ns, s.st_size)
-            if self._filemode:
-                mode = "100755" if s.st_mode & 0o111 else "100644"
-            else:   # the file system cannot tell: the mode the index has (as git add keeps it)
-                mode = (self.index.get(p) or (old.mode if old else "100644", ""))[0]
-                mode = mode if mode in ("100644", "100755") else "100644"
-            if old is not None and old.stamp == stamp and old.mode == mode:
-                out[p] = old
-                continue
+            if force or e.stamp != stamp:
+                got = self._from_disk(p, force=force)
+                if got is None or not got.same(e) or got.stamp != e.stamp or got.raw != e.raw:
+                    new[p] = got
+                    rules = rules or (_is_rules(p) and (got is None or got.sha != e.sha))
+        # new files: a folder whose time moved is listed again
+        candidates: List[str] = []
+        for d, mt in list(self._dirs.items()):
             try:
-                with open(full, "rb") as f:
-                    data = f.read()
+                now = os.stat(self.root / d if d else self.root).st_mtime_ns
             except OSError:
-                out[p] = None
+                del self._dirs[d]
                 continue
-            raw = blob_id(data)
-            keep = stamp if now - s.st_mtime > RACY else None   # changed just now: perhaps again within the same tick
-            if old is not None and old.raw == raw and old.mode == mode:
-                out[p] = Entry(mode, old.sha, keep, raw)
+            if now == mt:
                 continue
-            indexed = self.index.get(p)
-            if indexed is not None and indexed[1] == raw:   # exactly the blob the index has: nothing for git to do
-                self._mem[raw] = data
-                out[p] = Entry(mode, raw, keep, raw)
+            self._dirs[d] = now
+            try:
+                listing = list(os.scandir(self.root / d if d else self.root))
+            except OSError:
                 continue
-            regular.append((p, mode, keep, raw, data))
-        if regular:
-            ids = self._git("hash-object", "-w", "--stdin-paths",
-                            input="".join(p + "\n" for p, *_ in regular).encode("utf-8", "surrogateescape"))
-            for (p, mode, keep, raw, data), sha in zip(regular, ids.decode().split()):
-                if sha == raw:
-                    self._mem[sha] = data
-                out[p] = Entry(mode, sha, keep, raw)
-        return out
+            for item in listing:
+                rel = f"{d}/{item.name}" if d else item.name
+                if item.name == ".git" or rel in self.entries or rel in self._ignored or rel in self._dirs:
+                    continue
+                try:
+                    is_dir = item.is_dir(follow_symlinks=False)
+                except OSError:
+                    continue
+                candidates.append(rel + "/" if is_dir else rel)
+        candidates += [p for p in self._pending if p not in self.entries and p not in candidates]
+        self._pending.clear()
+        for c in [c for c in candidates if c in self.index]:   # tracked, back on disk: no need to ask git
+            candidates.remove(c)
+            new[c] = self._from_disk(c)
+            if new[c] is not None:
+                self._watch_dir(c.rpartition("/")[0])
+        if candidates:
+            listed = self._ls(candidates)
+            for c in candidates:
+                if c.endswith("/"):
+                    if any(p.startswith(c) for p in listed):
+                        continue
+                    if _has_files(self.root / c):
+                        self._ignored.add(c[:-1])   # files, none of them to add: an ignored folder
+                    else:
+                        self._watch_dir(c[:-1])     # nothing in it yet: watched, for what comes
+                elif c not in listed:
+                    self._ignored.add(c)
+            if listed and self._filter_attrs:
+                self._filtered |= self._check_filters(list(listed))
+            for p, attr in listed.items():
+                self._attrs[p] = attr
+                new[p] = self._from_disk(p)
+                if new[p] is not None:
+                    self._watch_dir(p.rpartition("/")[0])
+                rules = rules or _is_rules(p)
+        if not new:
+            return False
+        self._hash_filtered(new)
+        before = {p: e.sha for p, e in self.entries.items()}
+        if rules:   # an ignore or attributes file changed: what git would add may be another set of files
+            self._apply(new, read=False)
+            self._relist()
+            return self._model_moved(before)
+        return self._apply(new)
+
+    def _model_moved(self, before: Dict[str, str]) -> bool:
+        if {p: e.sha for p, e in self.entries.items()} == before and self.held is not None:
+            return False
+        self._read(deadline=None if self.done.is_set() else time.monotonic())
+        self._bump()
+        return True
+
+    def _from_disk(self, p: str, force: bool = False) -> Optional[Entry]:
+        """The entry of this file as it is on disk now: taken from the index when its stat data says it is the
+        index's blob, else read and hashed in Python (with git's end-of-line conversion applied)."""
+        full = self.root / p
+        try:
+            s = os.lstat(full)
+        except OSError:
+            ie = self.index.get(p)
+            return Entry(ie.mode, ie.sha) if ie is not None and ie.skip else None
+        old = self.entries.get(p)
+        ie = self.index.get(p)
+        if stat_mod.S_ISLNK(s.st_mode) and self._symlinks:
+            try:
+                data = os.fsencode(os.readlink(full))
+            except OSError:
+                return None
+            sha = blob_id(data)
+            self._keep(sha, data)
+            return Entry("120000", sha, (s.st_mtime_ns, s.st_size), sha)
+        if stat_mod.S_ISDIR(s.st_mode):
+            if ie is not None and ie.mode == "160000":
+                return Entry("160000", ie.sha)   # a submodule: as the index has it
+            return old   # a folder named by itself (a nested repository): as it was
+        if not stat_mod.S_ISREG(s.st_mode):
+            return None
+        stamp = (s.st_mtime_ns, s.st_size)
+        if ie is not None and ie.mode == "120000" and not self._symlinks:
+            mode = "120000"   # a link checked out as a file: git keeps it a link
+        elif self._filemode:
+            mode = "100755" if s.st_mode & 0o111 else "100644"
+        else:   # the file system cannot tell: the mode the index has (as git add keeps it)
+            mode = (ie.mode if ie is not None else old.mode if old is not None else "100644")
+            mode = mode if mode in ("100644", "100755") else "100644"
+        if not force and old is not None and old.stamp == stamp and old.mode == mode:
+            return old
+        keep = stamp if time.time() - s.st_mtime > RACY else None   # changed just now: perhaps again, look again
+        if not force and ie is not None and ie.size >= 0 and self._clean(ie, s):
+            return Entry(mode, ie.sha, keep, None)
+        try:
+            with open(full, "rb") as f:
+                data = f.read()
+        except OSError:
+            return None
+        raw = blob_id(data)
+        if old is not None and old.raw == raw and old.mode == mode and p not in self._filtered:
+            return Entry(mode, old.sha, keep, raw)
+        if p in self._filtered:
+            return Entry(mode, "", keep, raw)   # git hashes it (see _hash_filtered)
+        conv = to_git(data, self._attrs.get(p, ""), self._autocrlf, lambda: self._index_has_cr(p))
+        sha = raw if conv is data else blob_id(conv)
+        if sha not in self._stored:
+            self._keep(sha, conv)
+        return Entry(mode, sha, keep, raw)
+
+    def _clean(self, ie: Any, s: os.stat_result) -> bool:
+        """Whether the index's stat data says the file is its blob (as git status decides, by size and time), and
+        the index was written after the file's time (else it may be "racily clean": read it)."""
+        if (s.st_size & 0xFFFFFFFF) != ie.size:
+            return False
+        sec, nsec = divmod(s.st_mtime_ns, 1_000_000_000)
+        if (sec & 0xFFFFFFFF) != ie.mtime[0] or (ie.mtime[1] and ie.mtime[1] != nsec):
+            return False
+        # written before the index was: else it may have changed within the index's own tick ("racily clean")
+        return self._index_stamp is not None and s.st_mtime_ns < self._index_stamp[0]
+
+    def _index_has_cr(self, p: str) -> bool:
+        from . import gitfs
+        ie = self.index.get(p)
+        if ie is None:
+            return False
+        try:
+            got = gitfs.read_object(self.root, ie.sha)
+        except (gitfs.Fallback, OSError):
+            return False
+        return got is not None and b"\r" in got[1]
+
+    def _hash_filtered(self, new: Dict[str, Optional[Entry]]) -> None:
+        """The files a filter applies to (git-lfs…): git hashes them, all in one call, and writes their blobs."""
+        want = [p for p, e in new.items() if e is not None and not e.sha]
+        if not want:
+            return
+        ids = self._git("hash-object", "-w", "--stdin-paths",
+                        input="".join(p + "\n" for p in want).encode("utf-8", "surrogateescape")).decode().split()
+        for p, sha in zip(want, ids):
+            new[p].sha = sha  # type: ignore[union-attr]
+            self._stored.add(sha)
+        for p in want[len(ids):]:
+            new[p] = None
+
+    def _keep(self, sha: str, data: bytes) -> None:
+        if sha in self._mem or len(data) > MEM_MAX // 16:
+            return
+        self._mem[sha] = data
+        self._mem_size += len(data)
+        if self._mem_size > MEM_MAX:
+            live = {e.sha for e in self.entries.values()}
+            for k in [k for k in self._mem if k not in live]:
+                self._mem_size -= len(self._mem.pop(k))
+
+    def content(self, p: str, sha: str) -> Optional[bytes]:
+        """The bytes of blob `sha` of path `p`: kept in memory, in git's store, or read from the disk again (and
+        given only if it still is that blob)."""
+        from . import gitfs
+        data = self._mem.get(sha)
+        if data is not None:
+            return data
+        if sha in self._stored or gitfs.has_loose(self.root, sha):
+            try:
+                got = gitfs.read_object(self.root, sha)
+                if got is not None:
+                    return got[1]
+            except (gitfs.Fallback, OSError, ValueError):
+                pass
+        try:
+            raw = (self.root / p).read_bytes()
+        except OSError:
+            return None
+        conv = to_git(raw, self._attrs.get(p, ""), self._autocrlf, lambda: self._index_has_cr(p))
+        if blob_id(conv) == sha:
+            return conv
+        with self.lock:
+            self._pending.add(p)   # it moved since it was hashed: the next scan reads it again
+        return None
 
     def _apply(self, new: Dict[str, Optional[Entry]], read: bool = True, force: bool = False) -> bool:
         changed = {p: e for p, e in new.items()
@@ -572,33 +968,11 @@ class Engine:
                 self.entries[p] = e
         if not changed and not force:
             return False
-        lines = []
         for p, e in changed.items():
             if e is None:
                 self.entries.pop(p, None)
-                lines.append(f"0 {'0' * 40}\t{p}")
             else:
                 self.entries[p] = e
-                lines.append(f"{e.mode} {e.sha}\t{p}")
-        if force:   # the engine's own index, from nothing
-            try:
-                self._index_file.unlink()
-            except OSError:
-                pass
-            lines = [f"{e.mode} {e.sha}\t{p}" for p, e in self.entries.items()]
-        if lines:
-            self._git("update-index", "-z", "--index-info", index=True,
-                      input="".join(line + "\0" for line in lines).encode("utf-8", "surrogateescape"))
-        self.tree = self._git("write-tree", index=True).decode().strip()
-        self._recommit(read)
-        return True
-
-    def _recommit(self, read: bool = True) -> bool:
-        from .compare import _IDENTITY
-        if not self.tree:
-            return False
-        self.commit = self._git("commit-tree", self.tree, *(["-p", self.head] if self.head else []),
-                                "-m", "system-diff live", env=_IDENTITY).decode().strip()
         if read:
             self._read(deadline=None if self.done.is_set() else time.monotonic())
             self._bump()
@@ -610,12 +984,24 @@ class Engine:
             h.update(f"{p}\0{self.entries[p].sha}\n".encode("utf-8", "surrogateescape"))
         return h.hexdigest()
 
+    def blobs(self) -> Dict[str, str]:
+        with self.lock:
+            return {p: e.sha for p, e in self.entries.items() if e.mode != "160000"}
+
     def _read(self, deadline: Optional[float]) -> None:
         """The blueprint of the files as they are now (with a deadline: of those read by then, partial)."""
         from . import compare, config, extract
+        from .sources import LIVE_PREFIX, LIVE_SOURCES
         files = _byte_order(self.entries)
         blobs = {p: e.sha for p, e in self.entries.items() if e.mode != "160000"}
-        src = LiveSource(self.root, files, blobs, self._mem)
+        ident = self.identity()
+        ref = LIVE_PREFIX + ident
+        src = LiveSource(self, files, blobs, ref)
+        LIVE_SOURCES[ref] = src
+        if ref not in self._live_ids:
+            self._live_ids.append(ref)
+        while len(self._live_ids) > 8:
+            LIVE_SOURCES.pop(self._live_ids.pop(0), None)
         try:
             cfg = config.load(src, self.root)
         except ValueError as exc:   # the config does not parse: compare says so, the old way
@@ -627,13 +1013,58 @@ class Engine:
         bp, known = extract.read_blueprint(counted, cfg, deadline=deadline)
         self.parsed += counted.read
         self.reads += 1
-        self._mem.clear()
         self.error = ""
-        self.held = compare.Live(sha=self.commit, blueprint=bp, known=known, cfg=cfg, source=src,
-                                 version=self.version + 1, identity=self.identity())
+        self.held = compare.Live(sha=ref, blueprint=bp, known=known, cfg=cfg, source=src,
+                                 version=self.version + 1, identity=ident)
         self.ready.set()
         if known is None:
             self.done.set()
+
+    # commits: only when something must be kept in git (a checkpoint, the start of a turn)
+    def materialize(self) -> str:
+        """A commit of the working tree as it is now (parent HEAD), the same as a snapshot's (`git add -A`, write-tree,
+        commit-tree): its blobs, trees and commit written as loose objects in Python, so no git runs. Made once per
+        state of the files."""
+        from . import compare, gitfs
+        with self.lock:
+            self.tick()
+            key = (self.identity(), self.head)
+            if self._made is not None and self._made[0] == key:
+                return self._made[1]
+            try:
+                files: Dict[str, Tuple[str, str]] = {}
+                for p, e in list(self.entries.items()):
+                    if e.mode != "160000" and e.sha not in self._stored and not gitfs.has_loose(self.root, e.sha):
+                        data = self._mem.get(e.sha) or self.content(p, e.sha)
+                        if data is None:   # it moved under us: as it is now
+                            got = self._from_disk(p, force=True)
+                            if got is None:
+                                self.entries.pop(p, None)
+                                continue
+                            self.entries[p] = e = got
+                            data = self._mem.get(e.sha) or self.content(p, e.sha)
+                            if data is None:
+                                raise gitfs.Fallback(f"{p} keeps changing")
+                        gitfs.write_object(self.root, "blob", data)
+                        self._stored.add(e.sha)
+                    files[p] = (e.mode, e.sha)
+                tree = gitfs.write_tree(self.root, files)
+                commit = gitfs.write_commit(self.root, tree, [self.head] if self.head else [], "system-diff live")
+            except (gitfs.Fallback, OSError):
+                self.git_calls.append("snapshot")
+                commit = compare.snapshot(self.root)
+            self._made = (key, commit)
+            return commit
+
+    def mark(self, ref: str) -> str:
+        """Point `ref` (one of system-diff's own, under refs/worktree/system-diff/) at the working tree as it is now:
+        one git call (update-ref). The commit."""
+        if not ref.startswith("refs/worktree/system-diff/") or ".." in ref:
+            raise ValueError(f"not a system-diff ref: {ref}")
+        sha = self.materialize()
+        self._git("update-ref", ref, sha)
+        self.tick()
+        return sha
 
     # Claude's edits
     def touch(self, paths: Iterable[str]) -> int:
@@ -654,23 +1085,25 @@ class Engine:
         with self.lock:
             if self._fp is None:   # the first look has not run yet: it will see these
                 return self.version
-            new = [r for r in rel if r not in self.entries and r not in self.index]
-            # never seen and not in the index: counts only if git would add it (it is not ignored)
-            ignored = self._check_ignore(new) if new else set()
-            want = [r for r in rel if r not in ignored]
-            found = self._from_disk(want)
-            for r, e in list(found.items()):
-                if e is None and r not in self.entries:
-                    del found[r]
-            self.reported |= set(found)   # the next `git status` decides about them from then on
-            self._apply(found)
+            for r in rel:
+                if r in self._ignored and r not in self.index:
+                    continue
+                self._ignored.discard(r)
+                self._pending.add(r)
+            self._scan()
             return self.version
 
-    def _check_ignore(self, paths: List[str]) -> set:
-        from .sources import run_hidden
-        r = run_hidden(["git", "check-ignore", "-z", "--stdin"], cwd=self.root, capture_output=True,
-                       input="".join(p + "\0" for p in paths).encode("utf-8", "surrogateescape"))
-        return {x.decode("utf-8", "surrogateescape") for x in r.stdout.split(b"\0") if x}
+
+def _has_files(folder: Path) -> bool:
+    for _top, _dirs, names in os.walk(folder):
+        if names:
+            return True
+    return False
+
+
+def _is_rules(p: str) -> bool:
+    name = p.rpartition("/")[2]
+    return name in (".gitignore", ".gitattributes")
 
 
 class _Counted:
@@ -692,23 +1125,39 @@ class Pages:
     """The pages already drawn, by key, with the version each was drawn at; the ones asked for lately are drawn again
     in the background when the version moves. `build(key)` draws one (the caller serialises what must be)."""
 
-    def __init__(self, engine: Engine, build: Callable[[tuple], dict], ttl: float = PAGE_TTL):
-        self.engine, self.build, self.ttl = engine, build, ttl
+    def __init__(self, engine: Engine, build: Callable[[tuple], dict], ttl: float = PAGE_TTL,
+                 placeholder: Optional[Callable[[tuple], dict]] = None):
+        self.engine, self._build, self.ttl, self.placeholder = engine, build, ttl, placeholder
         self.cache: Dict[tuple, Tuple[int, float, dict]] = {}
         self.wanted: Dict[tuple, float] = {}
         self.locks: Dict[tuple, threading.Lock] = {}
         self.guard = threading.Lock()
         self._painter: Optional[threading.Thread] = None
 
+    def build(self, key: tuple) -> dict:
+        """Draw a page: before the engine has its first blueprint, the placeholder (where the start is), never a
+        comparison that would wait for it."""
+        if self.placeholder is not None and not self.engine.ready.is_set():
+            return self.placeholder(key)
+        return self._build(key)
+
     def get(self, key: tuple) -> Tuple[int, dict]:
-        """(version, page) for `key`: from memory when drawn at the current version, else drawn now."""
+        """(version, page) for `key`: from memory when drawn at the current version, else drawn now. Never long: while
+        the engine starts, the placeholder; while this page is being drawn (by the painter), the one drawn before, if
+        the drawing does not end within a moment."""
         with self.guard:
             self.wanted[key] = time.monotonic()
             lock = self.locks.setdefault(key, threading.Lock())
         hit = self._hit(key)
         if hit is not None:
             return hit
-        with lock:   # one drawing of a page at a time: a second asker waits for it
+        if not lock.acquire(timeout=BUSY_WAIT):
+            with self.guard:
+                got = self.cache.get(key)
+            if got is not None:
+                return got[0], got[2]
+            lock.acquire()   # nothing drawn yet: wait for the drawing under way
+        try:   # one drawing of a page at a time: a second asker waits for it
             hit = self._hit(key)
             if hit is not None:
                 return hit
@@ -719,6 +1168,8 @@ class Pages:
                 while len(self.cache) > 64:
                     del self.cache[next(iter(self.cache))]
             return version, page
+        finally:
+            lock.release()
 
     def current(self, key: tuple) -> bool:
         """Whether this page is drawn at the current version (a long poll for it then waits for the next)."""

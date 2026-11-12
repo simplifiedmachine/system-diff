@@ -48,16 +48,25 @@ repository is in use. A cold start reads the repository in the background, publi
 - **Claude's edits:** the plugin's hooks tell the engine the paths Claude edited the moment the tool returns
   (`POST /touch`). The engine reads those files from disk, hashes them, re-parses only the ones whose content
   changed, and recombines.
-- **Other edits** (the person's editor, a `git checkout`): a cheap `git status` every second or two, which uses git's
-  own file-time cache, names the files that changed; the same path follows.
+- **Other edits** (the person's editor, a `git checkout`, and Claude's own where the hooks cannot run): every second
+  or two the engine looks at each known file's size and time and at each folder's time, in Python; a file that
+  moved is read and hashed again, a folder that moved is listed for new files, and git is asked only whether those
+  would be added (one call). Git's own state (HEAD, the index, refs) is read from its files, in Python.
+- **Git calls are the cost on a slow machine.** Where starting any program takes seconds (endpoint security, a home
+  folder on a network drive), the engine makes a handful when it starts (`git config -l`, one `git ls-files`, one
+  `git cat-file --batch` kept open for its life) and none per look, per tick or per edit. It makes no commit per
+  change: comparisons take the working tree from memory, and a commit is written (in Python, as loose objects) only
+  when something must be kept in git: a checkpoint, the start of a turn, then one `git update-ref`.
 - Recombining is cheap counting over cached facts. When the structure is unchanged, the previous layout is kept and
   only the change markers move, so boxes do not jump around.
 
 ### Views are thin clients
 
 - `system-diff panel` (what the pane runs) asks the engine for the page and waits for the next version (long poll),
-  so the pane updates the moment the model changes instead of re-reading every few seconds. With no engine
-  running, it starts one and answers from its own read meanwhile, as today.
+  so the pane updates the moment the model changes instead of re-reading every few seconds. The engine answers at
+  once, whatever it is doing: while it starts, with where it is (`GET /progress`, and a page saying so). Nothing reads
+  the system twice: while an engine answers or is being started, a client shows its progress and never reads for
+  itself; only when no engine can run at all does it read in its own process.
 - The web page and the terminal view use the same pages and the same long poll.
 
 ### The person's loop

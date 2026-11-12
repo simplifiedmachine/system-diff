@@ -295,6 +295,31 @@ def from_engine(root: Path, width: int, view: str, part: Optional[str], zoom: in
     return page
 
 
+def waiting(root: Path, width: int, view: str, part: Optional[str]) -> Optional[Dict[str, Any]]:
+    """While the resident engine answers (GET /progress) but gave no page (still starting, or it took too long), or
+    while one is being started: a page saying where it is, with no "version" (the pane keeps looking). The system is
+    then never read a second time here, beside the engine. None when no engine answers or is starting: then, and only
+    then, the caller reads for itself. Never raises."""
+    try:
+        from . import live
+        got = live.client_progress(root)
+        if got is None:
+            if not live.starting(root):
+                return None
+            got = {"stage": "Starting system-diff's engine", "done": 0, "total": 0, "seconds": 0}
+        line = live.progress_text(got)
+    except Exception:  # noqa: BLE001 - an older engine module: read here, as before
+        return None
+    rows = [[["◐ Reading the system… " + line, "attention"]],
+            [["  system-diff's engine reads the repository once and keeps it; this page updates by itself.",
+              "muted"]]]
+    return {"protocol": 2, "view": view, "part": part or "", "width": width,
+            "wide": max(width, max(sum(len(r[0]) for r in row) for row in rows)), "rows": rows, "blocks": [],
+            "lights": {}, "details": {}, "pick": "", "send": [],
+            "reading": {"done": int(got.get("done") or 0), "total": int(got.get("total") or 0),
+                        "stage": str(got.get("stage") or "")}}
+
+
 def start_engine(root: Path) -> None:
     """Start the resident engine in the background (guarded against a second one), not waiting for it; not when the
     config says `[web] start = false` or SYSTEM_DIFF_WEB_START=0. Never raises."""
@@ -332,14 +357,17 @@ def main(root: Path, width: int, view: str = "now", part: Optional[str] = None, 
          zoom: int = -1, since: Optional[int] = None, take: bool = True, start: Optional[bool] = None) -> int:
     """Protocol 2: ask the running engine (with `since`, wait for a version newer than that) and print its page with
     its "version"; with none running, start one (`start`; left out, only for a long poll: the pane's own runs, through
-    `fast`, always start one) and answer from a read in this process meanwhile, so the first look still shows
-    something."""
+    `fast`, always start one). While an engine answers or starts, a page saying where it is (`waiting`); only when no
+    engine can run at all, a read in this process, so the first look still shows something."""
     if protocol >= 2:
         page = from_engine(root, width, view, part, zoom, since, take)
         if page is None:
             if start or (start is None and since is not None):
                 start_engine(root)
-            page = build(root, width, view, part, zoom, take)
+            # an engine that answers, or is on its way, reads the system: say where it is, never read it twice
+            page = waiting(root, width, view, part)
+            if page is None:
+                page = build(root, width, view, part, zoom, take)
         print(json.dumps(page, ensure_ascii=False))
         return 0
     got = show(root, width, view, part or None)

@@ -83,7 +83,9 @@ def statusline(stdin_text: str, emit: Callable[[str], None] = print, color: bool
     payload = payload if isinstance(payload, dict) else {}
     cwd = (payload.get("workspace") or {}).get("current_dir") or payload.get("cwd") or os.getcwd()
     try:
-        root = Path(git("rev-parse", "--show-toplevel", cwd=Path(cwd)).strip())
+        from . import gitfs
+        found = gitfs.locate(Path(cwd))   # no git process: the status line is drawn again and again
+        root = found.top if found is not None else Path(git("rev-parse", "--show-toplevel", cwd=Path(cwd)).strip())
         cfg = config.lenient(root)
         now = activity.now(activity.events(root, 80), Code(cfg))
         brief = activity.load_brief(root, now["part"]) if now["part"] else {}

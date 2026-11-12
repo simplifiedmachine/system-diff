@@ -276,7 +276,8 @@ class Tui:
     def __init__(self, root: Path, view: str = "now", build: Optional[Build] = None,
                  size: Callable[[], Tuple[int, int]] = lambda: tuple(shutil.get_terminal_size((100, 30))),
                  clock: Callable[[], float] = time.monotonic, progress: Optional[Callable[[], str]] = None,
-                 ask: Optional[Ask] = None, pause: float = 2.0):
+                 ask: Optional[Ask] = None, pause: float = 2.0,
+                 waiting: Optional[Callable[..., Optional[Dict[str, Any]]]] = None):
         self.root = root
         self.st = State(view=view if view in {v for v, _, _ in VIEWS} else "now")
         self.page: Optional[Dict[str, Any]] = None
@@ -286,6 +287,12 @@ class Tui:
         # the engine is asked by default only when the pages are read here (a test that builds its own has none)
         self._ask: Optional[Ask] = ask if ask is not None else (None if build is not None else self._from_engine)
         self._pause = pause
+        # while an engine answers or is starting, a page saying where it is (panel.waiting); a given `ask` stands in
+        # for the engine entirely, so then only a given `waiting` is asked
+        if waiting is None and ask is None and build is None:
+            from . import panel as _panel
+            waiting = _panel.waiting
+        self._waiting = waiting
         self._progress = progress or self._read_progress
         self._cv = threading.Condition()
         self._want: Optional[Want] = None
@@ -335,6 +342,10 @@ class Tui:
             if not self._started:
                 self._started = True
                 panel.start_engine(self.root)
+            if self._waiting is not None:   # an engine answers or is starting: where it is, never a second read
+                page = self._waiting(self.root, width, view, part or None)
+                if page is not None:
+                    return page
         # as the pane does: a first read of a large repository spread over the looks, a few seconds each, the page
         # drawn from what is known so far
         return panel.build(self.root, width, view, part or None, zoom, take=False)

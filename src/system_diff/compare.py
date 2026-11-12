@@ -26,12 +26,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from . import config
+from . import config, gitfs
 from .diff import diff, numstat
 from . import extract as extraction
 from .extract import EXTRACT_VERSION, Code, extract
 from . import progress
-from .sources import GitSource, git, git_dir, run_hidden
+from .sources import GitSource, _trim, git, git_dir, run_hidden
 
 CHECKPOINT_REF = "refs/worktree/system-diff/checkpoint"   # before 0.7, one for every branch: still read, never written
 BRANCH_CHECKPOINTS = "refs/worktree/system-diff/checkpoints/"   # + the branch: what the person has seen on that branch
@@ -48,6 +48,10 @@ def _git_env(root: Path, env: Dict[str, str], *args: str) -> str:
 
 
 def _head(root: Path) -> Optional[str]:
+    try:
+        return gitfs.head(root)   # read in Python: no git process
+    except gitfs.Fallback:
+        pass
     try:
         return git("rev-parse", "--verify", "-q", "HEAD", cwd=root).strip() or None
     except subprocess.CalledProcessError:
@@ -74,6 +78,12 @@ def worktree_tree(root: Path) -> str:
 
 def snapshot(root: Path) -> str:
     """The working tree as a commit (parent HEAD), made without touching the index, HEAD or any branch."""
+    made = COMMIT.get(live_key(root))
+    if made is not None:   # the resident engine is in this process: it writes the commit from memory
+        try:
+            return made()
+        except Exception:  # noqa: BLE001 - snapshotted, then
+            pass
     tree = worktree_tree(root)
     head = _head(root)
     env = {**os.environ, **_IDENTITY}
@@ -82,6 +92,10 @@ def snapshot(root: Path) -> str:
 
 def _branch(root: Path) -> Optional[str]:
     """The branch checked out here, or None (a detached HEAD)."""
+    try:
+        return gitfs.branch(root)
+    except gitfs.Fallback:
+        pass
     try:
         return git("symbolic-ref", "-q", "--short", "HEAD", cwd=root).strip() or None
     except subprocess.CalledProcessError:
@@ -94,14 +108,37 @@ def checkpoint_ref(root: Path) -> str:
     return BRANCH_CHECKPOINTS + branch if branch else CHECKPOINT_REF
 
 
+def _store(root: Path, ref: str) -> str:
+    """Point one of system-diff's refs at the working tree as it is now. The resident engine holds the working tree:
+    in this process it writes the commit from memory; in another (a hook, the MCP server) it is asked to (POST /mark),
+    one git call in all. Else a snapshot, as before."""
+    if COMMIT.get(live_key(root)) is None:
+        try:
+            from . import live
+            sha = live.client_mark(root, ref)
+        except Exception:  # noqa: BLE001 - snapshotted here, then
+            sha = None
+        if sha:
+            return sha
+    sha = snapshot(root)
+    git("update-ref", ref, sha, cwd=root)
+    return sha
+
+
 def checkpoint(root: Path, ref: Optional[str] = None) -> str:
     """Mark `ref` (default: the working tree as it is now) as seen, on the branch checked out. Returns the commit."""
-    sha = git("rev-parse", "--verify", f"{ref}^{{commit}}", cwd=root).strip() if ref else snapshot(root)
+    if not ref:
+        return _store(root, checkpoint_ref(root))
+    sha = git("rev-parse", "--verify", f"{ref}^{{commit}}", cwd=root).strip()
     git("update-ref", checkpoint_ref(root), sha, cwd=root)
     return sha
 
 
 def _ref(root: Path, name: str) -> Optional[str]:
+    try:
+        return gitfs.rev(root, name)   # a ref, an id, HEAD~1…: read in Python
+    except (gitfs.Fallback, OSError, ValueError):
+        pass
     try:
         return git("rev-parse", "--verify", "-q", name, cwd=root).strip() or None
     except subprocess.CalledProcessError:
@@ -118,15 +155,35 @@ def checkpoint_point(root: Path) -> tuple:
     own = _ref(root, checkpoint_ref(root))
     if own:
         return own, "checkpoint"
-    try:
-        listed = git("for-each-ref", "--sort=-creatordate", "--format=%(objectname) %(refname)",
-                     BRANCH_CHECKPOINTS, CHECKPOINT_REF, OLD_CHECKPOINT_REF, cwd=root).split("\n")
-    except subprocess.CalledProcessError:
-        listed = []
     head = _head(root)
+    try:   # the other checkpoints, newest first, read in Python (git: for-each-ref --sort=-creatordate)
+        found: Dict[str, str] = {}
+        for prefix in (BRANCH_CHECKPOINTS, CHECKPOINT_REF, OLD_CHECKPOINT_REF):
+            found.update(gitfs.refs(root, prefix))
+        when = {name: (gitfs.commit(root, sha) or {}).get("time", 0) for name, sha in found.items()}
+        listed = [f"{found[n]} {n}" for n in sorted(found, key=lambda n: (-when[n], n))]
+    except (gitfs.Fallback, OSError, ValueError):
+        try:
+            listed = git("for-each-ref", "--sort=-creatordate", "--format=%(objectname) %(refname)",
+                         BRANCH_CHECKPOINTS, CHECKPOINT_REF, OLD_CHECKPOINT_REF, cwd=root).split("\n")
+        except subprocess.CalledProcessError:
+            listed = []
+    listed = [line for line in listed if line.strip()]
+    if not listed or not head:
+        return None, ""
+    key = (str(root), head, tuple(listed))
+    got = _POINTS.get(key)
+    if got is None:   # the same refs and the same HEAD: the same answer (the merge-bases are git's, asked once)
+        got = _POINTS[key] = _other_checkpoint(root, head, listed)
+        _trim(_POINTS, 32)
+    return got
+
+
+_POINTS: Dict[tuple, tuple] = {}
+
+
+def _other_checkpoint(root: Path, head: str, listed: List[str]) -> tuple:
     for line in listed:
-        if not line.strip() or not head:
-            continue
         sha, name = line.split(" ", 1)
         where = name.removeprefix(BRANCH_CHECKPOINTS) if name.startswith(BRANCH_CHECKPOINTS) else "another branch"
         # a checkpoint is a snapshot whose parent is the commit it was taken on: that commit is what a branch shares
@@ -150,10 +207,9 @@ def checkpoint_sha(root: Path) -> Optional[str]:
 
 
 def mark_turn(root: Path) -> str:
-    """Keep the working tree as it is now as the start of a turn: the agent's next changes are measured from here."""
-    sha = snapshot(root)
-    git("update-ref", TURN_REF, sha, cwd=root)
-    return sha
+    """Keep the working tree as it is now as the start of a turn: the agent's next changes are measured from here.
+    With the resident engine running, it makes the commit from memory (see _store)."""
+    return _store(root, TURN_REF)
 
 
 def turn_sha(root: Path) -> Optional[str]:
@@ -174,6 +230,12 @@ def resolve(root: Path, point: str) -> tuple:
         return sha, "the start of this turn"
     if point in WORKTREE:
         return snapshot(root), "working tree"
+    try:
+        sha = gitfs.rev(root, point)
+        if sha:
+            return sha, point
+    except (gitfs.Fallback, OSError, ValueError):
+        pass
     return git("rev-parse", "--verify", f"{point}^{{commit}}", cwd=root).strip(), point
 
 
@@ -192,8 +254,10 @@ class Live:
 
 
 # {repository root (resolved, case-folded where the file system is): a callable giving its Live, or None}: set by the
-# resident engine for the repositories it holds, in its own process only.
+# resident engine for the repositories it holds, in its own process only. COMMIT: the engine's way to make a commit of
+# the working tree from memory (a checkpoint, the start of a turn).
 LIVE: Dict[str, Any] = {}
+COMMIT: Dict[str, Any] = {}
 
 
 def live_key(root: Path) -> str:
@@ -342,14 +406,31 @@ def _compare(root: Path, base: str, a_sha: str, a_label: str, head: str, b_sha: 
         if point in ("checkpoint", "turn") or point in WORKTREE:
             side["ref"] = label  # a snapshot's commit id means nothing to a person
     d = diff(a, b, numstat(root, a_sha, b_sha, cfg), cfg.get("deploy", []), Code(cfg))
-    tip = ("HEAD" if _head(root) else "") if head in WORKTREE else b_sha
+    tip = _head(root) if head in WORKTREE else b_sha
     d["commits"] = ""
     if a_sha != b_sha and tip:   # no commit yet (a new repository): no commit messages either
-        try:
-            d["commits"] = git("log", "--format=%s%n%n%b", f"{a_sha}..{tip}", cwd=root)[:6000]
-        except subprocess.CalledProcessError:
-            pass
+        d["commits"] = commit_log(root, a_sha, tip)
     return Comparison(d, a, b, cfg, a_label, b_label, a_sha, b_sha)
+
+
+_LOGS: Dict[Tuple[str, str, str], str] = {}
+
+
+def commit_log(root: Path, a: str, b: str) -> str:
+    """The messages of the commits in a..b (`git log`), asked once per range: commits never change."""
+    if a == b:
+        return ""
+    key = (str(root), a, b)
+    got = _LOGS.get(key)
+    if got is None:
+        try:
+            got = git("log", "--format=%s%n%n%b", f"{a}..{b}", cwd=root)[:6000]
+        except subprocess.CalledProcessError:
+            got = ""
+        if gitfs.HEX.match(a) and gitfs.HEX.match(b):
+            _LOGS[key] = got
+            _trim(_LOGS, 64)
+    return got
 
 
 def compare(root: Path, base: str = "checkpoint", head: str = ".", config_path: Optional[str] = None) -> Comparison:

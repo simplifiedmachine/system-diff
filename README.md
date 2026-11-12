@@ -156,8 +156,9 @@ turns the learning off.
 ### How it stays fast
 
 One engine per repository (the web page's server, started by the first view that needs it) keeps the system in
-memory. Claude's edits reach it from the hooks as they happen, other edits through a cheap `git status`, and only the
-files that changed are read again: a page is about 0.1 s, an edit shows within a fraction of a second. Each file's
+memory. Claude's edits reach it from the hooks as they happen, other edits through a look at file times (in Python,
+no git), and only the files that changed are read again: a page is about 0.1 s, an edit shows within a second or two.
+It runs git a handful of times when it starts and not per look, which matters where starting a program is slow. Each file's
 reading is kept by its content, so every branch and worktree reuses it. Each branch keeps its own checkpoint (what
 you have seen there). `system-diff doctor` times a look on your machine and says what is slow.
 

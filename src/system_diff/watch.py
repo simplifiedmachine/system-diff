@@ -38,7 +38,7 @@ from . import activity, graph, learn, live, pictures
 from .compare import Comparison, checkpoint, checkpoint_sha, compare_worktree, turn_sha, worktree_tree
 from .diff import diff
 from .extract import Code
-from .sources import GitSource, git, git_dir
+from .sources import LIVE_SOURCES, GitSource, git, git_dir, is_live
 
 # The one web page: the pane's views (pane.web_view, GET /web) as cards, with the system diagram as inline SVG whose
 # parts light up on hover and zoom in on a click; refreshed every 3 s, re-rendering only what changed.
@@ -694,15 +694,21 @@ class Watcher:
 
     def key(self) -> tuple:
         e = self.engine
-        if e is not None:   # no snapshot: the engine's tree, and how far its reading got
+        if e is not None:   # no snapshot: the engine's files (by their identity), and how far its reading got
             e.ready.wait(live.FIRST_WAIT)
-            if e.tree:
-                return e.tree, checkpoint_sha(self.root), turn_sha(self.root), e.reads
+            held = e.held
+            if held is not None:
+                return held.sha, checkpoint_sha(self.root), turn_sha(self.root), e.reads
         return worktree_tree(self.root), checkpoint_sha(self.root), turn_sha(self.root)
 
     def _note_changed_files(self, tree: str) -> None:
         if self.tree and tree != self.tree:
-            names = git("diff-tree", "-r", "-z", "--name-only", "--no-renames", self.tree, tree, cwd=self.root)
+            if is_live(tree) or is_live(self.tree):   # the engine's: its files by blob id, compared here
+                a, b = LIVE_SOURCES.get(self.tree), LIVE_SOURCES.get(tree)
+                ba, bb = (getattr(a, "blobs", None) or {}), (getattr(b, "blobs", None) or {})
+                names = "\0".join(sorted(p for p in set(ba) | set(bb) if ba.get(p) != bb.get(p))) if a and b else ""
+            else:
+                names = git("diff-tree", "-r", "-z", "--name-only", "--no-renames", self.tree, tree, cwd=self.root)
             at = round(time.time(), 3)
             self.changed = (self.changed + [{"at": at, "event": activity.EDIT, "path": n, "source": "files"}
                                             for n in names.split("\0") if n])[-50:]
@@ -810,12 +816,9 @@ class Watcher:
 
     def mark_seen(self) -> None:
         with self.busy:
-            e = self.engine
-            if e is not None and e.commit:
-                e.sync()   # what is on disk this moment, then the engine's commit of it: no snapshot
-                checkpoint(self.root, e.commit)
-            else:
-                checkpoint(self.root)
+            # with the engine: what is on disk this moment, its commit written from memory (compare.snapshot asks
+            # the engine in this process), one git call for the ref
+            checkpoint(self.root)
         self.tick(force=True)  # the page's answer is the diff from the new checkpoint, never an older look
 
     def snapshot_state(self) -> Dict[str, Any]:
@@ -850,6 +853,14 @@ def handler(w: Watcher):
                 return self._page()
             if path == "/whoami":   # this is system-diff's server for the repository whose web.json names this id
                 return self._json(200, {"app": "system-diff", "id": w.ident, "pid": os.getpid()})
+            if path == "/progress":   # where the engine is, at once however busy it is (the pane shows it meanwhile)
+                if not self._authorized():
+                    return self._json(403, {"error": "forbidden"})
+                from . import __version__
+                e = w.engine
+                got = e.progress() if e is not None else {"stage": "No engine", "done": 0, "total": 0,
+                                                           "version": 0, "ready": False, "complete": False}
+                return self._json(200, {**got, "app_version": __version__})
             if self.path.startswith("/state"):
                 return self._send(200, json.dumps(w.snapshot_state()).encode(), "application/json")
             return self._send(404, b"not found", "text/plain")
@@ -1000,7 +1011,31 @@ def handler(w: Watcher):
                 w.engine.poke()   # the pane's long poll takes it now
             return self._json(200, {"id": line["id"], "queued": True})
 
+        def _post_mark(self):
+            """Point one of system-diff's refs ({"ref": "refs/worktree/system-diff/…"}: the turn, a checkpoint) at
+            the working tree as the engine holds it: the hooks' and the MCP server's way to mark, one git call. Token
+            only, never from a browser."""
+            if not live.token_ok(self.headers.get("X-Token"), w.token) or self.headers.get("Origin") is not None:
+                return self._json(403, {"error": "forbidden"})
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(max(0, min(n, SEND_BODY_MAX))).decode("utf-8") or "null")
+            except (ValueError, UnicodeDecodeError):
+                return self._json(400, {"error": "the body is JSON: {\"ref\": \"refs/worktree/system-diff/…\"}"})
+            ref = body.get("ref") if isinstance(body, dict) else None
+            if not isinstance(ref, str) or not ref.startswith("refs/worktree/system-diff/") or ".." in ref:
+                return self._json(400, {"error": "ref is one of system-diff's: refs/worktree/system-diff/…"})
+            if w.engine is None or not w.engine.ready.is_set():
+                return self._json(503, {"error": "the engine is not ready"})
+            try:
+                sha = w.engine.mark(ref)
+            except Exception as exc:  # noqa: BLE001 - the caller snapshots for itself
+                return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+            return self._json(200, {"sha": sha})
+
         def do_POST(self):
+            if urlsplit(self.path).path == "/mark":
+                return self._post_mark()
             if urlsplit(self.path).path == "/send":
                 return self._post_send()
             if urlsplit(self.path).path == "/touch":
@@ -1021,14 +1056,53 @@ PANE_LOCK = threading.Lock()
 
 def _build(w: "Watcher", key: tuple) -> Dict[str, Any]:
     """Draw one page: ("pane", view, width, zoom, part) is pane.show's (without the outbox), ("web", view, zoom,
-    part) pane.web_view's. In this process compare() takes the working tree from the engine."""
-    from . import pane   # here: pane may ask this module where the page is
+    part) pane.web_view's. In this process compare() takes the working tree from the engine; while its first read is
+    under way, from what it has read so far, and the page says so."""
+    from . import pane, panel   # here: pane may ask this module where the page is
+    e = w.engine
+    held = e.held if e is not None else None
+    part_read = (held.blueprint.get("partial") if held is not None else None) or None
     with PANE_LOCK:  # the pane's views set its module's zoom: one view at a time
         if key[0] == "pane":
             _k, view, width, zoom, part = key
-            return pane.show(w.root, width, view, part or None, zoom, take=False)
+            page = pane.show(w.root, width, view, part or None, zoom, take=False)
+            panel.still_reading(page, part_read)
+            return page
         _k, view, zoom, part = key
-        return pane.web_view(w.root, view, part, zoom)
+        page = pane.web_view(w.root, view, part, zoom)
+        if part_read:
+            note = (f"Still reading the code: {int(part_read.get('done') or 0):,} of "
+                    f"{int(part_read.get('total') or 0):,} files so far — the diagram fills in as it goes")
+            page["sections"] = [{"title": "Reading the system", "aside": "", "kind": "lines",
+                                 "items": [{"text": note, "style": "attention"}]}] + list(page.get("sections") or [])
+            page["reading"] = dict(part_read)
+        return page
+
+
+def reading_page(w: "Watcher", key: tuple) -> Dict[str, Any]:
+    """The page while the engine starts (before its first blueprint): where it is, never a wait. The pane's rows or
+    the web page's sections, by the key's kind."""
+    e = w.engine
+    got = e.progress() if e is not None else {"stage": "Starting", "done": 0, "total": 0, "seconds": 0}
+    line = progress_line(got)
+    rows = [[["◐ Reading the system… " + line, "attention"]],
+            [["  The first look at a repository reads every file once; this page updates by itself.", "muted"]]]
+    if key[0] == "pane":
+        _k, view, width, zoom, part = key
+        return {"protocol": 2, "view": view, "part": part or "", "width": width,
+                "wide": max(width, max(sum(len(r[0]) for r in row) for row in rows)), "rows": rows, "blocks": [],
+                "lights": {}, "details": {}, "pick": "", "zoom": max(zoom, 0), "web": None, "send": [],
+                "reading": {"done": got.get("done") or 0, "total": got.get("total") or 0, "stage": got.get("stage")}}
+    _k, view, zoom, part = key
+    return {"view": view, "part": part or "", "title": "Reading the system", "headline": "Reading the system… " + line,
+            "status": None, "diagram": {}, "sections": [{"title": "Reading the system", "aside": "", "kind": "lines",
+                                                         "items": [{"text": r[0][0].strip(), "style": r[0][1]}
+                                                                   for r in rows]}],
+            "hover": {}, "web": None, "send": [], "reading": got}
+
+
+def progress_line(got: Dict[str, Any]) -> str:
+    return live.progress_text(got)
 
 
 def _page_of(w: "Watcher", key: tuple) -> tuple:
@@ -1322,7 +1396,8 @@ def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: O
     if config_path is None:   # the engine reads the repository's own config, as the views do
         try:
             w.engine = live.Engine(root, interval=min(interval, live.INTERVAL)).start()
-            w.pages = live.Pages(w.engine, lambda key: _build(w, key)).start()
+            w.pages = live.Pages(w.engine, lambda key: _build(w, key),
+                                 placeholder=lambda key: reading_page(w, key)).start()
         except Exception:  # noqa: BLE001 - no engine: every look reads for itself, as before
             w.engine, w.pages = None, None
     thread = threading.Thread(target=w.loop, daemon=True)

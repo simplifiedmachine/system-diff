@@ -29,6 +29,8 @@ export type Page = {
   web?: string // the address of the same views in a browser, when that page runs
   send?: { id: string; text: string }[] // typed in the web page's Send to Claude box, for the session
   version?: number // the engine's model version it was drawn from; absent when read without the engine
+  // while the system is still being read: how far; with `stage`, nothing is drawn yet (the engine is starting)
+  reading?: { done: number; total: number; stage?: string }
 }
 
 declare module 'claude-code' {

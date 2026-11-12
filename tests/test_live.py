@@ -48,11 +48,12 @@ def test_the_engine_compares_as_a_snapshot_does(repo, engine):
     assert held is not None and held.known is None and "ignored.log" not in held.source.files
     for base in ("checkpoint", "HEAD~1"):
         mine, theirs = compare.compare(repo, base, "."), _fresh(repo, base)
-        assert mine.head_sha == engine.commit and mine.after == theirs.after and mine.before == theirs.before
+        assert mine.head_sha == held.sha and mine.after == theirs.after and mine.before == theirs.before
         assert mine.diff == theirs.diff
     assert "GET /ready" in mine.diff["plan"]
-    # the same tree as git add -A would make
+    # the commit it makes when one is needed (a checkpoint): the same tree as git add -A would make
     assert git_(repo, "rev-parse", f"{engine.commit}^{{tree}}").strip() == compare.worktree_tree(repo)
+    assert git_(repo, "rev-parse", f"{engine.commit}^").strip() == git_(repo, "rev-parse", "HEAD").strip()
 
 
 def test_touch_reads_only_the_files_that_changed(repo, engine, monkeypatch):

@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.7.0' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.7.1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -211,7 +211,8 @@ async function apply($: EngineInterface, out: string, data: Page, key: string): 
   if (out !== last) {
     last = out
     await update($, page, () => data)
-    void keep($, out)
+    // a page that only says the engine is starting is not one to open on next time: the last real page is
+    if (!data.reading?.stage) void keep($, out)
   }
   return true
 }

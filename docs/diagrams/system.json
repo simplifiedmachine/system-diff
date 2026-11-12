@@ -17,7 +17,7 @@
    "label": "Agent activity",
    "layer": "",
    "kind": "data",
-   "order": 28,
+   "order": 29,
    "container": "",
    "declared": true,
    "files": 1,
@@ -41,7 +41,7 @@
    "label": "Agent team",
    "layer": "",
    "kind": "logic",
-   "order": 16,
+   "order": 17,
    "container": "",
    "declared": true,
    "files": 1,
@@ -53,7 +53,7 @@
    "label": "System diagram",
    "layer": "",
    "kind": "logic",
-   "order": 15,
+   "order": 16,
    "container": "",
    "declared": true,
    "files": 2,
@@ -65,7 +65,7 @@
    "label": "Pane pictures",
    "layer": "",
    "kind": "logic",
-   "order": 20,
+   "order": 21,
    "container": "",
    "declared": true,
    "files": 1,
@@ -77,11 +77,11 @@
    "label": "Checkpoints and snapshots",
    "layer": "",
    "kind": "logic",
-   "order": 9,
+   "order": 10,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 373,
+   "lines": 454,
    "hub": false,
    "quiet": false
   },
@@ -89,7 +89,7 @@
    "label": "Config",
    "layer": "",
    "kind": "logic",
-   "order": 10,
+   "order": 11,
    "container": "",
    "declared": true,
    "files": 1,
@@ -101,7 +101,7 @@
    "label": "Design notes",
    "layer": "",
    "kind": "logic",
-   "order": 17,
+   "order": 18,
    "container": "",
    "declared": true,
    "files": 1,
@@ -113,11 +113,11 @@
    "label": "Typed diff",
    "layer": "",
    "kind": "logic",
-   "order": 12,
+   "order": 13,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 186,
+   "lines": 258,
    "hub": false,
    "quiet": false
   },
@@ -125,11 +125,11 @@
    "label": "Doctor",
    "layer": "",
    "kind": "interface",
-   "order": 7,
+   "order": 8,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 127,
+   "lines": 195,
    "hub": false,
    "quiet": false
   },
@@ -137,7 +137,7 @@
    "label": "Extraction",
    "layer": "",
    "kind": "logic",
-   "order": 11,
+   "order": 12,
    "container": "",
    "declared": true,
    "files": 1,
@@ -145,11 +145,23 @@
    "hub": false,
    "quiet": false
   },
+  "gitfs": {
+   "label": "Git, read directly",
+   "layer": "",
+   "kind": "data",
+   "order": 5,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 622,
+   "hub": false,
+   "quiet": false
+  },
   "graph": {
    "label": "Map layout",
    "layer": "",
    "kind": "logic",
-   "order": 13,
+   "order": 14,
    "container": "",
    "declared": true,
    "files": 1,
@@ -161,7 +173,7 @@
    "label": "Worth a look",
    "layer": "",
    "kind": "logic",
-   "order": 18,
+   "order": 19,
    "container": "",
    "declared": true,
    "files": 1,
@@ -173,7 +185,7 @@
    "label": "Lessons and topics",
    "layer": "",
    "kind": "logic",
-   "order": 24,
+   "order": 25,
    "container": "",
    "declared": true,
    "files": 3,
@@ -189,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 765,
+   "lines": 1216,
    "hub": false,
    "quiet": false
   },
@@ -209,7 +221,7 @@
    "label": "LLM summary",
    "layer": "",
    "kind": "logic",
-   "order": 22,
+   "order": 23,
    "container": "",
    "declared": true,
    "files": 1,
@@ -221,7 +233,7 @@
    "label": "Objectives",
    "layer": "",
    "kind": "logic",
-   "order": 19,
+   "order": 20,
    "container": "",
    "declared": true,
    "files": 1,
@@ -233,11 +245,11 @@
    "label": "Pane beside the chat",
    "layer": "",
    "kind": "interface",
-   "order": 5,
+   "order": 6,
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2003,
+   "lines": 2046,
    "hub": false,
    "quiet": false
   },
@@ -245,7 +257,7 @@
    "label": "SVG pictures",
    "layer": "",
    "kind": "logic",
-   "order": 14,
+   "order": 15,
    "container": "",
    "declared": true,
    "files": 1,
@@ -257,7 +269,7 @@
    "label": "PNG rendering",
    "layer": "",
    "kind": "logic",
-   "order": 26,
+   "order": 27,
    "container": "",
    "declared": true,
    "files": 1,
@@ -269,11 +281,11 @@
    "label": "src/system_diff",
    "layer": "undeclared",
    "kind": "",
-   "order": 29,
+   "order": 30,
    "container": "",
    "declared": false,
    "files": 1,
-   "lines": 74,
+   "lines": 84,
    "hub": false,
    "quiet": false
   },
@@ -281,7 +293,7 @@
    "label": "README section",
    "layer": "",
    "kind": "logic",
-   "order": 21,
+   "order": 22,
    "container": "",
    "declared": true,
    "files": 1,
@@ -293,7 +305,7 @@
    "label": "LLM regrouping",
    "layer": "",
    "kind": "logic",
-   "order": 23,
+   "order": 24,
    "container": "",
    "declared": true,
    "files": 1,
@@ -305,11 +317,11 @@
    "label": "Git and folder sources",
    "layer": "",
    "kind": "data",
-   "order": 27,
+   "order": 28,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 105,
+   "lines": 204,
    "hub": false,
    "quiet": false
   },
@@ -317,11 +329,11 @@
    "label": "Status line",
    "layer": "",
    "kind": "interface",
-   "order": 8,
+   "order": 9,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 94,
+   "lines": 96,
    "hub": false,
    "quiet": false
   },
@@ -329,7 +341,7 @@
    "label": "Terminal pictures",
    "layer": "",
    "kind": "logic",
-   "order": 25,
+   "order": 26,
    "container": "",
    "declared": true,
    "files": 1,
@@ -341,11 +353,11 @@
    "label": "Terminal view",
    "layer": "",
    "kind": "interface",
-   "order": 6,
+   "order": 7,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 768,
+   "lines": 779,
    "hub": false,
    "quiet": false
   },
@@ -357,7 +369,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1345,
+   "lines": 1420,
    "hub": false,
    "quiet": false
   }
@@ -416,22 +428,26 @@
   "compare>config": 1,
   "compare>diff": 1,
   "compare>extract": 2,
+  "compare>gitfs": 1,
+  "compare>live": 1,
   "compare>sources": 1,
   "compare>src/system_diff": 1,
   "design>graph": 1,
   "diff>extract": 1,
-  "diff>sources": 1,
+  "diff>sources": 2,
   "doctor>activity": 1,
   "doctor>cli": 1,
   "doctor>compare": 1,
   "doctor>extract": 1,
+  "doctor>live": 1,
   "doctor>panel": 1,
-  "doctor>sources": 2,
+  "doctor>sources": 3,
   "doctor>src/system_diff": 1,
   "doctor>watch": 1,
   "extract>config": 1,
   "extract>sources": 1,
   "extract>src/system_diff": 1,
+  "gitfs>sources": 2,
   "graph>diff": 1,
   "graph>pictures": 1,
   "human>activity": 1,
@@ -447,8 +463,9 @@
   "live>compare": 5,
   "live>config": 1,
   "live>extract": 1,
+  "live>gitfs": 7,
   "live>learn": 1,
-  "live>sources": 6,
+  "live>sources": 5,
   "mcp>activity": 1,
   "mcp>agents": 1,
   "mcp>compare": 1,
@@ -474,10 +491,11 @@
   "panel>config": 4,
   "panel>design": 1,
   "panel>extract": 4,
+  "panel>gitfs": 1,
   "panel>graph": 3,
   "panel>human": 1,
   "panel>learn": 5,
-  "panel>live": 1,
+  "panel>live": 2,
   "panel>objectives": 1,
   "panel>pictures": 1,
   "panel>regroup": 1,
@@ -493,26 +511,30 @@
   "regroup>graph": 1,
   "regroup>narrate": 1,
   "regroup>sources": 1,
-  "src/system_diff>sources": 2,
+  "sources>gitfs": 3,
+  "src/system_diff>gitfs": 1,
+  "src/system_diff>live": 1,
+  "src/system_diff>sources": 1,
   "statusline>activity": 1,
   "statusline>config": 1,
   "statusline>extract": 1,
+  "statusline>gitfs": 1,
   "statusline>sources": 1,
   "statusline>textmap": 1,
   "textmap>pictures": 1,
   "tui>cli": 1,
   "tui>learn": 1,
-  "tui>panel": 2,
+  "tui>panel": 3,
   "tui>src/system_diff": 1,
   "watch>activity": 1,
-  "watch>cli": 2,
+  "watch>cli": 3,
   "watch>compare": 1,
   "watch>diff": 1,
   "watch>extract": 1,
   "watch>graph": 1,
   "watch>learn": 1,
   "watch>live": 1,
-  "watch>panel": 2,
+  "watch>panel": 3,
   "watch>pictures": 1,
   "watch>sources": 1
  },
@@ -737,8 +759,21 @@
    "extract",
    "read_blueprint"
   ],
+  "compare>gitfs": [
+   "Fallback",
+   "HEX",
+   "rev",
+   "branch",
+   "commit",
+   "head"
+  ],
+  "compare>live": [
+   "Engine",
+   "client_mark"
+  ],
   "compare>sources": [
    "GitSource",
+   "_trim",
    "git",
    "git_dir",
    "run_hidden"
@@ -755,7 +790,10 @@
    "matches"
   ],
   "diff>sources": [
-   "git"
+   "GitSource",
+   "_trim",
+   "git",
+   "is_live"
   ],
   "doctor>activity": [
    "events"
@@ -769,10 +807,18 @@
   "doctor>extract": [
    "COLD_BUDGET"
   ],
+  "doctor>live": [
+   "client_progress",
+   "client_page",
+   "engine_info",
+   "progress_text",
+   "starting"
+  ],
   "doctor>panel": [
    "main"
   ],
   "doctor>sources": [
+   "SPAWNS",
    "git_dir",
    "run_hidden"
   ],
@@ -791,6 +837,10 @@
   "extract>src/system_diff": [
    "stage",
    "_stage"
+  ],
+  "gitfs>sources": [
+   "SPAWNS",
+   "run_hidden"
   ],
   "graph>diff": [
    "files_word"
@@ -844,12 +894,12 @@
    "__version__"
   ],
   "live>compare": [
+   "COMMIT",
    "LIVE",
    "Live",
    "live_key",
    "_blueprint",
-   "checkpoint_sha",
-   "turn_sha"
+   "checkpoint_sha"
   ],
   "live>config": [
    "load"
@@ -858,13 +908,24 @@
    "FactStore",
    "read_blueprint"
   ],
+  "live>gitfs": [
+   "Fallback",
+   "locate",
+   "IndexEntry",
+   "has_loose",
+   "read_index",
+   "read_object"
+  ],
   "live>learn": [
    "path"
   ],
   "live>sources": [
-   "run_hidden",
    "GitSource",
-   "git_dir"
+   "LIVE_PREFIX",
+   "LIVE_SOURCES",
+   "SPAWNS",
+   "git_dir",
+   "run_hidden"
   ],
   "mcp>activity": [
    "events",
@@ -999,6 +1060,11 @@
    "Code",
    "COLD_BUDGET"
   ],
+  "panel>gitfs": [
+   "Fallback",
+   "commit",
+   "head"
+  ],
   "panel>graph": [
    "change_marks",
    "neighbourhood",
@@ -1022,7 +1088,9 @@
    "ROLE_OF"
   ],
   "panel>live": [
-   "live"
+   "client_progress",
+   "progress_text",
+   "starting"
   ],
   "panel>objectives": [
    "current",
@@ -1083,9 +1151,23 @@
    "git",
    "git_dir"
   ],
-  "src/system_diff>sources": [
+  "sources>gitfs": [
+   "Fallback",
+   "HEX",
+   "CatFile",
+   "catfile",
    "git_dir",
-   "run_hidden"
+   "locate"
+  ],
+  "src/system_diff>gitfs": [
+   "locate"
+  ],
+  "src/system_diff>live": [
+   "client_progress",
+   "progress_text"
+  ],
+  "src/system_diff>sources": [
+   "git_dir"
   ],
   "statusline>activity": [
    "now",
@@ -1099,6 +1181,9 @@
   ],
   "statusline>extract": [
    "Code"
+  ],
+  "statusline>gitfs": [
+   "locate"
   ],
   "statusline>sources": [
    "git"
@@ -1120,6 +1205,7 @@
    "toggle"
   ],
   "tui>panel": [
+   "waiting",
    "build",
    "from_engine",
    "start_engine"
@@ -1163,8 +1249,8 @@
    "one_line"
   ],
   "watch>live": [
-   "Engine",
    "token_ok",
+   "Engine",
    "Pages",
    "FIRST_WAIT",
    "INTERVAL",
@@ -1173,15 +1259,18 @@
   "watch>panel": [
    "show",
    "web_view",
-   "take_outbox"
+   "take_outbox",
+   "still_reading"
   ],
   "watch>pictures": [
    "map_svg"
   ],
   "watch>sources": [
    "GitSource",
+   "LIVE_SOURCES",
    "git",
-   "git_dir"
+   "git_dir",
+   "is_live"
   ]
  },
  "routes": {},
@@ -1201,6 +1290,9 @@
    "NO_COLOR"
   ],
   "learn": [
+   "XDG_CONFIG_HOME"
+  ],
+  "live": [
    "XDG_CONFIG_HOME"
   ],
   "objectives": [
@@ -1297,6 +1389,7 @@
   },
   "diff": {
    "collections": 1,
+   "difflib": 1,
    "pathlib": 1,
    "re": 1,
    "typing": 1
@@ -1327,6 +1420,19 @@
    "time": 1,
    "typing": 1
   },
+  "gitfs": {
+   "atexit": 1,
+   "hashlib": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "struct": 1,
+   "subprocess": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1,
+   "zlib": 1
+  },
   "graph": {
    "collections": 1,
    "typing": 1
@@ -1352,7 +1458,9 @@
    "json": 1,
    "os": 1,
    "pathlib": 1,
+   "re": 1,
    "stat": 1,
+   "struct": 1,
    "threading": 1,
    "time": 1,
    "typing": 1,
@@ -1443,7 +1551,6 @@
    "json": 1,
    "os": 1,
    "pathlib": 1,
-   "subprocess": 1,
    "time": 1,
    "typing": 1
   },
@@ -1573,6 +1680,7 @@
   },
   "diff": {
    "collections": 1,
+   "difflib": 1,
    "pathlib": 1,
    "re": 1,
    "typing": 1
@@ -1603,6 +1711,19 @@
    "time": 1,
    "typing": 1
   },
+  "gitfs": {
+   "atexit": 1,
+   "hashlib": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "struct": 1,
+   "subprocess": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1,
+   "zlib": 1
+  },
   "graph": {
    "collections": 1,
    "typing": 1
@@ -1628,7 +1749,9 @@
    "json": 1,
    "os": 1,
    "pathlib": 1,
+   "re": 1,
    "stat": 1,
+   "struct": 1,
    "threading": 1,
    "time": 1,
    "typing": 1,
@@ -1722,7 +1845,6 @@
    "json": 1,
    "os": 1,
    "pathlib": 1,
-   "subprocess": 1,
    "time": 1,
    "typing": 1
   },
@@ -1788,6 +1910,7 @@
   "tests/test_clients.py": 1,
   "tests/test_design_and_pane.py": 1,
   "tests/test_doctor.py": 1,
+  "tests/test_git_calls.py": 1,
   "tests/test_human.py": 1,
   "tests/test_incremental.py": 1,
   "tests/test_live.py": 1,

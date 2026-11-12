@@ -4,10 +4,10 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .extract import Code, matches
-from .sources import git
+from .sources import _trim, git
 
 IMPACT_WORDS = {
     "new-component": "adds a part", "removed-component": "removes a part",
@@ -28,20 +28,92 @@ def is_test_path(path: str, code: Optional[Code] = None) -> bool:
     return path.startswith("tests/") or ".test." in path or bool(code and code.is_test(path))
 
 
+_NUMSTATS: Dict[tuple, Dict[str, Tuple[int, int]]] = {}
+_PAIRS: Dict[Tuple[str, str], Tuple[int, int]] = {}
+
+
 def numstat(root: Path, base: str, head: Optional[str], cfg: Dict[str, Any]) -> Dict[str, tuple]:
     """{path: (lines added, lines removed, owning part or None)} for every file the change touched; `head` None is
-    the working tree."""
+    the working tree. Two commits: `git diff --numstat -M`, asked once per pair (commits never change). The resident
+    engine's working tree (a "live:" id): counted in Python from the files whose blob differs (line_counts)."""
+    from .sources import GitSource, is_live
     code = Code(cfg)
+    if is_live(base) or is_live(head):
+        counts = line_counts(GitSource(base, root), GitSource(head, root))
+    else:
+        key = (str(root), base, head)
+        counts = _NUMSTATS.get(key) if head else None
+        if counts is None:
+            counts = {}
+            for line in git("diff", "--numstat", "-M", base, *([head] if head else []), cwd=root).splitlines():
+                parts = line.split("\t")
+                if len(parts) != 3:
+                    continue
+                plus, minus, path = parts
+                path = re.sub(r"\{([^}]*) => ([^}]*)\}", r"\2", path).split(" => ")[-1]
+                counts[path] = (int(plus) if plus.isdigit() else 0, int(minus) if minus.isdigit() else 0)
+            if head:
+                _NUMSTATS[key] = counts
+                _trim(_NUMSTATS, 64)
     out = {}
-    for line in git("diff", "--numstat", "-M", base, *([head] if head else []), cwd=root).splitlines():
-        parts = line.split("\t")
-        if len(parts) != 3:
-            continue
-        plus, minus, path = parts
-        path = re.sub(r"\{([^}]*) => ([^}]*)\}", r"\2", path).split(" => ")[-1]
+    for path, (plus, minus) in counts.items():
         comp = code.part_of(path) if code.is_code(path) and not is_test_path(path, code) else None
-        out[path] = (int(plus) if plus.isdigit() else 0, int(minus) if minus.isdigit() else 0, comp)
+        out[path] = (plus, minus, comp)
     return out
+
+
+BIG = 20000   # lines: a file longer than this is counted roughly (a multiset of lines), not diffed
+
+
+def line_counts(a, b) -> Dict[str, Tuple[int, int]]:
+    """{path: (added, removed)} between two sources (files, blobs, read_many), as `git diff --numstat -M` says it for
+    the usual change: only the files whose blob differs are read; a file moved unchanged counts as renamed (0, 0) under
+    its new path; a binary file as (0, 0). Counts per pair of blobs are kept, so an edit counts only its own file."""
+    ba, bb = a.blobs, b.blobs
+    changed = [p for p in set(ba) | set(bb) if ba.get(p) != bb.get(p)]
+    added = [p for p in changed if p not in ba]
+    gone = {ba[p]: p for p in changed if p not in bb}
+    out: Dict[str, Tuple[int, int]] = {}
+    for p in added:
+        old = gone.pop(bb[p], None)
+        if old is not None:
+            out[p] = (0, 0)   # renamed, unchanged
+    gone_paths = set(gone.values())
+    todo = [p for p in changed if p not in out and (p in bb or p in gone_paths)]
+    unknown = [p for p in todo if (ba.get(p, ""), bb.get(p, "")) not in _PAIRS]
+    ta = a.read_many([p for p in unknown if p in ba]) if unknown else {}
+    tb = b.read_many([p for p in unknown if p in bb]) if unknown else {}
+    for p in todo:
+        key = (ba.get(p, ""), bb.get(p, ""))
+        got = _PAIRS.get(key)
+        if got is None:
+            got = _PAIRS[key] = _count(ta.get(p), tb.get(p))
+            _trim(_PAIRS, 20000)
+        out[p] = got
+    return out
+
+
+def _count(x: Optional[str], y: Optional[str]) -> Tuple[int, int]:
+    x, y = x or "", y or ""
+    if "\0" in x[:8000] or "\0" in y[:8000]:
+        return (0, 0)   # binary: git says "-"
+    xs, ys = x.splitlines(keepends=True), y.splitlines(keepends=True)
+    i = 0   # what is the same at both ends needs no diff
+    while i < len(xs) and i < len(ys) and xs[i] == ys[i]:
+        i += 1
+    j = 0
+    while j < len(xs) - i and j < len(ys) - i and xs[-1 - j] == ys[-1 - j]:
+        j += 1
+    xs, ys = xs[i:len(xs) - j], ys[i:len(ys) - j]
+    if not xs or not ys:
+        return (len(ys), len(xs))
+    if len(xs) + len(ys) > BIG:
+        from collections import Counter as _C
+        cx, cy = _C(xs), _C(ys)
+        return (sum((cy - cx).values()), sum((cx - cy).values()))
+    import difflib
+    same = sum(m.size for m in difflib.SequenceMatcher(None, xs, ys, autojunk=False).get_matching_blocks())
+    return (len(ys) - same, len(xs) - same)
 
 
 def diff(a: dict, b: dict, numstat: Optional[Dict[str, tuple]] = None, deploy_globs: Iterable[str] = (),

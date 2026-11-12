@@ -577,13 +577,28 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
     return page.json(view="now", part=part or "")
 
 
+def _last_commit(root: Path) -> str:
+    """"<short id> <subject>" of HEAD, when it has a parent (else raises): read in Python (gitfs), else git."""
+    from . import gitfs
+    try:
+        head = gitfs.head(root)
+        info = gitfs.commit(root, head) if head else None
+        if info is not None:
+            if not info["parents"]:
+                raise ValueError("a first commit")
+            return f"{head[:7]} {info['message'].splitlines()[0] if info['message'] else ''}".strip()
+    except gitfs.Fallback:
+        pass
+    git("rev-parse", "--verify", "HEAD~1^{commit}", cwd=root)
+    return git("log", "-1", "--format=%h %s", cwd=root).strip()
+
+
 def _review_base(root: Path) -> Tuple[str, str]:
     """What Review compares against, and how to say it: the checkpoint; before one, the commit before the last."""
     base, since = "checkpoint", "since your checkpoint"
     if not checkpoint_sha(root):   # nothing marked as seen yet: what the last commit did, and what is not committed
         try:
-            git("rev-parse", "--verify", "HEAD~1^{commit}", cwd=root)
-            last = git("log", "-1", "--format=%h %s", cwd=root).strip()
+            last = _last_commit(root)
             base, since = "HEAD~1", f"since before the last commit ({canvas.cut(last, 50)})"
         except Exception:   # a first commit: from there
             since = "since the last commit"

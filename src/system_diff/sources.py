@@ -5,14 +5,22 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
+
+
+# git processes started by this process (run_hidden and the cat-file process): the doctor and the engine's /progress
+# say how many, as starting one can take seconds on some machines.
+SPAWNS = {"git": 0}
 
 
 def run_hidden(*args, **kw):
     """subprocess.run, with no console window on Windows. A process without a visible console (the web page's server,
     a background job, a pane run by Claude Code) would otherwise open a new window for each git it runs: a flood of
     windows taking the focus, and slow."""
+    argv = args[0] if args else kw.get("args")
+    if isinstance(argv, (list, tuple)) and argv and argv[0] == "git":
+        SPAWNS["git"] += 1
     if os.name == "nt":
         kw["creationflags"] = kw.get("creationflags", 0) | 0x08000000   # CREATE_NO_WINDOW
     return subprocess.run(*args, **kw)
@@ -32,55 +40,146 @@ def repo_root(start: Optional[Path] = None) -> Path:
         return here
 
 
+_MADE: set = set()
+
+
 def git_dir(root: Path, *parts: str) -> Path:
     """A folder under the repository's own git dir (a linked worktree's own, so each worktree keeps its own), made if
-    missing: system-diff keeps what it writes there, where it is never committed."""
-    out = Path(git("rev-parse", "--absolute-git-dir", cwd=root).strip()).joinpath("system-diff", *parts)
-    out.mkdir(parents=True, exist_ok=True)
+    missing: system-diff keeps what it writes there, where it is never committed. Found without running git
+    (gitfs.locate), so asking at every look costs nothing."""
+    from . import gitfs
+    try:
+        base = gitfs.git_dir(root)
+    except gitfs.Fallback:
+        base = Path(git("rev-parse", "--absolute-git-dir", cwd=root).strip())
+    out = base.joinpath("system-diff", *parts)
+    key = str(out)
+    if key not in _MADE or not out.is_dir():
+        out.mkdir(parents=True, exist_ok=True)
+        _MADE.add(key)
     return out
 
 
-class GitSource:
-    """The files of a commit."""
+# The working tree as the resident engine holds it has no commit: its comparisons name it by a made-up id ("live:" and
+# a hash of its files), and GitSource(that id) is the engine's own source of it, from memory. The last few, by id.
+LIVE_PREFIX = "live:"
+LIVE_SOURCES: Dict[str, object] = {}
 
-    def __init__(self, ref: str, root: Path):
-        self.root, self.ref = Path(root), ref
-        self.label = git("rev-parse", "--short", ref, cwd=self.root).strip()
-        # each file's blob id too: a content address, so what was read from a file once (extract's per-file facts)
-        # is known again wherever and whenever the same content turns up
-        self.files: List[str] = []
-        self.blobs: Dict[str, str] = {}
-        for entry in git("ls-tree", "-r", "-z", ref, cwd=self.root).split("\0"):
+# What a commit holds never changes: its files and blob ids are listed once per process.
+_LISTINGS: Dict[Tuple[str, str], Tuple[str, List[str], Dict[str, str]]] = {}
+
+
+def _trim(cache: dict, most: int) -> None:
+    """Drop the oldest entries of a process-wide cache past `most` (another thread may be at it too: never raises)."""
+    try:
+        while len(cache) > most:
+            cache.pop(next(iter(cache)), None)
+    except (RuntimeError, StopIteration):
+        pass
+
+
+def is_live(ref: Optional[str]) -> bool:
+    return bool(ref) and str(ref).startswith(LIVE_PREFIX)
+
+
+def _listing(ref: str, root: Path) -> Tuple[str, List[str], Dict[str, str]]:
+    """(label, files, blobs) of a commit: read through gitfs (loose objects, the one cat-file process) when it can,
+    else `git rev-parse --short` and `git ls-tree -r`."""
+    from . import gitfs
+    key = (str(root), ref)
+    got = _LISTINGS.get(key)
+    if got is not None:
+        return got
+    sha = None
+    try:
+        sha = gitfs.rev(root, ref)
+        if sha is None:
+            raise gitfs.Fallback(ref)
+        files: List[str] = []
+        blobs: Dict[str, str] = {}
+        for mode, kind, oid, path in gitfs.ls_tree(root, sha):
+            files.append(path)
+            if kind == "blob":
+                blobs[path] = oid
+        label = sha[:7]
+    except (gitfs.Fallback, OSError, ValueError):
+        label = git("rev-parse", "--short", ref, cwd=root).strip()
+        files, blobs = [], {}
+        for entry in git("ls-tree", "-r", "-z", ref, cwd=root).split("\0"):
             head, tab, path = entry.partition("\t")
             if not tab:
                 continue
-            self.files.append(path)
+            files.append(path)
             mode_type_id = head.split()
             if len(mode_type_id) == 3 and mode_type_id[1] == "blob":
-                self.blobs[path] = mode_type_id[2]
+                blobs[path] = mode_type_id[2]
+    got = (label, files, blobs)
+    if sha is not None and gitfs.HEX.match(ref):   # a name (HEAD, a branch) can move: only an id is kept
+        _trim(_LISTINGS, 32)
+        _LISTINGS[key] = got
+    return got
+
+
+class GitSource:
+    """The files of a commit (or, for a "live:" id, the resident engine's working tree: see LIVE_SOURCES)."""
+
+    def __new__(cls, ref: str, root: Path):
+        if is_live(ref):
+            held = LIVE_SOURCES.get(ref)
+            if held is None:
+                raise ValueError(f"{ref} is no longer held by the engine")
+            return held
+        return super().__new__(cls)
+
+    def __init__(self, ref: str, root: Path):
+        self.root, self.ref = Path(root), ref
+        # each file's blob id too: a content address, so what was read from a file once (extract's per-file facts)
+        # is known again wherever and whenever the same content turns up
+        label, files, blobs = _listing(ref, self.root)
+        self.label, self.files, self.blobs = label, list(files), dict(blobs)
         self._cache: Dict[str, str] = {}
 
     def read_many(self, paths: Iterable[str]) -> Dict[str, str]:
         paths = list(paths)
         want = [p for p in paths if p not in self._cache]
         if want:
-            out = run_hidden(["git", "cat-file", "--batch"], cwd=self.root, check=True, capture_output=True,
-                                 input="".join(f"{self.ref}:{p}\n" for p in want).encode()).stdout
-            i = 0
+            got = read_blobs(self.root, {p: self.blobs.get(p) or f"{self.ref}:{p}" for p in want})
             for p in want:
-                header_end = out.index(b"\n", i)
-                parts = out[i:header_end].split()
-                i = header_end + 1
-                if len(parts) < 3 or parts[1] == b"missing":
-                    self._cache[p] = ""
-                    continue
-                size = int(parts[2])
-                self._cache[p] = out[i:i + size].decode("utf-8", errors="replace")
-                i += size + 1
+                data = got.get(p)
+                self._cache[p] = data.decode("utf-8", errors="replace") if data is not None else ""
         return {p: self._cache.get(p, "") for p in paths}
 
     def read(self, path: str) -> str:
         return self.read_many([path])[path]
+
+
+def read_blobs(root: Path, names: Dict[str, str]) -> Dict[str, Optional[bytes]]:
+    """{key: content} of objects by name (a blob id, or "<commit>:<path>"): loose ones from disk, the rest through the
+    process's one `git cat-file --batch` (gitfs.CatFile); one batch run of git if that cannot be used."""
+    from . import gitfs
+    out: Dict[str, Optional[bytes]] = {}
+    try:
+        for k, name in names.items():
+            got = gitfs.read_object(root, name) if gitfs.HEX.match(name) else gitfs.catfile(root).get(name)
+            out[k] = got[1] if got is not None and got[0] == "blob" else None
+        return out
+    except (gitfs.Fallback, OSError, ValueError):
+        pass
+    keys = list(names)
+    raw = run_hidden(["git", "cat-file", "--batch"], cwd=root, check=True, capture_output=True,
+                     input="".join(f"{names[k]}\n" for k in keys).encode("utf-8", "surrogateescape")).stdout
+    i = 0
+    for k in keys:
+        end = raw.index(b"\n", i)
+        parts = raw[i:end].split()
+        i = end + 1
+        if len(parts) < 3 or parts[1] == b"missing":
+            out[k] = None
+            continue
+        size = int(parts[2])
+        out[k] = raw[i:i + size]
+        i += size + 1
+    return out
 
 
 class DirSource:

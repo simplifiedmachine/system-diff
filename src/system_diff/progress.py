@@ -56,18 +56,28 @@ def end() -> None:
 
 
 def line(root: Path) -> str:
-    """The progress as one line ("Reading the code: 340 of 1,234 files - 12s"), or "" when nothing is under way."""
-    import subprocess
-
-    from .sources import run_hidden
+    """The progress as one line ("Reading the code: 340 of 1,234 files - 12s"), or "" when nothing is under way: a
+    read in a process of its own (progress.json), else the resident engine's first read (GET /progress). No git
+    process: the pane asks every second while it waits."""
+    from . import gitfs
+    r = gitfs.locate(Path(root))
     try:
-        out = run_hidden(["git", "rev-parse", "--absolute-git-dir"], cwd=root, capture_output=True, text=True,
-                             encoding="utf-8", errors="replace", check=True).stdout.strip()
-        data = json.loads((Path(out) / "system-diff" / FILE).read_text(encoding="utf-8"))
-    except (OSError, ValueError, subprocess.CalledProcessError):
-        return ""
-    if time.time() - float(data.get("started") or 0) > 900:
-        return ""  # left by a run that died
+        if r is None:
+            raise OSError("not a repository")
+        data = json.loads((r.gitdir / "system-diff" / FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = None
+    if data is None or time.time() - float(data.get("started") or 0) > 900:   # none, or left by a run that died
+        if r is None:
+            return ""
+        try:
+            from . import live
+            got = live.client_progress(Path(root), timeout=1.0)
+        except Exception:  # noqa: BLE001
+            got = None
+        if not got or got.get("complete"):
+            return ""
+        return live.progress_text(got)
     text = str(data.get("stage") or "")
     if data.get("total"):
         text += f": {data.get('done') or 0:,} of {data['total']:,} files"
