@@ -45,7 +45,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 392,
+   "lines": 398,
    "hub": false,
    "quiet": false
   },
@@ -369,7 +369,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1420,
+   "lines": 1434,
    "hub": false,
    "quiet": false
   }

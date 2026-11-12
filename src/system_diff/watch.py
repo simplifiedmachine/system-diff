@@ -946,6 +946,7 @@ def handler(w: Watcher):
             """The files Claude just edited: {"paths": [...]}, relative to the repository or absolute. Token only."""
             if not live.token_ok(self.headers.get("X-Token"), w.token) or (
                     self.headers.get("Origin") is not None and not self._same_origin()):
+                self._drain()
                 return self._json(403, {"error": "forbidden"})
             try:
                 n = int(self.headers.get("Content-Length") or 0)
@@ -965,9 +966,20 @@ def handler(w: Watcher):
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
             return self._json(200, {"version": version})
 
+        def _drain(self) -> None:
+            """Read the request's body before answering: answering a refused POST first makes Windows abort the
+            connection while the client still sends (WinError 10053)."""
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if 0 < n <= SEND_BODY_MAX:
+                    self.rfile.read(n)
+            except (ValueError, OSError):
+                pass
+
         def _post_quit(self):
             """Stop this engine: a newer system-diff replacing it (its code is loaded once, so after an upgrade the
             running one would go on serving the old pages). Token only, never from a browser."""
+            self._drain()
             if not live.token_ok(self.headers.get("X-Token"), w.token) or self.headers.get("Origin") is not None:
                 return self._json(403, {"error": "forbidden"})
             self._json(200, {"quitting": True})
@@ -991,6 +1003,7 @@ def handler(w: Watcher):
 
         def _post_send(self):
             if self.headers.get("X-Token") != w.token or not self._same_origin():
+                self._drain()
                 return self._json(403, {"error": "forbidden"})
             try:
                 n = int(self.headers.get("Content-Length") or 0)
@@ -1016,6 +1029,7 @@ def handler(w: Watcher):
             the working tree as the engine holds it: the hooks' and the MCP server's way to mark, one git call. Token
             only, never from a browser."""
             if not live.token_ok(self.headers.get("X-Token"), w.token) or self.headers.get("Origin") is not None:
+                self._drain()
                 return self._json(403, {"error": "forbidden"})
             try:
                 n = int(self.headers.get("Content-Length") or 0)
