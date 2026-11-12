@@ -66,6 +66,14 @@ group = "From the terminal"
 paths = ["src/system_diff/watch.py"]
 
 [[components]]
+id = "live"
+label = "Live engine"
+kind = "logic"
+about = "the system kept in memory, updated by edits"
+group = "Engine"
+paths = ["src/system_diff/live.py"]
+
+[[components]]
 id = "panel"
 label = "Pane beside the chat"
 kind = "interface"
@@ -161,6 +169,20 @@ label = "Design notes"
 kind = "logic"
 group = "Explaining"
 paths = ["src/system_diff/design.py"]
+
+[[components]]
+id = "human"
+label = "Worth a look"
+kind = "logic"
+group = "Explaining"
+paths = ["src/system_diff/human.py"]
+
+[[components]]
+id = "objectives"
+label = "Objectives"
+kind = "logic"
+group = "Explaining"
+paths = ["src/system_diff/objectives.py"]
 
 [[components]]
 id = "canvas"

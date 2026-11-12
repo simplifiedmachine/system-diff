@@ -332,6 +332,11 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
         best["blocks"] += a["blocks"]
     agents = []
     owned = {b: a["id"] for a in picked for b in a["blocks"]}
+    try:                                              # what the person optimises for: every agent keeps and checks it
+        from . import objectives
+        keep = objectives.for_brief(root)
+    except Exception:  # noqa: BLE001 - the plan stands without it
+        keep = ""
     for a in picked:
         name = re.sub(r"[^a-z0-9]+", "-", a["title"].lower()).strip("-") or "agent"
         needs = sorted({d for b in a["blocks"] for d in deps.get(b, ()) if d not in a["blocks"]})
@@ -348,6 +353,8 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
                     f"say so with the `publish` tool (topic: the block's id) before you do.\n" if needed_by else "")
                  + (f"Coordinate with: {', '.join(talks_to)}.\n" if talks_to else "")
                  + "Finish with a short summary of what you changed in the system's structure.")
+        if keep:
+            brief += "\n" + keep
         agents.append({"name": name, "area": a["title"], "blocks": a["blocks"], "subscribes": needs,
                        "talks_to": talks_to, "brief": brief})
     how = ("Launch these agents now, in parallel, each as its own subagent with its brief as the prompt (one message "

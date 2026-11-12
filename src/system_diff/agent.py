@@ -178,9 +178,70 @@ def on_prompt(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
     activity.new_turn(root)
     activity.record(root, {"event": activity.PROMPT, "text": _clip(payload.get("prompt"), 300),
                            "session": payload.get("session_id", ""), "agent": payload.get("agent_id") or ""})
+    aims = objectives_context(root)
     if (config.lenient(root).get("agents") or {}).get("orchestrate", True) is False or payload.get("agent_id"):
-        return None
-    return {"context": agents.ORCHESTRATE}
+        return {"context": aims} if aims else None
+    return {"context": agents.ORCHESTRATE + ("\n\n" + aims if aims else "")}
+
+
+def objectives_context(root: Path) -> str:
+    """What the person has been optimising for, for Claude at each prompt (objectives.context, at most 600
+    characters; "" when none), after starting their distillation in the background when it is stale (never waited
+    for). Never raises."""
+    try:
+        from . import objectives
+    except Exception:  # noqa: BLE001 - an install without them
+        return ""
+    try:
+        objectives.ensure(root)
+    except Exception:  # noqa: BLE001 - only a head start
+        pass
+    try:
+        return (objectives.context(root) or "")[:600]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def edited_paths(root: Path, payload: Dict[str, Any]) -> List[str]:
+    """The files an edit tool (Edit, Write, MultiEdit, NotebookEdit) wrote, relative to the repository."""
+    if payload.get("tool_name", "") not in EDIT_TOOLS:
+        return []
+    given = payload.get("tool_input") or {}
+    said = payload.get("tool_response") if isinstance(payload.get("tool_response"), dict) else {}
+    out: List[str] = []
+    for raw in (given.get("file_path"), given.get("notebook_path"), said.get("filePath")):
+        if isinstance(raw, str) and raw:
+            rel = activity.relative(root, raw)
+            if rel and rel not in out:
+                out.append(rel)
+    return out
+
+
+def touch(root: Path, paths: List[str]) -> None:
+    """Tell the resident engine which files Claude just edited (POST /touch, at most half a second), so it re-reads
+    them at once instead of at its next look. Nothing when no engine runs; never raises."""
+    if not paths:
+        return
+    try:
+        from . import live
+        tell = getattr(live, "touch", None)
+        if tell is None:
+            return
+        import threading
+
+        def go() -> None:
+            try:
+                tell(root, list(paths))
+            except Exception:  # noqa: BLE001 - a hook never fails a turn
+                pass
+        t = threading.Thread(target=go, name="system-diff-touch", daemon=True)
+        t.start()
+        t.join(TOUCH_WAIT)   # live.touch keeps to half a second itself; this holds whatever happens there
+    except Exception:  # noqa: BLE001 - a hook never fails a turn
+        pass
+
+
+TOUCH_WAIT = 0.5
 
 
 def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
@@ -205,6 +266,8 @@ def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
     if not path:
         return unread()
     edit = tool in EDIT_TOOLS
+    if edit:
+        touch(root, edited_paths(root, payload) or [path])   # the engine re-reads the file now: the pane follows within a second
     activity.record(root, {"event": activity.EDIT if edit else activity.READ, "path": path, "tool": tool,
                            "session": payload.get("session_id", ""), "agent": agent_id})
     cfg = config.lenient(root)

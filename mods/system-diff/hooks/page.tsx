@@ -28,6 +28,12 @@ let askedWidth = 0 // the width last reported to the hooks module, so a resize i
 let pendingWidth = 0 // a width the region took, told once it has held for a moment (a drag passes many)
 let pendingTicks = 0
 
+// What the picked block's own keys do, for the hint line: " · x clear".
+function keysOf(b: PageBlock | undefined): string {
+  return Object.entries(b?.on ?? {}).map(([key, what]) =>
+    ` · ${key} ${what.clear_objective !== undefined ? 'clear' : Object.keys(what)[0] ?? ''}`).join('')
+}
+
 function centre(b: PageBlock): [number, number] {
   return [b.x + b.w / 2, b.y + b.h / 2]
 }
@@ -120,7 +126,10 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
   }
 
   surface.onKey((e: ClientKeyEvent) => {
-    if ((e.key === 'up' || e.key === 'down') && e.shift) {
+    const own = !e.shift && !e.ctrl && !e.meta ? picked?.on?.[e.key] : undefined
+    if (own) {
+      surface.post(own) // a key the picked block names (x on an objective: clear it)
+    } else if ((e.key === 'up' || e.key === 'down') && e.shift) {
       surface.post({ scrollBy: e.key === 'up' ? -5 : 5 }) // the pane scrolls; the pick stays
     } else if (e.key === 'pageup' || e.key === 'pagedown') {
       surface.post({ scrollBy: e.key === 'pageup' ? -1000 : 1000 }) // a window's worth
@@ -200,7 +209,8 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
         )
       })}
       <Text dimColor wrap="truncate-end">
-        {'click here, then ← ↑ ↓ → pick · ↵ zoom in · [ ] shift+↑ ↓ scroll' + (canGoBack ? ' · b back' : '') + ' · f follow · Esc leaves'}
+        {'click here, then ← ↑ ↓ → pick · ↵ zoom in' + keysOf(picked) + ' · [ ] shift+↑ ↓ scroll' +
+          (canGoBack ? ' · b back' : '') + ' · f follow · Esc leaves'}
       </Text>
     </Box>
   )

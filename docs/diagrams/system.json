@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 355,
+   "lines": 419,
    "hub": false,
    "quiet": false
   },
@@ -17,7 +17,7 @@
    "label": "Agent activity",
    "layer": "",
    "kind": "data",
-   "order": 25,
+   "order": 28,
    "container": "",
    "declared": true,
    "files": 1,
@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 507,
+   "lines": 570,
    "hub": false,
    "quiet": false
   },
@@ -41,11 +41,11 @@
    "label": "Agent team",
    "layer": "",
    "kind": "logic",
-   "order": 15,
+   "order": 16,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 385,
+   "lines": 392,
    "hub": false,
    "quiet": false
   },
@@ -53,7 +53,7 @@
    "label": "System diagram",
    "layer": "",
    "kind": "logic",
-   "order": 14,
+   "order": 15,
    "container": "",
    "declared": true,
    "files": 2,
@@ -65,7 +65,7 @@
    "label": "Pane pictures",
    "layer": "",
    "kind": "logic",
-   "order": 17,
+   "order": 20,
    "container": "",
    "declared": true,
    "files": 1,
@@ -77,11 +77,11 @@
    "label": "Checkpoints and snapshots",
    "layer": "",
    "kind": "logic",
-   "order": 8,
+   "order": 9,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 266,
+   "lines": 373,
    "hub": false,
    "quiet": false
   },
@@ -89,7 +89,7 @@
    "label": "Config",
    "layer": "",
    "kind": "logic",
-   "order": 9,
+   "order": 10,
    "container": "",
    "declared": true,
    "files": 1,
@@ -101,7 +101,7 @@
    "label": "Design notes",
    "layer": "",
    "kind": "logic",
-   "order": 16,
+   "order": 17,
    "container": "",
    "declared": true,
    "files": 1,
@@ -113,7 +113,7 @@
    "label": "Typed diff",
    "layer": "",
    "kind": "logic",
-   "order": 11,
+   "order": 12,
    "container": "",
    "declared": true,
    "files": 1,
@@ -125,7 +125,7 @@
    "label": "Doctor",
    "layer": "",
    "kind": "interface",
-   "order": 6,
+   "order": 7,
    "container": "",
    "declared": true,
    "files": 1,
@@ -137,7 +137,7 @@
    "label": "Extraction",
    "layer": "",
    "kind": "logic",
-   "order": 10,
+   "order": 11,
    "container": "",
    "declared": true,
    "files": 1,
@@ -149,7 +149,7 @@
    "label": "Map layout",
    "layer": "",
    "kind": "logic",
-   "order": 12,
+   "order": 13,
    "container": "",
    "declared": true,
    "files": 1,
@@ -157,15 +157,39 @@
    "hub": false,
    "quiet": false
   },
+  "human": {
+   "label": "Worth a look",
+   "layer": "",
+   "kind": "logic",
+   "order": 18,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 332,
+   "hub": false,
+   "quiet": false
+  },
   "learn": {
    "label": "Lessons and topics",
    "layer": "",
    "kind": "logic",
-   "order": 21,
+   "order": 24,
    "container": "",
    "declared": true,
    "files": 3,
    "lines": 747,
+   "hub": false,
+   "quiet": false
+  },
+  "live": {
+   "label": "Live engine",
+   "layer": "",
+   "kind": "logic",
+   "order": 4,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 765,
    "hub": false,
    "quiet": false
   },
@@ -177,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 282,
+   "lines": 317,
    "hub": false,
    "quiet": false
   },
@@ -185,7 +209,7 @@
    "label": "LLM summary",
    "layer": "",
    "kind": "logic",
-   "order": 19,
+   "order": 22,
    "container": "",
    "declared": true,
    "files": 1,
@@ -193,15 +217,27 @@
    "hub": false,
    "quiet": false
   },
+  "objectives": {
+   "label": "Objectives",
+   "layer": "",
+   "kind": "logic",
+   "order": 19,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 793,
+   "hub": false,
+   "quiet": false
+  },
   "panel": {
    "label": "Pane beside the chat",
    "layer": "",
    "kind": "interface",
-   "order": 4,
+   "order": 5,
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 1267,
+   "lines": 2003,
    "hub": false,
    "quiet": false
   },
@@ -209,7 +245,7 @@
    "label": "SVG pictures",
    "layer": "",
    "kind": "logic",
-   "order": 13,
+   "order": 14,
    "container": "",
    "declared": true,
    "files": 1,
@@ -221,7 +257,7 @@
    "label": "PNG rendering",
    "layer": "",
    "kind": "logic",
-   "order": 23,
+   "order": 26,
    "container": "",
    "declared": true,
    "files": 1,
@@ -233,7 +269,7 @@
    "label": "src/system_diff",
    "layer": "undeclared",
    "kind": "",
-   "order": 26,
+   "order": 29,
    "container": "",
    "declared": false,
    "files": 1,
@@ -245,7 +281,7 @@
    "label": "README section",
    "layer": "",
    "kind": "logic",
-   "order": 18,
+   "order": 21,
    "container": "",
    "declared": true,
    "files": 1,
@@ -257,7 +293,7 @@
    "label": "LLM regrouping",
    "layer": "",
    "kind": "logic",
-   "order": 20,
+   "order": 23,
    "container": "",
    "declared": true,
    "files": 1,
@@ -269,7 +305,7 @@
    "label": "Git and folder sources",
    "layer": "",
    "kind": "data",
-   "order": 24,
+   "order": 27,
    "container": "",
    "declared": true,
    "files": 1,
@@ -281,7 +317,7 @@
    "label": "Status line",
    "layer": "",
    "kind": "interface",
-   "order": 7,
+   "order": 8,
    "container": "",
    "declared": true,
    "files": 1,
@@ -293,7 +329,7 @@
    "label": "Terminal pictures",
    "layer": "",
    "kind": "logic",
-   "order": 22,
+   "order": 25,
    "container": "",
    "declared": true,
    "files": 1,
@@ -305,11 +341,11 @@
    "label": "Terminal view",
    "layer": "",
    "kind": "interface",
-   "order": 5,
+   "order": 6,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 687,
+   "lines": 768,
    "hub": false,
    "quiet": false
   },
@@ -321,7 +357,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1092,
+   "lines": 1345,
    "hub": false,
    "quiet": false
   }
@@ -338,6 +374,8 @@
   "agent>design": 1,
   "agent>extract": 1,
   "agent>learn": 1,
+  "agent>live": 1,
+  "agent>objectives": 1,
   "agent>sources": 1,
   "agent>watch": 1,
   "agents>activity": 1,
@@ -345,6 +383,7 @@
   "agents>config": 1,
   "agents>design": 1,
   "agents>extract": 1,
+  "agents>objectives": 1,
   "agents>sources": 1,
   "architecture>design": 2,
   "architecture>diff": 1,
@@ -363,7 +402,8 @@
   "cli>learn": 2,
   "cli>mcp": 1,
   "cli>narrate": 1,
-  "cli>panel": 1,
+  "cli>objectives": 1,
+  "cli>panel": 2,
   "cli>pictures": 1,
   "cli>png": 1,
   "cli>readme": 1,
@@ -394,12 +434,21 @@
   "extract>src/system_diff": 1,
   "graph>diff": 1,
   "graph>pictures": 1,
+  "human>activity": 1,
+  "human>design": 1,
+  "human>objectives": 1,
   "learn>activity": 1,
   "learn>diff": 1,
   "learn>extract": 1,
   "learn>graph": 1,
   "learn>narrate": 1,
   "learn>sources": 1,
+  "live>cli": 1,
+  "live>compare": 5,
+  "live>config": 1,
+  "live>extract": 1,
+  "live>learn": 1,
+  "live>sources": 6,
   "mcp>activity": 1,
   "mcp>agents": 1,
   "mcp>compare": 1,
@@ -407,25 +456,35 @@
   "mcp>extract": 2,
   "mcp>graph": 1,
   "mcp>learn": 1,
+  "mcp>objectives": 2,
   "mcp>pictures": 1,
   "mcp>sources": 1,
   "mcp>textmap": 1,
-  "panel>activity": 2,
+  "objectives>activity": 1,
+  "objectives>agents": 1,
+  "objectives>compare": 1,
+  "objectives>config": 1,
+  "objectives>narrate": 1,
+  "objectives>sources": 1,
+  "panel>activity": 3,
   "panel>agents": 1,
   "panel>architecture": 2,
   "panel>canvas": 1,
-  "panel>compare": 3,
-  "panel>config": 3,
+  "panel>compare": 6,
+  "panel>config": 4,
   "panel>design": 1,
-  "panel>extract": 3,
-  "panel>graph": 2,
-  "panel>learn": 4,
+  "panel>extract": 4,
+  "panel>graph": 3,
+  "panel>human": 1,
+  "panel>learn": 5,
+  "panel>live": 1,
+  "panel>objectives": 1,
   "panel>pictures": 1,
   "panel>regroup": 1,
   "panel>sources": 3,
   "panel>src/system_diff": 1,
   "panel>textmap": 1,
-  "panel>watch": 1,
+  "panel>watch": 2,
   "png>sources": 1,
   "readme>pictures": 1,
   "regroup>config": 1,
@@ -442,18 +501,18 @@
   "statusline>textmap": 1,
   "textmap>pictures": 1,
   "tui>cli": 1,
-  "tui>compare": 1,
-  "tui>extract": 1,
   "tui>learn": 1,
   "tui>panel": 2,
-  "tui>src/system_diff": 2,
+  "tui>src/system_diff": 1,
   "watch>activity": 1,
+  "watch>cli": 2,
   "watch>compare": 1,
   "watch>diff": 1,
   "watch>extract": 1,
   "watch>graph": 1,
   "watch>learn": 1,
-  "watch>panel": 1,
+  "watch>live": 1,
+  "watch>panel": 2,
   "watch>pictures": 1,
   "watch>sources": 1
  },
@@ -476,8 +535,8 @@
    "EDIT",
    "PROMPT",
    "part_of",
-   "write_state",
-   "READ"
+   "relative",
+   "write_state"
   ],
   "agent>agents": [
    "ORCHESTRATE",
@@ -504,6 +563,13 @@
    "and_list",
    "brief",
    "one_line"
+  ],
+  "agent>live": [
+   "touch"
+  ],
+  "agent>objectives": [
+   "context",
+   "ensure"
   ],
   "agent>sources": [
    "git",
@@ -535,6 +601,9 @@
   ],
   "agents>extract": [
    "Code"
+  ],
+  "agents>objectives": [
+   "for_brief"
   ],
   "agents>sources": [
    "git_dir"
@@ -610,7 +679,15 @@
   "cli>narrate": [
    "narrate"
   ],
+  "cli>objectives": [
+   "checks",
+   "clear",
+   "learn",
+   "load",
+   "restore"
+  ],
   "cli>panel": [
+   "fast",
    "main"
   ],
   "cli>pictures": [
@@ -722,6 +799,24 @@
    "map_svg",
    "MAP_LEGEND"
   ],
+  "human>activity": [
+   "PROMPT",
+   "is_system",
+   "EDIT",
+   "STOP",
+   "ago",
+   "part_of"
+  ],
+  "human>design": [
+   "Reading",
+   "and_list",
+   "STATE_CHANGING",
+   "name_of",
+   "py"
+  ],
+  "human>objectives": [
+   "touches"
+  ],
   "learn>activity": [
    "relative"
   ],
@@ -744,6 +839,32 @@
   ],
   "learn>sources": [
    "git"
+  ],
+  "live>cli": [
+   "__version__"
+  ],
+  "live>compare": [
+   "LIVE",
+   "Live",
+   "live_key",
+   "_blueprint",
+   "checkpoint_sha",
+   "turn_sha"
+  ],
+  "live>config": [
+   "load"
+  ],
+  "live>extract": [
+   "FactStore",
+   "read_blueprint"
+  ],
+  "live>learn": [
+   "path"
+  ],
+  "live>sources": [
+   "run_hidden",
+   "GitSource",
+   "git_dir"
   ],
   "mcp>activity": [
    "events",
@@ -781,6 +902,12 @@
    "find_part",
    "lesson"
   ],
+  "mcp>objectives": [
+   "STATUSES",
+   "checks",
+   "current",
+   "record_check"
+  ],
   "mcp>pictures": [
    "write_if_changed",
    "check",
@@ -797,13 +924,36 @@
    "render_map",
    "render_zoom"
   ],
+  "objectives>activity": [
+   "PROMPT",
+   "events",
+   "is_system"
+  ],
+  "objectives>agents": [
+   "publish"
+  ],
+  "objectives>compare": [
+   "compare"
+  ],
+  "objectives>config": [
+   "load"
+  ],
+  "objectives>narrate": [
+   "claude_llm",
+   "complete",
+   "py",
+   "shell_llm"
+  ],
+  "objectives>sources": [
+   "git_dir"
+  ],
   "panel>activity": [
    "events",
    "now",
    "label",
    "EDIT",
    "PROMPT",
-   "is_system"
+   "ago"
   ],
   "panel>agents": [
    "MAIN",
@@ -814,23 +964,23 @@
   ],
   "panel>architecture": [
    "system",
-   "container",
    "groups_of",
-   "internals",
-   "kinds_with"
+   "kinds_with",
+   "container",
+   "internals"
   ],
   "panel>canvas": [
    "cut",
    "Page",
-   "detail_rows",
    "Grid",
+   "detail_rows",
    "layered",
    "chips"
   ],
   "panel>compare": [
    "compare",
-   "time_box",
    "turn_sha",
+   "time_box",
    "checkpoint_sha",
    "partial"
   ],
@@ -842,7 +992,6 @@
    "and_list",
    "Reading",
    "summarize",
-   "ATTENTION",
    "kinds",
    "name_of"
   ],
@@ -853,22 +1002,41 @@
   "panel>graph": [
    "change_marks",
    "neighbourhood",
+   "overview",
    "connections",
-   "overview"
+   "files_word"
+  ],
+  "panel>human": [
+   "decisions",
+   "mark_objectives",
+   "touched_line",
+   "intent",
+   "intent_line"
   ],
   "panel>learn": [
-   "learning",
    "story",
+   "WEIGHT",
+   "system_markdown",
+   "system_topics",
    "BASIC",
-   "ROLE_OF",
-   "STDLIB",
-   "TECH"
+   "ROLE_OF"
+  ],
+  "panel>live": [
+   "live"
+  ],
+  "panel>objectives": [
+   "current",
+   "checks",
+   "_unix",
+   "_matches",
+   "from_log"
   ],
   "panel>pictures": [
    "architecture_svg"
   ],
   "panel>regroup": [
-   "ensure"
+   "ensure",
+   "py"
   ],
   "panel>sources": [
    "GitSource",
@@ -948,23 +1116,15 @@
   "tui>cli": [
    "__version__"
   ],
-  "tui>compare": [
-   "time_box",
-   "partial"
-  ],
-  "tui>extract": [
-   "COLD_BUDGET"
-  ],
   "tui>learn": [
    "toggle"
   ],
   "tui>panel": [
-   "show",
-   "still_reading"
+   "build",
+   "from_engine",
+   "start_engine"
   ],
   "tui>src/system_diff": [
-   "begin",
-   "end",
    "line"
   ],
   "watch>activity": [
@@ -974,6 +1134,9 @@
    "events",
    "feed",
    "label"
+  ],
+  "watch>cli": [
+   "__version__"
   ],
   "watch>compare": [
    "Comparison",
@@ -999,8 +1162,18 @@
    "lesson",
    "one_line"
   ],
+  "watch>live": [
+   "Engine",
+   "token_ok",
+   "Pages",
+   "FIRST_WAIT",
+   "INTERVAL",
+   "LONG_POLL"
+  ],
   "watch>panel": [
-   "web_view"
+   "show",
+   "web_view",
+   "take_outbox"
   ],
   "watch>pictures": [
    "map_svg"
@@ -1029,6 +1202,11 @@
   ],
   "learn": [
    "XDG_CONFIG_HOME"
+  ],
+  "objectives": [
+   "CLAUDE_CONFIG_DIR",
+   "PYTEST_CURRENT_TEST",
+   "SYSTEM_DIFF_OBJECTIVES"
   ],
   "panel": [
    "SYSTEM_DIFF_WEB_START"
@@ -1153,6 +1331,12 @@
    "collections": 1,
    "typing": 1
   },
+  "human": {
+   "hashlib": 1,
+   "re": 1,
+   "types": 1,
+   "typing": 1
+  },
   "learn": {
    "typing": 3,
    "pathlib": 2,
@@ -1160,6 +1344,19 @@
    "json": 1,
    "os": 1,
    "sys": 1
+  },
+  "live": {
+   "hashlib": 1,
+   "hmac": 1,
+   "http": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "stat": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1,
+   "urllib": 1
   },
   "mcp": {
    "mcp": 1,
@@ -1178,14 +1375,27 @@
    "typing": 1,
    "urllib": 1
   },
+  "objectives": {
+   "datetime": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "subprocess": 1,
+   "sys": 1,
+   "time": 1,
+   "typing": 1
+  },
   "panel": {
    "json": 2,
+   "os": 2,
    "pathlib": 2,
+   "re": 2,
    "time": 2,
    "typing": 2,
    "collections": 1,
-   "os": 1,
-   "re": 1,
+   "html": 1,
+   "sys": 1,
    "textwrap": 1
   },
   "pictures": {
@@ -1397,6 +1607,12 @@
    "collections": 1,
    "typing": 1
   },
+  "human": {
+   "hashlib": 1,
+   "re": 1,
+   "types": 1,
+   "typing": 1
+  },
   "learn": {
    "typing": 3,
    "pathlib": 2,
@@ -1404,6 +1620,19 @@
    "json": 1,
    "os": 1,
    "sys": 1
+  },
+  "live": {
+   "hashlib": 1,
+   "hmac": 1,
+   "http.client": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "stat": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1,
+   "urllib.parse": 1
   },
   "mcp": {
    "mcp.server.fastmcp": 1,
@@ -1425,14 +1654,27 @@
    "urllib.parse": 1,
    "urllib.request": 1
   },
+  "objectives": {
+   "datetime": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "subprocess": 1,
+   "sys": 1,
+   "time": 1,
+   "typing": 1
+  },
   "panel": {
    "json": 2,
+   "os": 2,
    "pathlib": 2,
+   "re": 2,
    "time": 2,
    "typing": 2,
    "collections": 1,
-   "os": 1,
-   "re": 1,
+   "html": 1,
+   "sys": 1,
    "textwrap": 1
   },
   "pictures": {
@@ -1540,11 +1782,17 @@
  "migrations": [],
  "tests": {
   "tests/conftest.py": 1,
+  "tests/test_branch_checkpoints.py": 1,
   "tests/test_capture.py": 1,
   "tests/test_checkpoint_watch_mcp.py": 1,
+  "tests/test_clients.py": 1,
   "tests/test_design_and_pane.py": 1,
   "tests/test_doctor.py": 1,
+  "tests/test_human.py": 1,
   "tests/test_incremental.py": 1,
+  "tests/test_live.py": 1,
+  "tests/test_objectives.py": 1,
+  "tests/test_objectives_ui.py": 1,
   "tests/test_regroup.py": 1,
   "tests/test_svg.py": 1,
   "tests/test_system_diff.py": 1,

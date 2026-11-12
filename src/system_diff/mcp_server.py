@@ -31,7 +31,9 @@ INSTRUCTIONS = (
     "draw for a picture of something else (a process, a sequence). Call checkpoint only when the person says they "
     "have seen and understood the current state. For work that touches more than one part, plan a team with "
     "plan_agents and launch its agents in parallel as subagents; agents claim their blocks with claim, tell others "
-    "about changes with publish (topics are block ids), and read what others published with inbox."
+    "about changes with publish (topics are block ids), and read what others published with inbox. objectives lists what "
+    "the person has been optimising for (learned from their requests); when you evaluate or test one, report it with "
+    "check_objective."
 )
 WIDTH = 100  # the columns a diagram is drawn for
 
@@ -194,6 +196,23 @@ def tool_draw(root: Path, spec: Spec, name: str = "picture") -> Dict[str, Any]:
     return {"picture": str(path)}
 
 
+def tool_objectives(root: Path) -> Dict[str, Any]:
+    from . import objectives
+    checks = objectives.checks(root)
+    return {"objectives": [{"id": o["id"], "text": o["text"], "check": o.get("check", ""),
+                            "parts": o.get("parts", []), "evidence": o.get("evidence", []),
+                            "checks": checks.get(o["id"], [])} for o in objectives.current(root)],
+            "statuses": list(objectives.STATUSES)}
+
+
+def tool_check_objective(root: Path, agent: str, objective: str, status: str, note: str = "") -> Dict[str, Any]:
+    from . import objectives
+    try:
+        return {"recorded": objectives.record_check(root, objective, agent, status, note)}
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+
 def build() -> Server:
     server = Server("system-diff", instructions=INSTRUCTIONS)
 
@@ -267,6 +286,22 @@ def build() -> Server:
     def inbox(agent: str = "main") -> Dict[str, Any]:
         """`agent`'s unread messages from the other agents (and marks them read)."""
         return {"agent": agent, "messages": agents.inbox(repo_root(), agent)}
+
+    @server.tool()
+    def objectives() -> Dict[str, Any]:
+        """What the person has been optimising for in this repository (learned from their repeated requests), each
+        with how a change could break it ("check") and the latest check of each agent. Read it before changing or
+        reviewing code, and keep these objectives."""
+        return tool_objectives(repo_root())
+
+    @server.tool()
+    def check_objective(agent: str, objective: str, status: str, note: str = "") -> Dict[str, Any]:
+        """Report what you found about one of the person's objectives (an id from the objectives tool) whenever you
+        evaluate or test it: after running tests, measuring, or reviewing a change against it. status: "checking"
+        (you started), "holds", "broken" or "unclear"; note: one short line of evidence (what you ran or saw).
+        `agent` is your name in the team plan (or "main"). The person sees it, and the other agents get it on the bus
+        (topic "objective:<id>")."""
+        return tool_check_objective(repo_root(), agent, objective, status, note)
 
     @server.tool()
     def team() -> Dict[str, Any]:

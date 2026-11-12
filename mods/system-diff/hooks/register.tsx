@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.6.3' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.7.0' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -183,6 +183,39 @@ async function keep($: EngineInterface, out: string): Promise<void> {
   }
 }
 
+// What a look asks for: the view, the part, the width and the zoom. A page laid out for another ask (one the person
+// has since moved away from) is not drawn.
+async function asking($: EngineInterface, since?: number): Promise<{ argv: string[]; key: string }> {
+  const level = await read($, zoomLevel)
+  const shown = await read($, view)
+  const zoomed = await read($, part)
+  // --since first, so the rest reads as a key request's does
+  const argv = ['panel', '--protocol', '2', ...(since === undefined ? [] : ['--since', String(since)]),
+                '--width', String(columns), '--view', shown, '--part', zoomed]
+  if (level >= 0) argv.push('--zoom', String(level)) // left out, the engine picks by the width (older ones too)
+  return { argv, key: [columns, shown, zoomed, level].join('|') }
+}
+
+let drawnVersion = -1 // the engine's model version of the page drawn (-1: none yet, or read without an engine)
+let drawnKey = '' // the ask it was drawn for
+
+// Draw a page answered for `key`, unless the person has moved on since (then only what it brought to send is kept),
+// or it is older than the one drawn for the same ask.
+async function apply($: EngineInterface, out: string, data: Page, key: string): Promise<boolean> {
+  deliver($, data.send)
+  if (key !== (await asking($)).key) return false
+  const v = typeof data.version === 'number' ? data.version : -1
+  if (v >= 0 && v < drawnVersion && key === drawnKey) return false
+  drawnVersion = v
+  drawnKey = key
+  if (out !== last) {
+    last = out
+    await update($, page, () => data)
+    void keep($, out)
+  }
+  return true
+}
+
 async function refresh($: EngineInterface): Promise<void> {
   if (busy) {
     again = true // asked while a look runs: look again right after
@@ -193,10 +226,7 @@ async function refresh($: EngineInterface): Promise<void> {
     await restore($)
     do {
       again = false
-      const argv = ['panel', '--protocol', '2', '--width', String(columns), '--view', await read($, view),
-                    '--part', await read($, part)]
-      const level = await read($, zoomLevel)
-      if (level >= 0) argv.push('--zoom', String(level)) // left out, the engine picks by the width (older ones too)
+      const { argv, key } = await asking($)
       const got = await run($, argv)
       if (got && !got.old) {
         let data: Page
@@ -207,13 +237,9 @@ async function refresh($: EngineInterface): Promise<void> {
           await update($, note, () => `system-diff answered with something that is not its page: ${got.out.trim().slice(0, 160)}`)
           continue
         }
-        deliver($, data.send)
-        if (got.out !== last) {
-          last = got.out
-          await update($, page, () => data)
-          void keep($, got.out)
-        }
+        await apply($, got.out, data, key)
         if ((await read($, note)) !== '') await update($, note, () => '')
+        void longPoll($).catch(() => undefined) // the engine answered: follow it
       } else {
         await update($, note, () => failure
           ? `system-diff is installed but failed here: ${failure}`
@@ -226,6 +252,96 @@ async function refresh($: EngineInterface): Promise<void> {
   } finally {
     busy = false
   }
+}
+
+// The engine's long poll: `panel --since <version>` answers when the model has a newer version than the one drawn
+// (or after about 25 s with what it has), so the pane redraws the moment Claude's edit lands, with no looks between.
+// One at a time, beside the looks the keys ask for, which never wait for it; each answer schedules the next on the
+// clock. It runs only while the engine answers (a page with a version): with no engine yet, the clock looks every
+// 3 s (system-diff starts one meanwhile) until one does. A failure backs off a few seconds and leaves the pane on the
+// clock; a system-diff without --since leaves it there for good.
+const LONG_POLL_MS = 40000 // the engine holds a long poll about 25 s
+let polling = false // a long poll is under way
+let pollKey = '' // its ask: one the person has moved away from leaves the clock looking
+let pollLive = false // the engine answers: the long poll carries the pane, the clock need not look
+let pollOld = false // this system-diff has no --since
+let pollFails = 0
+let pollNext: { cancel: () => void } | undefined // the next long poll, waiting on the clock
+
+function pollAfter($: EngineInterface, ms: number): void {
+  try {
+    pollNext = $.clock.after(ms, () => {
+      pollNext = undefined
+      longPoll($).catch(() => undefined)
+    })
+  } catch {
+    pollNext = undefined // refused (a session closing): the clock's next look starts it again
+  }
+}
+
+async function longPoll($: EngineInterface): Promise<void> {
+  if (polling || pollOld || !runner || drawnVersion < 0) return
+  if (pollNext) { // asked again before the one waiting (a look found the engine): now, not after the back-off
+    pollNext.cancel()
+    pollNext = undefined
+  }
+  polling = true
+  let after = -1 // when the next one goes, in ms; -1: none (the clock carries the pane)
+  try {
+    const how = runner
+    const { argv, key } = await asking($, drawnVersion)
+    pollKey = key
+    let got
+    try {
+      got = await $.process.run([...how, ...argv], { timeoutMs: LONG_POLL_MS })
+    } catch {
+      got = null
+    }
+    pollKey = ''
+    let data: Page | null = null
+    if (got && got.exitCode === 0) {
+      try {
+        data = JSON.parse(got.stdout) as Page
+      } catch {
+        data = null
+      }
+    } else if (got && /unrecognized arguments|invalid choice/.test(got.stderr)) {
+      pollOld = true
+      pollLive = false
+      return
+    }
+    if (data === null) {
+      pollLive = false
+      pollFails += 1
+      after = Math.min(30000, 1000 * 2 ** Math.min(pollFails, 5)) // 2 s, 4 s, … then every 30 s
+      return
+    }
+    pollFails = 0
+    const before = drawnVersion
+    const drawn = await apply($, got!.stdout, data, key)
+    if (typeof data.version !== 'number') { // answered by a read of its own: no engine now, the clock looks
+      pollLive = false
+      return
+    }
+    pollLive = true
+    if (drawn && (await read($, note)) !== '') await update($, note, () => '')
+    // a newer page, or one for what no longer shows: at once; nothing new (it waited its 25 s): a moment later
+    after = drawn && drawnVersion === before ? 500 : 0
+  } finally {
+    polling = false
+    pollKey = ''
+    if (after >= 0) pollAfter($, after)
+  }
+}
+
+// The clock's look, every 3 s: only when the long poll does not carry the pane (no engine, an old system-diff, a
+// failure, or a long poll still waiting on what the person has moved away from). What the session refused to take is
+// offered again.
+async function tick($: EngineInterface): Promise<void> {
+  deliver($, [])
+  const current = (await asking($)).key
+  if (!pollLive || pollOld || (pollKey !== '' && pollKey !== current)) await refresh($)
+  else if (!polling && !pollNext) void longPoll($).catch(() => undefined) // lost (a refused timer): again
 }
 
 // A look in the background: one that fails (a session closing, a slow disk) is let go, the next comes soon enough.
@@ -258,6 +374,14 @@ async function follow($: EngineInterface): Promise<void> {
   await update($, back, () => [])
   await update($, part, () => '')
   await update($, view, () => 'now')
+  await refresh($)
+}
+
+// x on an objective: the person says it is wrong. Only system-diff's own notes change (never the code); the
+// objective leaves the page and Claude's context, and `system-diff objectives restore <id>` brings it back.
+async function clearObjective($: EngineInterface, id: string): Promise<void> {
+  if (!id) return
+  await run($, ['objectives', 'clear', id])
   await refresh($)
 }
 
@@ -374,7 +498,7 @@ export const register: Register = on => {
       }
     }
     soon($)
-    $.clock.every(3000, () => soon($))
+    $.clock.every(3000, () => void tick($).catch(() => undefined))
     return next(e)
   })
 
@@ -396,7 +520,8 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
-    if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read'].includes(e.tool)) soon($)
+    // the long poll follows the engine, which the hooks tell of each edit; without it, a look now
+    if (!pollLive && ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read'].includes(e.tool)) soon($)
     return ran
   })
 
@@ -424,6 +549,7 @@ export const register: Register = on => {
     else if (typeof data.scrollBy === 'number') await scrollBy($, data.scrollBy)
     else if (typeof data.zoom === 'string') await zoom($, data.zoom)
     else if (typeof data.learn === 'string') await learn($, data.learn)
+    else if (typeof data.clear_objective === 'string') await clearObjective($, data.clear_objective)
     else if (data.back) await goBack($)
     else if (data.follow) await follow($)
     else if (typeof data.zoomBy === 'number') await zoomBy($, data.zoomBy)

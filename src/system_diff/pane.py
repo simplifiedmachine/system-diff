@@ -2,7 +2,8 @@
 runs, the system diagram's boxes as blocks to pick with the arrow keys or a click (a picked block lights its flows and
 the boxes at their other ends, and shows a line or two on what it uses and what uses it), Enter to zoom in.
 
-  now      what Claude is doing; what needs your attention; the system diagram with Claude's component lit (or the
+  now      what Claude is doing; WORTH A LOOK, the changes with the most consequence first; what you asked against
+           what changed; the system diagram with Claude's component lit (or the
            box you zoomed in on); what this turn did to the design; LEARN, how the part is designed and the
            technology new to the system or to you; what just happened
   map      the system diagram since your checkpoint
@@ -11,14 +12,17 @@ the boxes at their other ends, and shows a line or two on what it uses and what 
 """
 from __future__ import annotations
 
+import html
 import json
 import os
+import re
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import activity, agents, architecture, regroup, canvas, config, design, graph, inside, profile
+from . import activity, agents, architecture, regroup, canvas, config, design, graph, human, inside, objectives, \
+    profile
 from .compare import checkpoint_sha, compare as _compare, turn_sha
 from .extract import Code
 from .learn import STDLIB, BASIC
@@ -107,7 +111,7 @@ def _notes(page: canvas.Page, notes: List[Dict[str, Any]], most: int, ask: bool 
             page.para(n["ask"], "", indent=3, first=("   Ask Claude  ", "accent"))
 
 
-def _status(page: canvas.Page, now: Dict[str, Any], cfg: Dict[str, Any]) -> None:
+def _status(page: canvas.Page, now: Dict[str, Any], cfg: Dict[str, Any], prompt: bool = True) -> None:
     if now["part"]:
         name = activity.label(cfg, now["part"])
         if now["working"]:
@@ -117,7 +121,7 @@ def _status(page: canvas.Page, now: Dict[str, Any], cfg: Dict[str, Any]) -> None
             page.add(["○ Claude is waiting for you  ", "muted"], ["last on ", "muted"], [name, "bold"])
     else:
         page.add(["○ Waiting for Claude to read or edit code", "muted"])
-    if now.get("prompt"):
+    if prompt and now.get("prompt"):
         page.add(["  You asked  ", "muted"], [canvas.cut(now["prompt"], page.width - 13), ""])
 
 
@@ -255,17 +259,270 @@ def _now_model(c, root: Path, part: str, now: Dict[str, Any], marks) -> Tuple[Di
             ov = getattr(c, "regroup", None)
             holder = architecture.groups_of(c.after, c.cfg, architecture.kinds_with(c.after, c.cfg, ov),
                                             overlay=ov).get(part, "")
-            where = f" · in {holder[2:]}" if holder else ""
+            where = (f" · in {holder[2:]}" + (" (a grouping an LLM proposed)" if holder in _llm_groups(c) else "")
+                     if holder else "")
             more = f", {model['more']} more not drawn" if model["more"] else ""
             return model, f"Inside {model['title']}", (f"{model['files']} modules{more}{where} · b back · f follow "
                                                         "Claude · ↵ zoom in")
     if part:
         model = architecture.container(c, part, marks, agent)
         if model:
-            return model, f"Zoomed in on {model['title']}", ("its components · b back · f follow Claude · ↵ "
+            llm = "a grouping an LLM proposed · " if part in _llm_groups(c) else ""
+            return model, f"Zoomed in on {model['title']}", (f"{llm}its components · b back · f follow Claude · ↵ "
                                                              "a component's insides")
     return (architecture.system(c, marks, agent), "System",
-            "● Claude · + new · ~ changed · − gone · click, then ← ↑ ↓ → and ↵")
+            "● Claude · + new · ~ changed · − gone · click, then ← ↑ ↓ → and ↵" + _llm_aside(c))
+
+
+def _llm_groups(c) -> set:
+    """The containers ("g:<name>") the diagram has only because an LLM proposed them (regroup.py), not the config
+    or the engine's own grouping: named as such wherever the page names them (honest about certainty)."""
+    ov = getattr(c, "regroup", None)
+    if not ov:
+        return set()
+    try:
+        mine = set(architecture.groups_of(c.after, c.cfg, architecture.kinds_with(c.after, c.cfg, None)).values())
+        theirs = set(architecture.groups_of(c.after, c.cfg, architecture.kinds_with(c.after, c.cfg, ov),
+                                            overlay=ov).values())
+        return theirs - mine
+    except Exception:  # noqa: BLE001 - only a label
+        return set()
+
+
+def _llm_aside(c) -> str:
+    groups = sorted(g[2:] for g in _llm_groups(c))
+    if not groups:
+        return ""
+    return f" · grouped by an LLM: {design.and_list(groups, 3)}"
+
+
+# ── worth a look: the changes with the most consequence, and the request against them ──
+
+LOOK_MOST = 5
+
+
+def _fit(runs: List[tuple], width: int) -> List[tuple]:
+    """Runs cut to fit one row of `width`."""
+    out, left = [], width
+    for text, style in runs:
+        if left <= 0:
+            break
+        text = canvas.cut(text, left)
+        out.append((text, style))
+        left -= len(text)
+    return out
+
+
+def _decision_detail(d: Dict[str, Any], width: int) -> List[list]:
+    """Two rows under WORTH A LOOK for a picked change: why it matters; what it touches, the request, when."""
+    touches = ("touches " + design.and_list(d["names"], 4)) if d["names"] else ""
+    asked = f'under "{d["request"]}"' if d["request"] else ""
+    second = " · ".join(x for x in (touches, asked, d.get("when", "")) if x)
+    mine = [[[canvas.cut("  " + human.touched_line(t), width), "attention"]] for t in d.get("touches") or []][:1]
+    return [[[canvas.cut("  " + d["why"], width), ""]]] + mine + ([[[canvas.cut("  " + second, width), "muted"]]]
+                                                                if second else [])
+
+
+def _worth_a_look(page: canvas.Page, found: List[Dict[str, Any]], clash: List[Dict[str, Any]], width: int,
+                  base: str, most: Optional[int] = LOOK_MOST, more: str = "in Review") -> List[Dict[str, Any]]:
+    """WORTH A LOOK: the changes with the most consequence first (at most `most`), each a block to pick (its detail:
+    why it matters, what it touches, the request it came under; lit to its parts in the diagram); agents in each
+    other's way after them. Always there, so the person learns where to look; with nothing, it says so on its
+    heading. Returns the decisions shown."""
+    shown = found if most is None else found[:most]
+    narrow = width < 70
+    if shown:
+        aside = ("most consequential first · pick one" if narrow else
+                 "the most consequential first · pick one: why it matters, what it touches")
+    elif clash:
+        aside = "agents in each other's way"
+    else:
+        aside = f"nothing: no change to the system's structure {base}"
+    warn = any(d["status"] == "warn" for d in shown) or clash
+    page.heading("▲ Worth a look" if warn else "Worth a look", canvas.cut(aside, max(8, width - 18)))
+    if warn:
+        page.rows[-1][0][1] = "attention"
+    if shown:
+        g = canvas.Grid()
+        slot = 3 if any(d.get("touches") for d in shown) else 2
+        for y, d in enumerate(shown):
+            bid = "w:" + d["id"]
+            g.put(0, y, f" {d['sign']} ", NOTE_STYLE.get(d["status"], ""), [bid])
+            title = canvas.cut(d["title"], max(8, width - 4))
+            g.put(3, y, title, "", [bid])
+            w = 3 + len(title)
+            room = width - w - 4
+            if d.get("touches") and room >= 12:      # touches what the person optimises for: said on its row
+                mark = "  ◇ " + canvas.cut(d["touches"][0]["text"], room)
+                g.put(w, y, mark, "attention", [bid])
+                w += len(mark)
+            g.blocks.append({"id": bid, "x": 0, "y": y, "w": w, "h": 1})
+            g.details[bid] = _decision_detail(d, width)
+        page.grid(g, slot=slot)
+        if len(found) > len(shown):
+            page.rows.insert(len(page.rows) - slot, [[f"   and {len(found) - len(shown)} more {more}", "muted"]])
+            for b in page.blocks[-len(shown):]:
+                b["slot"] = [b["slot"][0] + 1, b["slot"][1]]
+    _notes(page, clash, 2)
+    return shown
+
+
+def _intent(page: canvas.Page, it: Dict[str, Any], working: bool, width: int) -> None:
+    """You asked: … · changed: A, B · not named in your request: C, on one row when it fits; else the request on one
+    row and what it changed under it."""
+    runs = human.intent_line(it, working)
+    asked, effect = runs[:2], runs[2:]
+    long = sum(len(t) for t, _s in runs)
+    if long <= width:
+        page.add(*[list(r) for r in runs])
+        return
+    page.add(*[list(r) for r in _fit(asked, width)])
+    first = (effect[0][0].lstrip(" ·"), effect[0][1])
+    page.add(*[list(r) for r in _fit([("  → ", "muted"), first] + list(effect[1:]), width)])
+
+
+def _decision_lights(shown: List[Dict[str, Any]], model: Dict[str, Any], lights: Dict[str, List[str]]
+                     ) -> Dict[str, List[str]]:
+    """What each decision lights in the diagram: its parts' boxes (and the container holding one), and the flow
+    between them when the diagram draws it."""
+    holder = {i["id"]: n["id"] for n in model["nodes"] for i in n.get("items") or []}
+    drawn = {n["id"] for n in model["nodes"]} | set(holder)
+    edges = {e for lit in lights.values() for e in lit if e.startswith("e:")}
+    out = {}
+    for d in shown:
+        lit = set()
+        for p in d["parts"]:
+            if p in drawn:
+                lit.add("b:" + p)
+            if p in holder:
+                lit.add("b:" + holder[p])
+        if d["entity"] in ("flow", "external") and len(d["parts"]) == 2:
+            e = "e:" + d["parts"][0] + ">" + d["parts"][1]
+            if e in edges:
+                lit.add(e)
+        out["w:" + d["id"]] = sorted(lit)
+    return out
+
+
+# ── what the person optimises for: their objectives, and the agents' checks of them ──
+
+CHECK_SIGN = {"holds": ("✓", "good"), "broken": ("✗", "removed"), "checking": ("…", "attention"),
+              "unclear": ("?", "attention")}
+
+
+def _ago_iso(v: Any) -> str:
+    """An ISO time said as "2 min ago"; "" when there is none."""
+    at = objectives._unix(v)
+    return activity.ago(at) if at else ""
+
+
+def _verdict(cs: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The check to show beside an objective: a broken one first (some agent found it broken), else the newest."""
+    return next((x for x in cs if x.get("status") == "broken"), None) or (cs[0] if cs else None)
+
+
+def _check_words(ch: Dict[str, Any], who: bool = True, when: bool = True) -> str:
+    """"✓ holds · engine, 2 min ago"; "… checking" (the agent and the time as they fit)."""
+    sign, _style = CHECK_SIGN.get(ch.get("status", ""), ("?", "attention"))
+    said = f"{sign} {ch.get('status', '')}"
+    tail = ", ".join(x for x in ((ch.get("agent") or "") if who else "", _ago_iso(ch.get("at")) if when else "")
+                     if x)
+    return said + (f" · {tail}" if tail else "")
+
+
+def _asked(o: Dict[str, Any]) -> str:
+    n = int(o.get("count") or 0)
+    last = _ago_iso(o.get("last"))
+    return (f"asked {n}×" if n else "") + (f", last {last}" if last and n else f"last {last}" if last else "")
+
+
+def _objectives(page: canvas.Page, objs: List[Dict[str, Any]], checks: Dict[str, List[Dict[str, Any]]],
+                width: int) -> None:
+    """OBJECTIVES: what the person has been optimising for, learned from their requests, a block to pick each (its
+    detail: how a change could break it, and a quote it rests on; lit to its parts; x clears it), with how often they
+    asked and the agents' latest check. Nothing at all when there are none."""
+    if not objs:
+        return
+    page.heading("Objectives", canvas.cut("what you keep asking for · pick one · x clears it" if width >= 70 else
+                                          "what you keep asking for · x clears", max(8, width - 13)))
+    g = canvas.Grid()
+    on: Dict[str, dict] = {}
+    for y, o in enumerate(objs):
+        bid = "o:" + o["id"]
+        ch = _verdict(checks.get(o["id"]) or [])
+        style = CHECK_SIGN.get(ch["status"], ("?", "attention"))[1] if ch else "accent"
+        g.put(0, y, " ◆ ", "accent", [bid])                     # its check says its own sign: ✓ holds, ✗ broken
+        x = 3
+        asked = _asked(o)
+        said = _check_words(ch) if ch else ""
+        tails = [t for t in (asked, said) if t]
+        tail = "  " + " · ".join(tails) if tails else ""
+        if len(tail) > max(0, width - x - 20):          # narrow: the check before how often it was asked
+            tail = ("  " + said) if said else ("  " + asked if asked else "")
+        if len(tail) > max(0, width - x - 16):
+            tail = ""
+        text = canvas.cut(o["text"], max(8, width - x - len(tail) - 1))
+        g.put(x, y, text, "bold" if ch and ch["status"] == "broken" else "", [bid])
+        x += len(text)
+        if tail:
+            if said and tail.endswith(said):
+                lead = tail[:len(tail) - len(said)]
+                g.put(x, y, lead, "muted", [bid])
+                g.put(x + len(lead), y, said, style, [bid])
+            else:
+                g.put(x, y, tail, "muted", [bid])
+            x += len(tail)
+        g.blocks.append({"id": bid, "x": 0, "y": y, "w": x, "h": 1})
+        rows: List[list] = []
+        if o.get("check"):
+            rows.append([["  breaks if: ", "muted"], [canvas.cut(o["check"], max(8, width - 13)), ""]])
+        quote = next((q for q in o.get("evidence") or [] if q), "")
+        if quote:
+            rows.append([[canvas.cut(f'  "{quote}"', width), "muted"]])
+        if ch and ch.get("note") and len(rows) < 2:
+            rows.append([[canvas.cut(f"  {ch.get('agent', '')}: {ch['note']}", width), style]])
+        g.details[bid] = rows
+        on[bid] = {"x": {"clear_objective": o["id"]}}
+    page.grid(g, slot=2, on=on)
+
+
+def _objective_lights(objs: List[Dict[str, Any]], model: Dict[str, Any]) -> Dict[str, List[str]]:
+    """What each objective lights in a diagram: the boxes of the parts it is about (and the container holding one)."""
+    holder = {i["id"]: n["id"] for n in model["nodes"] for i in n.get("items") or []}
+    drawn = {n["id"] for n in model["nodes"]} | set(holder)
+    out = {}
+    for o in objs:
+        lit = set()
+        for p in o.get("parts") or []:
+            if p in drawn:
+                lit.add("b:" + p)
+            if p in holder:
+                lit.add("b:" + holder[p])
+        out["o:" + o["id"]] = sorted(lit)
+    return out
+
+
+def _by_agent(checks: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    """{agent: its latest check of each objective, broken first}."""
+    out: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for cs in checks.values():
+        for ch in cs:
+            out[ch.get("agent", "")].append(ch)
+    return {a: _sorted_checks(cs) for a, cs in out.items()}
+
+
+def _objective_order(objs: List[Dict[str, Any]], checks: Dict[str, List[Dict[str, Any]]]
+                     ) -> List[Dict[str, Any]]:
+    """Objectives an agent found broken first, then those being checked, then the rest, in their own order."""
+    def rank(o: Dict[str, Any]) -> int:
+        st = {ch.get("status") for ch in checks.get(o["id"]) or []}
+        return 0 if "broken" in st else 1 if st & {"checking", "unclear"} else 2 if st else 3
+    return sorted(objs, key=rank)
+
+
+def _sorted_checks(cs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Broken first, then the newest."""
+    return sorted(cs, key=lambda ch: (ch.get("status") != "broken", -(objectives._unix(ch.get("at")) or 0.0)))
 
 
 def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
@@ -278,23 +535,30 @@ def view_now(root: Path, width: int, part: str) -> Dict[str, Any]:
     reading = design.Reading(c)
     notes = reading.notes()
     page = canvas.Page(width)
-    _status(page, now, cfg)
+    it = human.intent(c, events, lambda p: _name(p, c.after, c.before))
+    _status(page, now, cfg, prompt=it is None)
 
-    urgent = [n for n in notes if n["weight"] >= design.ATTENTION] + collisions(root, events, code, cfg)
-    if urgent:
-        page.heading("▲ Needs your attention", "worth a look before Claude goes on")
-        page.rows[-1][0][1] = "attention"
-        _notes(page, urgent, 3, ask=True)
+    base = "this turn" if c.base == "the start of this turn" else f"since {c.base}"
+    objs = objectives.current(root)
+    found = [d for d in human.mark_objectives(human.decisions(c, events, code, reading), c, objs) if d["look"]]
+    clash = collisions(root, events, code, cfg)
+    looks = _worth_a_look(page, found, clash, width, base)
+    if it:
+        page.blank()   # after WORTH A LOOK's empty detail rows it adds none; after agents in each other's way, one
+        _intent(page, it, now["working"], width)
+    _objectives(page, objs, objectives.checks(root) if objs else {}, width)
 
     agent = now["part"]
     model, title, aside = _now_model(c, root, part, now, marks)
-    page.heading(title, aside)
+    page.heading(title, canvas.cut(aside, max(8, width - len(title) - 2)))
     g = _diagram(page, c, model, width, centre=bool(part))
     ids = {b["id"] for b in g.blocks}
     page.pick = next((b for b in ("b:" + (part or ""), "b:" + (agent or "")) if b in ids), "")
+    for bid, lit in _decision_lights(looks, model, page.lights).items():
+        page.lights[bid] = lit
+    page.lights.update(_objective_lights(objs, model))
 
-    rest = design.summarize([n for n in notes if n not in urgent])
-    base = "this turn" if c.base == "the start of this turn" else f"since {c.base}"
+    rest = design.summarize(notes)
     parts = len(design.summarize(notes))
     page.heading("This turn", f"{len(notes)} change{'' if len(notes) == 1 else 's'} to the design, in {parts} "
                  f"part{'' if parts == 1 else 's'}; each change in full on the Changes tab" if notes else base)
@@ -338,10 +602,28 @@ def view_review(root: Path, width: int) -> Dict[str, Any]:
     g = _diagram(page, c, architecture.system(c, None, agent), width)
     ids = {b["id"] for b in g.blocks}
     page.pick = "b:" + agent if agent and "b:" + agent in ids else ""
-    notes = design.Reading(c).notes()
-    page.heading("Every change " + since, f"{len(notes)} to the design" if notes else "")
+    reading = design.Reading(c)
+    notes = reading.notes()
+    model = architecture.system(c, None, agent)
+    ranked = human.mark_objectives(human.decisions(c, activity.events(root, 200), Code(c.cfg), reading), c,
+                                   objectives.current(root))
+    if ranked:
+        page.heading("Every change " + since.split(" (")[0],
+                     canvas.cut(f"{len(ranked)}, the most consequential first · pick one", max(8, width - 30)))
+        g = canvas.Grid()
+        for y, d in enumerate(ranked):
+            bid = "w:" + d["id"]
+            g.put(0, y, f" {d['sign']} ", NOTE_STYLE.get(d["status"], ""), [bid])
+            title = canvas.cut(d["title"], max(8, width - 4))
+            g.put(3, y, title, "" if d["look"] else "muted", [bid])
+            g.blocks.append({"id": bid, "x": 0, "y": y, "w": 3 + len(title), "h": 1})
+            g.details[bid] = _decision_detail(d, width)
+        page.grid(g, slot=3 if any(d.get("touches") for d in ranked) else 2)
+        for bid, lit in _decision_lights(ranked, model, page.lights).items():
+            page.lights[bid] = lit
     if notes:
-        _notes(page, notes, 60, ask=True)
+        page.heading("Read for design", f"{len(notes)} note{'' if len(notes) == 1 else 's'}")
+        _notes(page, notes, 60)
         page.blank()
         for line in c.diff["plan"].splitlines():
             page.add([line, "muted"])
@@ -545,6 +827,10 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
     holder = {i["id"]: n["id"] for n in model["nodes"] for i in n.get("items") or []}
     drawn = {n["id"] for n in model["nodes"]} | set(holder)
     colour = colours(who)
+    objs = objectives.current(root)
+    checks = objectives.checks(root) if objs else {}
+    checked = _by_agent(checks)
+    texts = {o["id"]: o["text"] for o in objs}
     g = canvas.Grid()
     y = 0
     for name, a in sorted(who.items(), key=lambda kv: (kv[0] != agents.MAIN, -kv[1]["at"], kv[0])):
@@ -574,12 +860,26 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
                                                             width - 6), ""]]]
                           + [[["edited ", "muted"], [canvas.cut(design.and_list(done, 5) if done else "nothing yet",
                                                                width - 8), ""]]])
+        if checked.get(name):                        # the objectives it checked, broken first
+            row: List[list] = [["checked ", "muted"]]
+            x = 8
+            for ch in checked[name]:
+                sign, style = CHECK_SIGN.get(ch.get("status", ""), ("?", "attention"))
+                piece = f"{sign} {texts.get(ch['id'], ch['id'])}  "
+                if x + len(piece) > width:
+                    row.append([canvas.cut(piece, max(0, width - x)), style])
+                    break
+                row.append([piece, style])
+                x += len(piece)
+            g.details[bid].append(row)
         y += 1
     if who:
-        page.grid(g, slot=2)
-        swimlanes(page, root, events, code, who, colour, width)
+        page.grid(g, slot=3 if any(checked.get(n) for n in who) else 2)
+        swimlanes(page, root, events, code, who, colour, width, checked)
     else:
         page.add(["   no agent has touched the code yet", "muted"])
+    if objs:
+        _agent_objectives(page, objs, checks, colour, width)
     page.heading("Who works where", "@name after a block: the agents on it, in their colour")
     if who:
         legend: List[list] = []
@@ -644,7 +944,8 @@ def _lanes(root: Path, events: List[dict], who: Dict[str, Dict[str, Any]]) -> Di
 
 
 def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who: Dict[str, Dict[str, Any]],
-              colour: Dict[str, int], width: int) -> None:
+              colour: Dict[str, int], width: int, checked: Optional[Dict[str, List[Dict[str, Any]]]] = None
+              ) -> None:
     """The team at work, live: a lane per agent in its colour, time left to right since the turn began, a mark where
     it read (◎), edited (✎), changed the system's structure (▲) or told the others something (✉); then what it is
     doing now and how far it has got."""
@@ -673,7 +974,39 @@ def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who
             runs.append([f"  ○ idle{' since ' + time.strftime('%H:%M', time.localtime(at)) if at else ''}",
                          "muted"])
         runs.append([me["progress"], "muted"])
+        for ch in (checked or {}).get(name, [])[:4]:     # the objectives it checked: ✓ held, ✗ broke, … checking
+            sign, cstyle = CHECK_SIGN.get(ch.get("status", ""), ("?", "attention"))
+            runs.append([" " + sign, cstyle])
         page.add(*runs)
+
+
+def _agent_objectives(page: canvas.Page, objs: List[Dict[str, Any]], checks: Dict[str, List[Dict[str, Any]]],
+                      colour: Dict[str, int], width: int) -> None:
+    """OBJECTIVES on the Agents view: each objective, those found broken first, with every agent's latest check of
+    it (the agent in its colour, the status, its note, when)."""
+    some = sum(len(v) for v in checks.values())
+    page.heading("Objectives", canvas.cut(f"{some} check{'' if some == 1 else 's'} by the agents, broken first"
+                                          if some else "what the person optimises for · no agent has checked one yet",
+                                          max(8, width - 13)))
+    for o in _objective_order(objs, checks):
+        cs = _sorted_checks(checks.get(o["id"]) or [])
+        top = cs[0]["status"] if cs else ""
+        sign, style = CHECK_SIGN.get(top, ("◆", "accent"))
+        page.add([f" {sign} ", style], [canvas.cut(o["text"], width - 4), "bold"])
+        for ch in cs:
+            csign, cstyle = CHECK_SIGN.get(ch.get("status", ""), ("?", "attention"))
+            who = ch.get("agent", "")
+            agent_style = f"agent{colour[who]} bold" if who in colour else "bold"
+            when = _ago_iso(ch.get("at"))
+            head = [["   " + csign + " ", cstyle], [canvas.cut(who, 16), agent_style],
+                    [" " + ch.get("status", ""), cstyle]]
+            used = 3 + 2 + min(16, len(who)) + 1 + len(ch.get("status", ""))
+            tail = (f" · {when}" if when else "") + (f" · {ch['note']}" if ch.get("note") else "")
+            if tail:
+                head.append([canvas.cut(tail, max(0, width - used)), "muted"])
+            page.add(*head)
+        if not cs:
+            page.add(["     not checked yet", "muted"])
 
 
 ZOOM = 0   # how compact the diagrams are drawn: 0 full, 1 compact, 2 tiny (show sets it)
@@ -837,21 +1170,40 @@ def _web_now(root: Path, part: str, zoom: int) -> Dict[str, Any]:
     else:
         headline = "Waiting for Claude to read or edit code"
     sections = []
-    urgent = [n for n in notes if n["weight"] >= design.ATTENTION] + collisions(root, events, code, cfg)
-    if urgent:
-        sections.append(_web_section("Needs your attention", "notes", [_web_note(n) for n in urgent],
-                                     "worth a look before Claude goes on"))
+    objs = objectives.current(root)
+    checks = objectives.checks(root) if objs else {}
+    decs = human.mark_objectives(human.decisions(c, events, code, reading), c, objs)
+    found = [d for d in decs if d["look"]]
+    shown = found[:LOOK_MOST]
     model, title, aside = _now_model(c, root, part, now, marks)
     diagram = _web_diagram(c, model, title, aside, zoom, ["b:" + (part or ""), "b:" + (agent or "")])
-    rest = design.summarize([n for n in notes if n not in urgent])
+    diagram["lights"].update(_decision_lights(shown, model, diagram["lights"]))
+    clash = collisions(root, events, code, cfg)
+    if shown or clash:
+        more = f" · and {len(found) - LOOK_MOST} more in Review" if len(found) > LOOK_MOST else ""
+        sections.append(_web_section("Worth a look", "notes", [_web_decision(d) for d in shown]
+                                     + [_web_note(n) for n in clash],
+                                     "the most consequential first: why each matters, what it touches" + more))
+    it = human.intent(c, events, lambda p: _name(p, c.after, c.before))
+    if it:
+        sections.append(_web_section("Intent against effect", "lines",
+                                     [{"text": "".join(t for t, _s in human.intent_line(it, now["working"])),
+                                       "style": "attention" if it["unnamed"] else ""}],
+                                     "what you asked, next to what changed"))
+    if objs:
+        sections.append(_web_section("Objectives", "notes", [_web_objective(o, checks) for o in objs],
+                                     "what you keep asking for, learned from your requests · "
+                                     "clear one with `system-diff objectives clear <id>`"))
+        diagram["lights"].update(_objective_lights(objs, model))
+    rest = design.summarize(notes)
     base = "this turn" if c.base == "the start of this turn" else f"since {c.base}"
     parts = len(design.summarize(notes))
     sections.append(_web_section("This turn", "notes", [_web_note(n) for n in rest],
                                  f"{len(notes)} change{'' if len(notes) == 1 else 's'} to the design, in {parts} "
                                  f"part{'' if parts == 1 else 's'}" if notes else base))
-    shown = part or agent
-    if shown and (shown in c.after["components"] or shown.startswith("x:")):
-        L = _learn_parts(c, reading, shown, profile.learning())
+    taught = part or agent
+    if taught and (taught in c.after["components"] or taught.startswith("x:")):
+        L = _learn_parts(c, reading, taught, profile.learning())
         items = []
         if L["role"]:
             role = L["role"]
@@ -865,10 +1217,163 @@ def _web_now(root: Path, part: str, zoom: int) -> Dict[str, Any]:
     told = _web_steps(events, code, cfg)
     if told:
         sections.append(_web_section("What just happened", "steps", told, "the system diff, step by step"))
+    hover = _box_hover(c, model, decs, team(root, events, code), base)
+    hover.update({"w:" + d["id"]: _decision_hover(d) for d in shown})
+    hover.update(_objective_hover(root, objs, checks))
     return {"view": "now", "part": part or "", "title": "Now", "headline": headline,
             "status": {"working": bool(now["working"]), "doing": now["doing"] or "", "part": agent or "",
                        "prompt": now.get("prompt", "") or ""},
-            "diagram": diagram, "sections": sections}
+            "intent": it, "diagram": diagram, "sections": sections, "hover": hover}
+
+
+def _web_decision(d: Dict[str, Any]) -> Dict[str, Any]:
+    """A WORTH A LOOK item for the web page: a note (sign, status, text, why, ask) with its id ("w:<id>", what it
+    lights in the diagram and its hover card), the parts it touches and the request it came under."""
+    why = d["why"] + "".join(" · " + human.touched_line(t) for t in d.get("touches") or [])
+    return {"id": "w:" + d["id"], "sign": d["sign"], "status": d["status"], "text": d["title"], "why": why,
+            "ask": "", "kind": d["kind"], "impact": d["impact"], "parts": d["names"], "request": d["request"],
+            "objectives": ["o:" + i for i in d.get("objectives") or []], "touches": d.get("touches") or []}
+
+
+def _when(at: float) -> str:
+    return (time.strftime("%H:%M", time.localtime(at)) + f" ({activity.ago(at)})") if at else ""
+
+
+def _cap(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def _decision_hover(d: Dict[str, Any]) -> Dict[str, Any]:
+    """A WORTH A LOOK item's hover card: the change, why it matters, the parts it touches, the request, when."""
+    lines = ["Why it matters: " + d["why"]]
+    if d["more"] and d["more"] != d["why"]:
+        lines.append(_cap(d["more"]))
+    if d["names"]:
+        lines.append("Touches " + design.and_list(d["names"], 5))
+    lines += [_cap(human.touched_line(t)) for t in d.get("touches") or []]
+    if d["request"]:
+        lines.append(f'Under your request "{canvas.cut(d["request"], 120)}"')
+    if d["at"]:
+        lines.append("Claude's last edit there: " + _when(d["at"]))
+    return {"title": d["title"], "lines": lines}
+
+
+KIND_WORDS = {"ui": "a front end people use", "interface": "an entry point", "logic": "logic inside the system",
+              "data": "data access", "store": "an outside store of data", "external": "an outside system"}
+
+
+def _box_hover(c, model: Dict[str, Any], decs: List[Dict[str, Any]], who: Dict[str, Dict[str, Any]],
+               since: str) -> Dict[str, Dict[str, Any]]:
+    """Each diagram box's hover card ("b:<id>", as pictures.architecture_svg's data-id): what it is, what changed in
+    it (the ranked changes touching it, the most consequential first, with why the first matters), the request it
+    came under, and the agents that edited or read it."""
+    kind = design.kinds(c.after, c.cfg)
+    llm = _llm_groups(c)
+    out: Dict[str, Dict[str, Any]] = {}
+    for n in model["nodes"]:
+        for box in [n] + list(n.get("items") or []):
+            nid = box["id"]
+            inside = {i["id"] for i in n.get("items") or []} if box is n and n.get("items") else {nid}
+            lines = []
+            comp = c.after["components"].get(nid) or c.before["components"].get(nid)
+            if nid.startswith("a:"):
+                lines.append("Who uses the system" + (f": {box.get('sub')}" if box.get("sub") else ""))
+            elif nid.startswith("f:"):
+                lines.append(f"A module: {nid[2:]}")
+            elif comp:
+                lines.append(f"{KIND_WORDS.get(kind.get(nid, ''), 'a part')[0].upper()}"
+                             f"{KIND_WORDS.get(kind.get(nid, ''), 'a part')[1:]} · "
+                             f"{graph.files_word(comp.get('files', 0))}")
+            elif nid.startswith("x:"):
+                lines.append(KIND_WORDS.get(kind.get(nid, ""), "an outside system")[0].upper()
+                             + KIND_WORDS.get(kind.get(nid, ""), "an outside system")[1:])
+            elif box is n and n.get("items"):
+                lines.append(f"A container of {len(n['items'])} parts"
+                             + (" (a grouping an LLM proposed)" if nid in llm else ""))
+            mine = [d for d in decs if inside & set(d["parts"])]
+            if mine:
+                lines.append(f"Changed {since}:")
+                lines += ["  " + d["title"] for d in mine[:4]]
+                if len(mine) > 4:
+                    lines.append(f"  and {len(mine) - 4} more")
+                top = mine[0]
+                if top["look"]:
+                    lines.append("Why it matters: " + top["why"])
+                asked = next((d["request"] for d in mine if d["request"]), "")
+                if asked:
+                    lines.append(f'Under your request "{canvas.cut(asked, 100)}"')
+            else:
+                lines.append(f"No change to its structure {since}")
+            edited = sorted(a for a, w in who.items() if inside & set(w["edits"]))
+            read = sorted(a for a, w in who.items() if inside & set(w["reads"]) and a not in edited)
+            if edited:
+                lines.append("Edited by " + design.and_list(edited, 4))
+            if read:
+                lines.append("Read by " + design.and_list(read, 4))
+            out["b:" + nid] = {"title": box.get("title", nid).split("  @")[0], "lines": lines}
+    return out
+
+
+WEB_STATUS = {"holds": "ok", "broken": "bad", "checking": "warn", "unclear": "warn"}
+
+
+def _web_objective(o: Dict[str, Any], checks: Dict[str, List[Dict[str, Any]]],
+                   colour: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+    """An objective for the web page: a note ("o:<id>": its text; why: how often asked and the agents' latest
+    check), with the parts it is about, how it could break, and every agent's latest check."""
+    cs = _sorted_checks(checks.get(o["id"]) or [])
+    ch = _verdict(cs)
+    sign = CHECK_SIGN[ch["status"]][0] if ch and ch["status"] in CHECK_SIGN else "◆"
+    why = " · ".join(x for x in (_asked(o), _check_words(ch) if ch else "") if x)
+    return {"id": "o:" + o["id"], "sign": sign, "status": WEB_STATUS.get(ch["status"], "info") if ch else "info",
+            "text": o["text"], "why": why, "ask": "", "parts": list(o.get("parts") or []),
+            "check": o.get("check", ""), "count": int(o.get("count") or 0), "last": o.get("last", ""),
+            "checks": [{"agent": x.get("agent", ""), "status": x.get("status", ""), "note": x.get("note", ""),
+                        "at": x.get("at", ""), "colour": (colour or {}).get(x.get("agent", ""), -1)} for x in cs]}
+
+
+def _quote_times(root: Path, quotes: List[str]) -> Dict[str, float]:
+    """When the person typed each quote, newest, from system-diff's log of their requests (no transcript read)."""
+    try:
+        reqs = objectives.from_log(root)
+    except Exception:  # noqa: BLE001
+        return {}
+    out = {}
+    for q in quotes:
+        hit = objectives._matches(q, reqs)
+        if hit:
+            out[q] = max(hit)
+    return out
+
+
+def _objective_hover(root: Path, objs: List[Dict[str, Any]], checks: Dict[str, List[Dict[str, Any]]]
+                     ) -> Dict[str, Dict[str, Any]]:
+    """Each objective's hover card ("o:<id>"): its full text, how often and when it was asked, every quote it rests
+    on (with when, when the log has it), how a change could break it, the parts it is about, and every agent's
+    latest check with its note."""
+    out = {}
+    for o in objs:
+        lines = []
+        asked = _asked(o)
+        if asked:
+            lines.append(_cap(asked) + (f" · kept since {_ago_iso(o.get('since'))}" if o.get("since") else ""))
+        quotes = [q for q in o.get("evidence") or [] if q]
+        times = _quote_times(root, quotes) if quotes else {}
+        for q in quotes:
+            lines.append(f'You said: "{q}"' + (f" ({_when(times[q])})" if q in times else ""))
+        if o.get("check"):
+            lines.append("Breaks if: " + o["check"])
+        if o.get("parts"):
+            lines.append("About " + design.and_list(o["parts"], 5))
+        cs = _sorted_checks(checks.get(o["id"]) or [])
+        for ch in cs:
+            lines.append(f"{ch.get('agent', '')}: {_check_words(ch, who=False)}"
+                         + (f": {ch['note']}" if ch.get("note") else ""))
+        if not cs:
+            lines.append("No agent has checked it yet")
+        lines.append(f"Wrong? Clear it: system-diff objectives clear {o['id']}")
+        out["o:" + o["id"]] = {"title": o["text"], "lines": lines}
+    return out
 
 
 def _web_review(root: Path, zoom: int) -> Dict[str, Any]:
@@ -877,10 +1382,22 @@ def _web_review(root: Path, zoom: int) -> Dict[str, Any]:
     agent = activity.now(activity.events(root, 200), Code(c.cfg))["part"]
     diagram = _web_diagram(c, architecture.system(c, None, agent), "System " + since, "click a box · zoom in",
                            zoom, ["b:" + agent] if agent else [])
-    notes = design.Reading(c).notes()
+    reading = design.Reading(c)
+    notes = reading.notes()
     short = since.split(" (")[0]
-    sections = [_web_section("Every change " + since, "notes", [_web_note(n) for n in notes],
-                             f"{len(notes)} to the design" if notes else f"no change to the system's structure {short}")]
+    cfg = c.cfg
+    events = activity.events(root, 200)
+    model = architecture.system(c, None, agent)
+    ranked = human.mark_objectives(human.decisions(c, events, Code(cfg), reading), c, objectives.current(root))
+    diagram["lights"].update(_decision_lights(ranked, model, diagram["lights"]))
+    hover = _box_hover(c, model, ranked, team(root, events, Code(cfg)), short)
+    hover.update({"w:" + d["id"]: _decision_hover(d) for d in ranked})
+    sections = [_web_section("Every change " + short, "notes", [_web_decision(d) for d in ranked],
+                             f"{len(ranked)}, the most consequential first" if ranked
+                             else f"no change to the system's structure {short}")]
+    if notes:
+        sections.append(_web_section("Read for design", "notes", [_web_note(n) for n in notes],
+                                     f"{len(notes)} note{'' if len(notes) == 1 else 's'}"))
     if notes:
         sections.append(_web_section("The exact list", "lines",
                                      [{"text": line, "style": "muted"} for line in c.diff["plan"].splitlines()],
@@ -892,7 +1409,7 @@ def _web_review(root: Path, zoom: int) -> Dict[str, Any]:
                                        "style": "changed"} for ch in edited],
                                      "inside these parts, their structure the same"))
     return {"view": "review", "part": "", "title": "Review", "headline": c.diff["headline"],
-            "diagram": diagram, "sections": sections}
+            "diagram": diagram, "sections": sections, "hover": hover}
 
 
 def _web_agents(root: Path, zoom: int) -> Dict[str, Any]:
@@ -920,8 +1437,25 @@ def _web_agents(root: Path, zoom: int) -> Dict[str, Any]:
                       "marks": [{"pos": max(0.0, min(1.0, (at - L["start"]) / L["span"])), "kind": kind}
                                 for at, kind in sorted(me["marks"])],
                       "blocks": blocks})
+    objs = objectives.current(root)
+    checks = objectives.checks(root) if objs else {}
+    checked = _by_agent(checks)
+    texts = {o["id"]: o["text"] for o in objs}
+    for lane in lanes:                                # the objectives each agent checked, beside its lane
+        lane["checks"] = [{"id": "o:" + ch["id"], "text": texts.get(ch["id"], ch["id"]),
+                           "status": ch.get("status", ""), "note": ch.get("note", ""), "at": ch.get("at", "")}
+                          for ch in checked.get(lane["name"], [])]
+        if lane["checks"]:
+            lane["doing"] = ((lane["doing"] + " · ") if lane["doing"] else "") + "checked " + ", ".join(
+                f"{CHECK_SIGN.get(x['status'], ('?', ''))[0]} {x['text']}" for x in lane["checks"][:3])
     sections = [_web_section("The team", "lanes", lanes, f"plan: {task}" if task else
                              "no plan yet: Claude makes one with plan_agents")]
+    if objs:
+        some = sum(len(v) for v in checks.values())
+        sections.append(_web_section("Objectives", "notes",
+                                     [_web_objective(o, checks, colour) for o in _objective_order(objs, checks)],
+                                     f"{some} check{'' if some == 1 else 's'} by the agents, broken first" if some
+                                     else "what the person optimises for · no agent has checked one yet"))
     clash = collisions(root, events, code, cfg)
     if clash:
         sections.append(_web_section("In each other's way", "notes", [_web_note(n) for n in clash]))
@@ -935,9 +1469,54 @@ def _web_agents(root: Path, zoom: int) -> Dict[str, Any]:
         bus.append({"text": f"{time.strftime('%H:%M', time.localtime(m['at']))} {m['from']} → {m['topic']}: "
                             f"{m['text']}" + (f" ({m['why']})" if m.get("why") else ""), "style": style})
     sections.append(_web_section("The bus", "lines", bus, "what agents told each other, newest first"))
+    hover = _box_hover(c, model, human.decisions(c, events, code), who, "this turn")
+    hover.update(_agent_hover(root, cfg, who, L, st, checked, texts))
+    hover.update(_objective_hover(root, objs, checks))
+    if objs:
+        diagram["lights"].update(_objective_lights(objs, model))
     return {"view": "agents", "part": "", "title": "Agents",
             "headline": task or "no plan yet: Claude makes one with plan_agents", "diagram": diagram,
-            "sections": sections}
+            "sections": sections, "hover": hover}
+
+
+def _agent_hover(root: Path, cfg: Dict[str, Any], who: Dict[str, Dict[str, Any]], L: Dict[str, Any],
+                 st: Dict[str, Any], checked: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+                 texts: Optional[Dict[str, str]] = None) -> Dict[str, Dict[str, Any]]:
+    """Each agent's hover card ("ag:<name>", as the web page's lanes): its area, the blocks it owns, what it edited
+    and read this turn, its last action and when, the objectives it checked, and the latest it told the others and
+    was told."""
+    msgs = agents.messages(root)
+    out = {}
+    for name, a in who.items():
+        label = lambda ps: design.and_list([activity.label(cfg, p) for p in ps], 5)   # noqa: E731
+        lines = [f"Area: {a['area']}" if a["area"] else ("The main session" if name == agents.MAIN else "No area")]
+        lines.append("Owns " + label(a["blocks"]) if a["blocks"] else "Owns no blocks")
+        lines.append("Edited " + label(a["edits"]) + " this turn" if a["edits"] else "Edited nothing this turn")
+        read = [p for p in a["reads"] if p not in a["edits"]]
+        if read:
+            lines.append("Read " + label(read) + " this turn")
+        me = (L.get("lanes") or {}).get(name) or {}
+        if me.get("doing"):
+            lines.append("Now: " + me["doing"].lstrip("✎◎ "))
+        elif a["at"]:
+            lines.append("Last acted " + _when(a["at"]))
+        else:
+            lines.append("Not started")
+        for ch in (checked or {}).get(name, []):
+            lines.append(f"Checked \"{(texts or {}).get(ch['id'], ch['id'])}\": {_check_words(ch, who=False)}"
+                         + (f" ({ch['note']})" if ch.get("note") else ""))
+        topics = set((st.get("agents") or {}).get(name, {}).get("topics") or []) | set(a["blocks"]) | {
+            "all", f"agent:{name}"}
+        sent = [m for m in msgs if m["from"] == name][-2:]
+        got = [m for m in msgs if m["from"] != name and m["topic"] in topics][-2:]
+        for m in sent[::-1]:
+            lines.append(f"Told {m['topic']} ({time.strftime('%H:%M', time.localtime(m['at']))}): "
+                         + canvas.cut(m["text"], 100))
+        for m in got[::-1]:
+            lines.append(f"Heard from {m['from']} ({time.strftime('%H:%M', time.localtime(m['at']))}): "
+                         + canvas.cut(m["text"], 100))
+        out["ag:" + name] = {"title": name, "lines": lines}
+    return out
 
 
 def _web_topics(root: Path, zoom: int) -> Dict[str, Any]:
@@ -987,6 +1566,29 @@ def web_view(root: Path, view: str = "now", part: str = "", zoom: int = 0) -> Di
         out = _web_topics(root, zoom)
     else:
         out = _web_now(root, part or "", zoom)
+    out["hover"] = _rendered(out)
     out["web"] = web_url(root)
     out["send"] = []
     return out
+
+
+def _rendered(out: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """The view's hover cards, only for the ids the web page renders: the diagram's boxes as its SVG names them
+    (data-id), the WORTH A LOOK and ranked items and the agents' lanes as its sections list them."""
+    hover = out.get("hover") or {}
+    svg = (out.get("diagram") or {}).get("svg") or ""
+    boxes = {html.unescape(i) for i in re.findall(r'data-id="([^"]+)"', svg)} if svg else None
+    shown = set()
+    for sec in out.get("sections") or []:
+        for item in sec.get("items") or []:
+            if isinstance(item, dict) and item.get("id"):
+                shown.add(item["id"])
+            if sec.get("kind") == "lanes" and isinstance(item, dict):
+                shown.add("ag:" + item.get("name", ""))
+    keep = {}
+    for k, v in hover.items():
+        if k.startswith("b:") and (boxes is None or k in boxes):
+            keep[k] = v
+        elif k in shown:
+            keep[k] = v
+    return keep

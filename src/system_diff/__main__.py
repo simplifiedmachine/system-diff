@@ -14,6 +14,12 @@ if sys.argv[1:2] == ["progress"]:   # asked every second while the pane waits: a
     print(line(Path.cwd()))
     sys.exit(0)
 
+if "panel" in sys.argv[1:4]:   # what the pane runs at every look: the engine answers, without loading the CLI
+    from .panel import fast
+    code = fast(sys.argv[1:])
+    if code is not None:
+        sys.exit(code)
+
 from .cli import main
 
 sys.exit(main())

@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 const PANE = {
   plugin: 'system-diff',
@@ -268,4 +268,93 @@ test('/system-diff tui opens a terminal running the terminal view, and always sa
   opens = false // no terminal opens: the command to run is the answer
   got = await $.command.run({ ...RUN, args: 'tui' })
   expect((got as { text?: string }).text).toContain('Run this in a new terminal tab or window, in /work/shop:\n  system-diff tui')
+})
+
+// A resident engine: every page comes with the model's version; `--since V` is held until the version passes V
+// (here: until the test moves the clock past `held` ms, as Claude's edit lands), as `system-diff panel` does with
+// `system-diff watch` running.
+function engine(on: any, clock: { sleep: (ms: number) => Promise<void> }, asked: string[][], held = 5000) {
+  let version = 1
+  on('command.register', () => ({ value: { command: 'system-diff-pane' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.scroll', () => ({}))
+  on('command.run', () => ({ text: '' }))
+  on('process.run', async (_: unknown, e: { argv: string[] }) => {
+    const argv = [...e.argv]
+    const ok = (stdout: string) =>
+      ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+    if (argv.includes('progress')) return ok('')
+    asked.push(argv)
+    const at = (flag: string) => argv[argv.indexOf(flag) + 1] ?? ''
+    if (argv.includes('--since')) {
+      await clock.sleep(held)
+      version += 1 // an edit landed meanwhile
+    }
+    const base = page(at('--part'), Number(at('--width')) || 100)
+    return ok(JSON.stringify({ ...base, view: at('--view'), version,
+                               rows: [[[`${at('--view')} at version ${version}`, 'bold']], ...base.rows] }))
+  })
+}
+
+test('the long poll redraws the pane as soon as the engine has a new version, with no looks between', async ($, on) => {
+  const clock = mock.clock(on)
+  const asked: string[][] = []
+  engine(on, clock, asked)
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })        // drawn as rows of text, 110 columns wide
+  await $.command.run(RUN)
+  await clock.settle()
+  expect(asked[0]).not.toContain('--since')                          // the first look answers at once
+  expect(asked[1]?.join(' ')).toContain('--since 1')                 // then the long poll waits for what is next
+  expect(await ui.find({ type: 'Text', text: /now at version 1/ })).toBeDefined()
+  await clock.advance(5000)                                          // Claude's edit: the engine's version 2
+  expect(await ui.find({ type: 'Text', text: /now at version 2/ })).toBeDefined()
+  await clock.settle()
+  expect(asked[asked.length - 1]?.join(' ')).toContain('--since 2')  // and waits for the next one
+  await ui.unmount()
+  expect(asked.filter(a => !a.includes('--since')).length).toBe(1)  // no looks on a clock meanwhile
+})
+
+test('a key asks at once, never behind the long poll, and a long poll for what no longer shows is dropped', async ($, on) => {
+  const clock = mock.clock(on)
+  const asked: string[][] = []
+  engine(on, clock, asked, 20000)
+  await $.command.run(RUN)
+  await clock.settle()
+  expect(asked.some(a => a.includes('--since'))).toBe(true)          // a long poll is waiting
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.key({ key: 'r', in: 'page' })
+  const look = asked[asked.length - 1] ?? []
+  expect(look.join(' ')).toContain('--view review')                  // asked at once, while the long poll waits
+  expect(look).not.toContain('--since')
+  await ui.unmount()
+  let text = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect(await text.find({ type: 'Text', text: /review at version 1/ })).toBeDefined()
+  await text.unmount()
+  await clock.advance(20000)                                         // the old long poll (for Now) answers: dropped
+  text = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect(await text.find({ type: 'Text', text: /now at version/ })).toBeUndefined()
+  await text.unmount()
+  await clock.settle()
+  const next = asked[asked.length - 1]?.join(' ') ?? ''
+  expect(next).toContain('--since')                                  // and the next one asks for what shows
+  expect(next).toContain('--view review')
+})
+
+test('x on an objective clears it (system-diff\'s own notes, never the code), and the hint says so', async ($, on) => {
+  const asked: string[][] = []
+  const objective = { id: 'o:fast', x: 0, y: 6, w: 20, h: 1, on: { x: { clear_objective: 'fast' } } }
+  answer(on, asked, 0, '', [], { pick: 'o:fast', blocks: [...page('', 110).blocks, objective] })
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /x clear/, in: 'page' })).toBeDefined()
+  const before = asked.length
+  await ui.key({ key: 'x', in: 'page' })
+  const after = asked.slice(before).map(a => a.join(' '))
+  expect(after.some(a => a.endsWith('objectives clear fast'))).toBe(true)
+  expect(after[after.length - 1]).toContain('panel')              // and the page is read again without it
+  await ui.key({ key: 'up', in: 'page' })                          // on another block, x does nothing
+  const more = asked.length
+  await ui.key({ key: 'x', in: 'page' })
+  expect(asked.slice(more).some(a => a.includes('objectives'))).toBe(false)
+  await ui.unmount()
 })

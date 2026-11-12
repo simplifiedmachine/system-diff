@@ -33,10 +33,10 @@ def test_now_draws_the_system_as_a_designer_would_with_claude_lit(repo, files, c
          "status": "added"}]})
     out, text = page(capsys, repo)
     assert out["protocol"] == 2 and out["view"] == "now" and out["part"] == ""
-    assert text[0] == "● Claude is working  ✎ Editing API" and "  You asked  let people refund an order" in text
-    urgent = text.index("▲ NEEDS YOUR ATTENTION  worth a look before Claude goes on")   # a way to change state
-    assert text[urgent + 1] == " + API now answers POST /api/orders/{id}/refund"
-    assert any(t.startswith("   Ask Claude  Who may call POST") for t in text[urgent:urgent + 8])
+    assert text[0] == "● Claude is working  ✎ Editing API"
+    look = next(i for i, t in enumerate(text) if t.startswith("WORTH A LOOK"))         # a new way in, first
+    assert text[look + 1] == " + Claude added the endpoint POST /api/orders/{id}/refund to API"
+    assert any(t.startswith("You asked: let people refund an order") for t in text[look:look + 6])
     assert any(t.startswith("SYSTEM") for t in text)
     diagram = "\n".join(text)
     for heading in ("WHO USES IT", "WHAT PEOPLE USE", "ENTRY POINTS", "INSIDE THE SYSTEM", "DATA AND OUTSIDE"):

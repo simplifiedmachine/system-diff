@@ -259,27 +259,43 @@ def render(page: Optional[Dict[str, Any]], st: State, width: int, height: int,
 # --- the app: state, the pages built in a thread, the keys ----------------------------------------------------------
 
 Build = Callable[[int, str, str, int], Dict[str, Any]]   # width, view, part, zoom -> page
+# width, view, part, zoom, since -> the resident engine's page with its "version", None when no engine answers
+Ask = Callable[[int, str, str, int, Optional[int]], Optional[Dict[str, Any]]]
+Want = Tuple[int, str, str, int]
 
 
 class Tui:
     """The terminal view's state and work, without the terminal: `handle` takes a key, `screen` draws, `tick` takes in
-    a finished page and asks for the next one on the clock."""
+    a finished page and asks for the next one on the clock.
+
+    With the resident engine up (`system-diff watch`, started here when it is not), the pages come from it: a look the
+    keys ask for answers at once from its memory, and a second thread holds a long poll (`since` the version shown),
+    so the page follows Claude's edits the moment the engine has them, with no looks on the clock. Without one, the
+    page is read in this process every REFRESH seconds, as before."""
 
     def __init__(self, root: Path, view: str = "now", build: Optional[Build] = None,
                  size: Callable[[], Tuple[int, int]] = lambda: tuple(shutil.get_terminal_size((100, 30))),
-                 clock: Callable[[], float] = time.monotonic, progress: Optional[Callable[[], str]] = None):
+                 clock: Callable[[], float] = time.monotonic, progress: Optional[Callable[[], str]] = None,
+                 ask: Optional[Ask] = None, pause: float = 2.0):
         self.root = root
         self.st = State(view=view if view in {v for v, _, _ in VIEWS} else "now")
         self.page: Optional[Dict[str, Any]] = None
         self.size = size
         self.clock = clock
         self._build = build or self._pane
+        # the engine is asked by default only when the pages are read here (a test that builds its own has none)
+        self._ask: Optional[Ask] = ask if ask is not None else (None if build is not None else self._from_engine)
+        self._pause = pause
         self._progress = progress or self._read_progress
         self._cv = threading.Condition()
-        self._want: Optional[Tuple[int, str, str, int]] = None
-        self._busy: Optional[Tuple[int, str, str, int]] = None
+        self._want: Optional[Want] = None
+        self._busy: Optional[Want] = None
         self._began = 0.0
-        self._got: Optional[Tuple[Tuple[int, str, str, int], Optional[Dict[str, Any]], str]] = None
+        self._got: List[Tuple[Want, Optional[Dict[str, Any]], str]] = []   # finished looks and long polls, in order
+        self._version: Optional[int] = None   # the engine's newest model version seen; None: no engine answers
+        self._shown: Tuple[Optional[Want], int] = (None, -1)   # the page shown: its ask and its version
+        self._started = False   # an engine was started from here (once)
+        self._poller: Optional[threading.Thread] = None
         self._done_at = -REFRESH
         self._stop = False
         self._thread: Optional[threading.Thread] = None
@@ -288,20 +304,40 @@ class Tui:
         self._progress_at = 0.0
         self._error = ""
 
-    # The page, as the pane asks the engine for it (never taking what the web page sent to Claude: the pane does).
+    def _from_engine(self, width: int, view: str, part: str, zoom: int, since: Optional[int]) -> Optional[Dict[str, Any]]:
+        from . import panel
+        return panel.from_engine(self.root, width, view, part or None, zoom, since=since, take=False)
+
+    def _seen(self, page: Optional[Dict[str, Any]]) -> None:
+        """Note the engine's version a page came with (none: no engine answers, the clock looks again)."""
+        v = page.get("version") if isinstance(page, dict) else None
+        with self._cv:
+            if isinstance(v, int) and not isinstance(v, bool):
+                self._version = v if self._version is None else max(self._version, v)
+            else:
+                self._version = None
+            self._cv.notify_all()
+
+    # The page, as the pane asks for it (never taking what the web page sent to Claude: the pane does): from the
+    # engine when one runs, else read here (and an engine started for the next looks).
     def _pane(self, width: int, view: str, part: str, zoom: int) -> Dict[str, Any]:
-        from . import compare as comparing, extract, pane, panel, progress
-        progress.begin(self.root)
+        from . import panel
+        if self._ask is not None:
+            got = None
+            try:
+                got = self._ask(width, view, part, zoom, None)
+            except Exception:  # noqa: BLE001 - read here, then
+                got = None
+            if got is not None:
+                self._seen(got)
+                return got
+            self._seen(None)
+            if not self._started:
+                self._started = True
+                panel.start_engine(self.root)
         # as the pane does: a first read of a large repository spread over the looks, a few seconds each, the page
         # drawn from what is known so far
-        comparing.time_box(extract.COLD_BUDGET)
-        try:
-            page = pane.show(self.root, width, view, part or None, zoom, take=False)
-            panel.still_reading(page, comparing.partial())
-            return page
-        finally:
-            comparing.time_box(None)
-            progress.end()
+        return panel.build(self.root, width, view, part or None, zoom, take=False)
 
     def _read_progress(self) -> str:
         from . import progress
@@ -312,6 +348,9 @@ class Tui:
         self.request()
         self._thread = threading.Thread(target=self._work, name="system-diff-tui", daemon=True)
         self._thread.start()
+        if self._ask is not None:
+            self._poller = threading.Thread(target=self._poll, name="system-diff-tui-poll", daemon=True)
+            self._poller.start()
 
     def stop(self) -> None:
         with self._cv:
@@ -338,7 +377,42 @@ class Tui:
             except Exception as exc:  # noqa: BLE001 - shown in place of the page, as the pane does
                 err = f"{type(exc).__name__}: {exc}".strip()[:200]
             with self._cv:
-                self._busy, self._got, self._done_at = None, (req, page, err), self.clock()
+                self._busy, self._done_at = None, self.clock()
+                self._got.append((req, page, err))
+
+    def _poll(self) -> None:
+        """The long poll, beside the looks the keys ask for (which never wait for it): while an engine answers, ask it
+        for a version newer than the newest seen, for what shows now; an answer for what the person has moved away
+        from is dropped by `tick`. No engine: wait until a look finds one."""
+        assert self._ask is not None
+        while True:
+            with self._cv:
+                while not self._stop and self._version is None:
+                    self._cv.wait(1.0)
+                if self._stop:
+                    return
+                since = self._version
+                req = (self._width or self.size()[0], self.st.view, self.st.part, self.st.zoom)
+            try:
+                page = self._ask(*req, since)
+            except Exception:  # noqa: BLE001
+                page = None
+            with self._cv:
+                if self._stop:
+                    return
+                v = page.get("version") if isinstance(page, dict) else None
+                if page is None or not isinstance(v, int):
+                    self._version = None   # gone: the clock's looks go on (and start one) until one answers again
+                    self._cv.wait(self._pause)
+                    continue
+                now = (self._width or self.size()[0], self.st.view, self.st.part, self.st.zoom)
+                if req != now:
+                    continue   # asked for what no longer shows: ask again at once, for what does
+                if since is None or v > since:
+                    self._version = v if self._version is None else max(self._version, v)
+                    self._got.append((req, page, ""))
+                else:
+                    self._cv.wait(0.5)   # it waited its time with nothing new (or answers at once): a moment, then again
 
     def busy(self) -> bool:
         with self._cv:
@@ -348,13 +422,20 @@ class Tui:
         """Take in a finished page, follow a resize once it holds, look again on the clock, say where a long read is."""
         now = self.clock()
         with self._cv:
-            got, self._got = self._got, None
+            done, self._got = self._got, []
             building, began, idle = self._busy is not None, self._began, self._busy is None and self._want is None
-        if got is not None:
-            (_w, view, part, _z), page, err = got
+            live = self._version is not None
+        for req, page, err in done:
+            (_w, view, part, _z) = req
             self._error = f"system-diff failed here: {err}" if err else ""
-            if page is not None and view == self.st.view and part == self.st.part:
-                self.take(page)
+            if page is None or view != self.st.view or part != self.st.part:
+                continue
+            v = page.get("version")
+            v = v if isinstance(v, int) and not isinstance(v, bool) else -1
+            if v >= 0 and req == self._shown[0] and v < self._shown[1]:
+                continue   # an older page for the same ask than the one shown (a look that crossed a long poll)
+            self._shown = (req, v)
+            self.take(page)
         width = self.size()[0]
         if width != self._width:
             if self._resized_at == 0.0:
@@ -364,7 +445,7 @@ class Tui:
                 self.request()
         else:
             self._resized_at = 0.0
-        if idle and now - self._done_at >= REFRESH:
+        if idle and not live and now - self._done_at >= REFRESH:   # with an engine, the long poll carries the page
             self.request()
         note = self._error
         if building and (self.page is None or now - began > 1.0):

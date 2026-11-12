@@ -89,10 +89,11 @@ Claude is changing in it. `/system-diff close` (or "× close" in its tab row) hi
 
 - **Now** follows Claude, in the order your attention needs it:
   - **What Claude is doing** ("● Claude is working ✎ Editing API") and what you asked.
-  - **▲ Needs your attention**, only when something does. That means: an endpoint removed that a page still calls, a
-    new way to change state, a dependency cycle, a dependency pointing up the layers, a new outside system inside a
-    request, a table dropped, or a setting no deploy sets. Each comes with what it trades off and the question to ask
-    Claude before it goes on.
+  - **WORTH A LOOK**: the few changes most worth understanding, ranked by consequence (a new outside system, stored
+    data, an entry point, a new dependency or a boundary crossed, a part added or removed). Each says in plain words
+    why it matters and what it touches, lit in the diagram; the rest are in Review.
+  - **You asked … → changed …**: your request beside the parts it changed, and the changed parts it did not name.
+  - **OBJECTIVES**: what you keep asking Claude for, learned from your requests (below).
   - **The system diagram**:
     - What it draws: who uses the system (people, programs, AI agents), where they come in, the containers that do
       the work with their components inside, and the data and outside systems it relies on. Flows join them, named
@@ -136,6 +137,29 @@ One meaning per colour, so your eye goes where it should:
 - **Red:** only what was taken away.
 
 `n` `r` `a` `t` switch views.
+
+### What you are optimising for: objectives
+
+While you iterate with Claude you keep asking for the same things ("fast on large repositories", "must work on
+Windows"). system-diff learns these from your requests, in the background with the LLM your Claude Code uses (only
+your requests are read, never code), and keeps them as objectives:
+
+- shown in the pane, the web page and the terminal view, each with how often you asked and its evidence on hover;
+- given to Claude with every request, and to every agent of a team in its brief, so later iterations keep them;
+- marked on changes that touch one; and, when agents test or measure one, their verdict (holds, broken) shows next
+  to it and in the Agents tab (the `check_objective` MCP tool).
+
+`x` on an objective clears it, if it is wrong. `system-diff objectives` lists them (`clear`, `restore`, `learn`).
+They are kept in `.git/system-diff/objectives.json`: on your machine, never committed. `SYSTEM_DIFF_OBJECTIVES=0`
+turns the learning off.
+
+### How it stays fast
+
+One engine per repository (the web page's server, started by the first view that needs it) keeps the system in
+memory. Claude's edits reach it from the hooks as they happen, other edits through a cheap `git status`, and only the
+files that changed are read again: a page is about 0.1 s, an edit shows within a fraction of a second. Each file's
+reading is kept by its content, so every branch and worktree reuses it. Each branch keeps its own checkpoint (what
+you have seen there). `system-diff doctor` times a look on your machine and says what is slow.
 
 ### In a browser
 

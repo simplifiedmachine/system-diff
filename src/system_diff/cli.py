@@ -11,6 +11,7 @@
     system-diff watch [--base checkpoint] [--port 8765]             -> a live page of the diff since then
     system-diff tui [--view now|review|agents|topics]               -> the pane's views in a terminal of their own
     system-diff setup claude [--scope user|project|local] [--undo]  -> the hooks, status line, a skill, the MCP server
+    system-diff objectives [clear ID | restore ID | learn]          -> what you keep asking for, learned from your requests
     system-diff mcp                                                 -> the MCP server (stdio)
 
 Deterministic: everything is read from git objects (no checkout) or a directory, with the standard library only.
@@ -141,6 +142,50 @@ def _summarize(args, root: Path) -> int:
     return 0 if story else 1
 
 
+def _objectives(args, root: Path) -> int:
+    from . import objectives
+    if args.action in ("clear", "restore"):
+        if not args.id:
+            print(f"system-diff: objectives {args.action} needs an objective's id", file=sys.stderr)
+            return 2
+        done = (objectives.clear if args.action == "clear" else objectives.restore)(root, args.id)
+        if not done:
+            where = "kept" if args.action == "clear" else "cleared"
+            print(f"system-diff: no {where} objective {args.id!r}", file=sys.stderr)
+            return 1
+        print(f"{args.id}: " + ("cleared; it is no longer shown or given to Claude (restore it with "
+                                f"`system-diff objectives restore {args.id}`)" if args.action == "clear"
+                                else "restored"))
+        return 0
+    if args.action == "learn":
+        return objectives.learn(root, say=lambda s: print(f"objectives: {s}", flush=True))
+    data = objectives.load(root)
+    checks = objectives.checks(root)
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=1))
+        return 0
+    if not data["objectives"]:
+        print("No objectives learned yet: they come from what you keep asking Claude for in this repository"
+              + (f" ({data['from']} requests read so far)." if data.get("from") else ".")
+              + " `system-diff objectives learn` learns them now.")
+    for i, o in enumerate(data["objectives"], 1):
+        print(f"{i}. {o['text']}  [{o['id']}]")
+        print(f"   asked {o.get('count', 0)} times, last {o.get('last', '?')}"
+              + (f"; parts: {', '.join(o['parts'])}" if o.get("parts") else ""))
+        for q in o.get("evidence", []):
+            print(f"   \u201c{q}\u201d")
+        if o.get("check"):
+            print(f"   a change could break it by: {o['check']}")
+        for c in checks.get(o["id"], []):
+            print(f"   {c['agent']}: {c['status']}" + (f" ({c['note']})" if c.get("note") else "") + f", {c['at']}")
+    if data["objectives"]:
+        print("\nWrong? `system-diff objectives clear <id>` (only system-diff's notes change, never the code).")
+    if data["cleared"]:
+        print("Cleared: " + ", ".join(c["id"] for c in data["cleared"])
+              + " (`system-diff objectives restore <id>` brings one back)")
+    return 0
+
+
 def _tui_command() -> dict:
     """How to start `system-diff tui` from a new terminal with this same installation: `system-diff tui` where the
     system-diff on PATH is this one, else this Python with -m."""
@@ -202,6 +247,11 @@ def parser() -> argparse.ArgumentParser:
     tu.add_argument("--view", default="now", choices=["now", "review", "agents", "topics"])
     tu.add_argument("--command", action="store_true",
                     help="print how to run this tui (JSON: argv and a line to type), for the plugin's /system-diff tui")
+    ob = sub.add_parser("objectives", help="what you keep asking for in this repository, learned from your requests")
+    ob.add_argument("action", nargs="?", default="list", choices=["list", "clear", "restore", "learn"],
+                    help="list (default); clear or restore one by id; learn them now, in the foreground")
+    ob.add_argument("id", nargs="?", default="", help="the objective's id, for clear and restore")
+    ob.add_argument("--json", action="store_true", help="the whole store, as JSON")
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
@@ -214,6 +264,11 @@ def parser() -> argparse.ArgumentParser:
     pn.add_argument("--part", default="", help="the part to zoom in on (default: the one the agent works on)")
     pn.add_argument("--zoom", type=int, default=-1, help="diagrams 0 full, 1 compact, 2 tiny; -1 by the width")
     pn.add_argument("--protocol", type=int, default=1, help="2: a page of runs and pickable blocks (the mod's painter)")
+    pn.add_argument("--since", type=int, default=None,
+                    help="a long poll: wait (up to ~25 s) for the running engine's next version after this one")
+    pn.add_argument("--take", dest="take", action="store_true", default=True,
+                    help="hand over what the web page sent to Claude (default: the pane submits it)")
+    pn.add_argument("--no-take", dest="take", action="store_false", help="leave it for the pane")
     pf = sub.add_parser("profile", help="what you want explained: technologies marked new to you")
     pf.add_argument("--learn", metavar="TECH", help="mark a technology new to you, or unmark it")
     sub.add_parser("statusline", help="what Claude Code's status line runs: the part being worked on, the diff in brief")
@@ -257,6 +312,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         except ValueError as exc:
             print(f"system-diff: {exc}", file=sys.stderr)
             return 1
+    if args.cmd == "objectives":
+        return _objectives(args, root)
     if args.cmd == "watch":
         from . import watch
         watch.serve(root, args.base, args.port, args.config, args.interval)
@@ -282,7 +339,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if args.cmd == "panel":
         from . import panel
-        return panel.main(root, args.width, args.view, args.part, args.protocol, args.zoom)
+        return panel.main(root, args.width, args.view, args.part, args.protocol, args.zoom, since=args.since,
+                          take=args.take, start=args.protocol >= 2)
     if args.cmd == "profile":
         from . import profile
         if args.learn:

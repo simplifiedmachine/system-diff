@@ -7,6 +7,13 @@ what is new to them.
 Local only: the server listens on 127.0.0.1, and "Mark as seen" needs the page's own token, so no other web page open in
 the same browser can press it. "Send to Claude" (POST /send) needs the token and the page's own origin too, and appends
 what was typed to .git/system-diff/outbox.jsonl, where the pane picks it up and submits it to the live session.
+
+The server is also the repository's resident engine (live.Engine): it holds the working tree in memory and every view
+asks it for pages. GET /page?view=&width=&zoom=&part=&since=&take= answers {"version", "page"} (pane.show's page),
+waiting for a newer version than `since` (a long poll); GET /web gives the web page's data the same way. POST /touch
+{"paths": [...]} tells it which files Claude just edited. /page and /touch need the token, which web.json (readable
+on this machine only, under the git dir) keeps for the pane and the hooks; /page also answers this server's own page
+(same origin).
 """
 from __future__ import annotations
 
@@ -27,7 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import activity, graph, learn, pictures
+from . import activity, graph, learn, live, pictures
 from .compare import Comparison, checkpoint, checkpoint_sha, compare_worktree, turn_sha, worktree_tree
 from .diff import diff
 from .extract import Code
@@ -112,9 +119,12 @@ pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 .attn .item .sign { color:var(--warn); }
 .attn { border-color:var(--warn-line); }
 .attn > h2 { color:var(--warn); }
-.ask { grid-column:2; display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px; font-size:13px; }
-.ask b { color:var(--warn); }
-.ask button { padding:2px 10px; font-size:12px; }
+#hovercard { position:fixed; z-index:20; max-width:min(360px, calc(100vw - 16px)); padding:10px 12px; border-radius:10px;
+             background:var(--card); color:var(--ink); border:1px solid var(--line); font-size:13px; line-height:1.45;
+             box-shadow:0 6px 24px rgba(0,0,0,.18); pointer-events:none; overflow-wrap:anywhere; }
+#hovercard .t { font-weight:650; margin-bottom:4px; }
+#hovercard .l { color:var(--ink2); }
+#hovercard .l + .l { margin-top:3px; }
 .lit-ui { box-shadow:0 0 0 2px var(--work) !important; }
 .dia { padding:0; overflow:hidden; }
 .dia > h2 { padding:14px 16px 0; }
@@ -247,12 +257,7 @@ function notes(s) {
     const li = el("li", null, "item st-" + (n.status || "same"));
     li.append(el("span", n.sign || "•", "sign"), el("span", n.text, "text"));
     if (n.why) li.append(el("span", n.why, "why"));
-    if (n.ask) {
-      const a = el("div", null, "ask"), b = el("button", "Ask Claude");
-      b.type = "button"; b.onclick = () => { $("say").value = n.ask; $("say").focus(); };
-      a.append(el("b", "Ask Claude:"), el("span", n.ask), b);
-      li.append(a);
-    }
+    if (n.id) { li.dataset.hid = n.id; if (hoverOf(n.id)) li.tabIndex = 0; }
     ul.append(li);
   }
   if (!(s.items || []).length) c.append(el("div", "Nothing here yet.", "empty-note")); else c.append(ul);
@@ -359,6 +364,46 @@ function lines(s) {
   return c;
 }
 const RENDER = { notes, steps, lanes, chips, lines };
+
+// ---- hover cards: the whole story of a box, an item or an agent (the view's "hover", by the id the page shows) ----
+function hoverOf(id) {
+  const h = ui.data && ui.data.hover;
+  if (!h || !id || typeof h !== "object") return null;
+  const c = Object.prototype.hasOwnProperty.call(h, id) ? h[id] : null;
+  return c && typeof c === "object" ? c : null;
+}
+function hoverId(n) { return n.dataset.hid || n.dataset.pid || n.getAttribute("data-id") || ""; }
+const tip = { timer:0, for:null, box:null };
+function tipBox() {
+  if (!tip.box) { tip.box = el("div"); tip.box.id = "hovercard"; tip.box.setAttribute("role", "tooltip");
+                  tip.box.hidden = true; document.body.append(tip.box); }
+  return tip.box;
+}
+function hideTip() { clearTimeout(tip.timer); tip.for = null; if (tip.box) tip.box.hidden = true; }
+function showTipSoon(n) {
+  const card = hoverOf(hoverId(n));
+  if (!card) { hideTip(); return; }
+  if (tip.for === n && !tip.box.hidden) return;
+  clearTimeout(tip.timer); tip.for = n;
+  tip.timer = setTimeout(() => {
+    if (tip.for !== n || !n.isConnected) return;
+    const box = tipBox();
+    box.replaceChildren();
+    if (card.title) box.append(el("div", String(card.title), "t"));
+    for (const line of Array.isArray(card.lines) ? card.lines : []) box.append(el("div", String(line), "l"));
+    box.hidden = false;
+    const r = n.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight, vw = innerWidth, vh = innerHeight;
+    let x = Math.min(Math.max(8, r.left), vw - w - 8), y = r.bottom + 8;
+    if (y + h > vh - 8) y = r.top - h - 8;          // no room below: above
+    if (y < 8) y = Math.max(8, Math.min(vh - h - 8, r.top + 8));
+    box.style.left = Math.max(8, x) + "px"; box.style.top = y + "px";
+  }, 150);
+}
+function tipTarget(t) { return t && t.closest ? t.closest("[data-hid],[data-pid],#dia [data-id]") : null; }
+document.addEventListener("mouseover", e => { const n = tipTarget(e.target); if (n) showTipSoon(n); else if (tip.for) hideTip(); });
+document.addEventListener("focusin", e => { const n = tipTarget(e.target); if (n) showTipSoon(n); else hideTip(); });
+document.addEventListener("focusout", () => hideTip());
+addEventListener("scroll", () => hideTip(), { passive:true });
 function section(s) { return (RENDER[s.kind] || notes)(s); }
 function goesBefore(s) { return s.kind === "lanes" || s.kind === "chips" || isAttention(s); }
 
@@ -422,6 +467,11 @@ $("dia").addEventListener("mouseover", e => {
   const d = pickAt(e.target);
   if (d && d !== ui.pick) { ui.pick = d; ui.mine = true; applyPick(); }
 });
+$("dia").addEventListener("focusin", e => {
+  const d = pickAt(e.target);
+  if (d) { ui.pick = d; ui.mine = true; ui.over = true; applyPick(); }
+});
+$("dia").addEventListener("focusout", () => { ui.over = false; applyPick(); });
 $("dia").addEventListener("click", e => {
   const d = pickAt(e.target), g = (ui.data && ui.data.diagram) || {}, t = d && keyed(g.enter, d);
   if (t) go("now", t);
@@ -440,8 +490,10 @@ function drawDiagram(g) {
       svg.style.maxWidth = Math.round(vb[2] * 1.1) + "px"; svg.style.margin = "0";
     }
   }
-  for (const n of box.querySelectorAll("[data-id]"))
+  for (const n of box.querySelectorAll("[data-id]")) {
     if (keyed(g.enter, n.getAttribute("data-id"))) n.classList.add("can-enter");
+    if (hoverOf(n.getAttribute("data-id"))) n.setAttribute("tabindex", "0");
+  }
   box.classList.toggle("enterable", !!(g.enter && Object.keys(g.enter).length));
 }
 
@@ -476,7 +528,8 @@ function render(d) {
   let redrawn = false;
   if (changed("before", before)) { $("before").replaceChildren(...before.map(section)); redrawn = true; }
   const g = d.diagram || {};
-  if (changed("svg", g.svg)) { drawDiagram(g); redrawn = true; }
+  if (changed("svg", [g.svg, d.hover ? Object.keys(d.hover).length : 0])) { drawDiagram(g); redrawn = true; }
+  if (tip.for && !tip.for.isConnected) hideTip();
   if (changed("dia", [g.title, g.aside, g.lights, g.details, g.enter, g.pick])) {
     $("diacard").hidden = !g.svg;
     const h = $("diatitle"); h.replaceChildren(g.title || "Diagram");
@@ -497,18 +550,35 @@ function paintChrome() {
   const h = new URLSearchParams({ view:ui.view }); if (ui.part) h.set("part", ui.part); if (ui.zoom >= 0) h.set("zoom", ui.zoom);
   history.replaceState(null, "", "#" + h);
 }
-async function load() {
+// The engine numbers each state of the system; the page asks for the next one and the server answers when it comes
+// (a long poll, ~25 s at most), so the page follows within a moment of a change and does nothing in between.
+let polling = null;
+async function load(wait) {
   const seq = ++ui.seq;
+  if (polling) { polling.abort(); polling = null; }
   const q = new URLSearchParams({ view:ui.view, part:ui.part, zoom:String(ui.zoom) });
+  if (wait && typeof ui.version === "number") q.set("since", String(ui.version));
+  const ctl = new AbortController(); polling = ctl;
   try {
-    const r = await fetch("web?" + q, { cache:"no-store" });
+    const r = await fetch("web?" + q, { cache:"no-store", signal:ctl.signal, headers:{ "X-Token":TOKEN } });
     const d = await r.json().catch(() => ({}));
-    if (seq !== ui.seq) return;   // the person moved on while this loaded
+    if (seq !== ui.seq) return false;   // the person moved on while this loaded
     if (!r.ok) throw new Error(d.error || r.status + " " + r.statusText);
     $("error").textContent = "";
+    if (typeof d.version === "number") ui.version = d.version;
     render(d);
+    return true;
   } catch (e) {
-    if (seq === ui.seq) $("error").textContent = e instanceof TypeError ? "The watcher stopped: start system-diff watch again." : String(e.message || e);
+    if (seq !== ui.seq || (e && e.name === "AbortError")) return false;
+    $("error").textContent = e instanceof TypeError ? "The watcher stopped: start system-diff watch again." : String(e.message || e);
+    throw e;
+  } finally { if (polling === ctl) polling = null; }
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function follow() {
+  for (;;) {
+    if (document.hidden) { await sleep(1000); continue; }
+    try { await load(true); } catch (e) { await sleep(3000); }
   }
 }
 function go(view, part) {
@@ -518,7 +588,7 @@ function go(view, part) {
   ui.view = view; ui.part = part; reset(true);
 }
 function reset(top) {
-  ui.mine = false; ui.pick = ""; ui.hover = null; ui.last = {};
+  ui.mine = false; ui.pick = ""; ui.hover = null; ui.last = {}; ui.version = null; hideTip();
   if (top) window.scrollTo(0, 0);
   paintChrome(); load();
 }
@@ -530,7 +600,7 @@ function back() {
 function zoomBy(d) {
   const z = Math.max(0, Math.min(2, (ui.zoom < 0 ? 0 : ui.zoom) + d));
   if (z === ui.zoom) return;
-  ui.zoom = z; ui.last = {}; paintChrome(); load();
+  ui.zoom = z; ui.last = {}; ui.version = null; paintChrome(); load();
 }
 for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => go(b.dataset.view, "");
 $("back").onclick = back;
@@ -571,11 +641,10 @@ document.addEventListener("keydown", e => {
   else if (e.key === "f") go("now", "");
   else if (e.key === "-") zoomBy(1);
   else if (e.key === "+" || e.key === "=") zoomBy(-1);
-  else if (e.key === "Escape") { ui.mine = false; ui.pick = ""; ui.last.dia = ""; ui.hover = null; render(ui.data || {}); }
+  else if (e.key === "Escape") { hideTip(); ui.mine = false; ui.pick = ""; ui.last.dia = ""; ui.hover = null; render(ui.data || {}); }
 });
 paintChrome();
-load();
-setInterval(() => { if (!document.hidden) load(); }, 3000);
+follow();
 </script></body></html>
 """
 
@@ -620,8 +689,15 @@ class Watcher:
         self.last: Optional[dict] = None  # the working tree's blueprint at the last look
         self.log_mark: Optional[tuple] = None
         self.taught: tuple = ()           # (part, look) the zoomed picture and the lesson were made for
+        self.engine: Optional[live.Engine] = None   # the resident engine, when serving: it knows the working tree
+        self.pages: Optional[live.Pages] = None
 
     def key(self) -> tuple:
+        e = self.engine
+        if e is not None:   # no snapshot: the engine's tree, and how far its reading got
+            e.ready.wait(live.FIRST_WAIT)
+            if e.tree:
+                return e.tree, checkpoint_sha(self.root), turn_sha(self.root), e.reads
         return worktree_tree(self.root), checkpoint_sha(self.root), turn_sha(self.root)
 
     def _note_changed_files(self, tree: str) -> None:
@@ -721,13 +797,25 @@ class Watcher:
                 self.follow()
 
     def loop(self) -> None:
+        seen = -1
         while not self.stop.is_set():
             self.tick()
-            self.stop.wait(self.interval)
+            if self.engine is not None:   # woken by the engine's next version, not by a timer only
+                seen = self.engine.wait(self.engine.version if seen >= 0 else -1, self.interval)
+                seen = max(seen, 0)
+                if self.stop.is_set():
+                    return
+            else:
+                self.stop.wait(self.interval)
 
     def mark_seen(self) -> None:
         with self.busy:
-            checkpoint(self.root)
+            e = self.engine
+            if e is not None and e.commit:
+                e.sync()   # what is on disk this moment, then the engine's commit of it: no snapshot
+                checkpoint(self.root, e.commit)
+            else:
+                checkpoint(self.root)
         self.tick(force=True)  # the page's answer is the diff from the new checkpoint, never an older look
 
     def snapshot_state(self) -> Dict[str, Any]:
@@ -758,32 +846,121 @@ def handler(w: Watcher):
                 return self._send(200, PAGE.replace("__TOKEN__", w.token).encode(), "text/html; charset=utf-8")
             if path == "/web":
                 return self._web()
+            if path == "/page":
+                return self._page()
             if path == "/whoami":   # this is system-diff's server for the repository whose web.json names this id
                 return self._json(200, {"app": "system-diff", "id": w.ident, "pid": os.getpid()})
             if self.path.startswith("/state"):
                 return self._send(200, json.dumps(w.snapshot_state()).encode(), "application/json")
             return self._send(404, b"not found", "text/plain")
 
+        def _query(self) -> Dict[str, str]:
+            return {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
+
+        def _since(self, q: Dict[str, str]) -> Optional[int]:
+            try:
+                return int(q["since"]) if q.get("since", "") != "" else None
+            except ValueError:
+                raise ValueError("since is a version number") from None
+
+        def _wait(self, since: Optional[int], key: tuple, take: bool = False) -> None:
+            """A long poll: while the engine's version is still `since` and this very page is drawn at it, wait for
+            the next version (at most LONG_POLL). A page not drawn at it yet (another width, say) is answered at
+            once; with `take`, also as soon as the web page sends something to Claude."""
+            e = w.engine
+            if e is None or since is None or since != e.version or w.pages is None or not w.pages.current(key):
+                return
+            box = e._sd / OUTBOX
+            e.wait(since, live.LONG_POLL, (lambda: box.exists()) if take else None)
+
         def _web(self):
-            """One view of the pane as data for the page: pane.web_view's JSON. It never takes the outbox (the pane,
+            """One view of the pane as data for the page: pane.web_view's JSON, with the engine's "version" it was
+            drawn at; with `since` (the version the page has), a long poll. It never takes the outbox (the pane,
             which submits what was sent to Claude, does)."""
-            q = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
+            q = self._query()
             view = q.get("view", "now")
             if view not in VIEWS:
                 return self._json(400, {"error": f"no view {view!r}"})
             try:
                 zoom = int(q.get("zoom") or -1)
-            except ValueError:
-                return self._json(400, {"error": "zoom is a number"})
+                since = self._since(q)
+            except ValueError as exc:
+                return self._json(400, {"error": "zoom is a number" if "since" not in str(exc) else str(exc)})
             if not -1 <= zoom <= 2:
                 return self._json(400, {"error": "zoom is -1 (auto), 0, 1 or 2"})
+            part = q.get("part", "")[:200]
             try:
-                from . import pane   # here: pane may ask this module where the page is
-                with PANE_LOCK:  # the pane's views set its module's zoom: one view at a time
-                    page = pane.web_view(w.root, view, q.get("part", ""), zoom)
+                key = ("web", view, zoom, part)
+                self._wait(since, key)
+                version, page = _page_of(w, key)
             except Exception as exc:  # noqa: BLE001 - the page shows it and keeps polling
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
-            return self._json(200, page)
+            return self._json(200, {**page, "version": version})
+
+        def _authorized(self) -> bool:
+            """The token (the pane and the hooks read it from web.json), or this server's own page."""
+            return live.token_ok(self.headers.get("X-Token"), w.token) or self._same_origin()
+
+        def _page(self):
+            """{"version", "page"}: pane.show's page for the view, drawn at that version of the engine's model (kept
+            and answered again until the version moves). `since`: wait for a version newer than that first (at most
+            ~25 s). `take=1` (the pane's): the page also hands over what the web page sent to Claude."""
+            if not self._authorized():
+                return self._json(403, {"error": "forbidden"})
+            q = self._query()
+            view = q.get("view", "now")
+            if view not in VIEWS:
+                return self._json(400, {"error": f"no view {view!r}"})
+            try:
+                width, zoom = int(q.get("width") or 80), int(q.get("zoom") or -1)
+                since = self._since(q)
+            except ValueError:
+                return self._json(400, {"error": "width, zoom and since are numbers"})
+            if not 10 <= width <= 1000 or not -1 <= zoom <= 2:
+                return self._json(400, {"error": "width is 10 to 1000, zoom -1 (auto), 0, 1 or 2"})
+            take = q.get("take", "0") == "1"
+            part = q.get("part", "")[:200]
+            try:
+                key = ("pane", view, width, zoom, part)
+                self._wait(since, key, take)
+                version, page = _page_of(w, key)
+                if take:   # drawn once per version; what was sent to Claude is taken fresh for each ask
+                    from . import pane
+                    page = {**page, "send": pane.take_outbox(w.root)}
+            except Exception as exc:  # noqa: BLE001 - the pane shows it and asks again
+                return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+            return self._json(200, {"version": version, "page": page})
+
+        def _post_touch(self):
+            """The files Claude just edited: {"paths": [...]}, relative to the repository or absolute. Token only."""
+            if not live.token_ok(self.headers.get("X-Token"), w.token) or (
+                    self.headers.get("Origin") is not None and not self._same_origin()):
+                return self._json(403, {"error": "forbidden"})
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if n < 0 or n > SEND_BODY_MAX:
+                    return self._json(400, {"error": "the body is too big"})
+                body = json.loads(self.rfile.read(n).decode("utf-8") or "null")
+            except (ValueError, UnicodeDecodeError):
+                return self._json(400, {"error": "the body is JSON: {\"paths\": [...]}"})
+            paths = body.get("paths") if isinstance(body, dict) else None
+            if not isinstance(paths, list) or not all(isinstance(x, str) for x in paths) or len(paths) > 1000:
+                return self._json(400, {"error": "paths is a list of up to 1000 file paths"})
+            if w.engine is None:
+                return self._json(503, {"error": "no engine"})
+            try:
+                version = w.engine.touch(paths)
+            except Exception as exc:  # noqa: BLE001 - the engine's next look finds the edit anyway
+                return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+            return self._json(200, {"version": version})
+
+        def _post_quit(self):
+            """Stop this engine: a newer system-diff replacing it (its code is loaded once, so after an upgrade the
+            running one would go on serving the old pages). Token only, never from a browser."""
+            if not live.token_ok(self.headers.get("X-Token"), w.token) or self.headers.get("Origin") is not None:
+                return self._json(403, {"error": "forbidden"})
+            self._json(200, {"quitting": True})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
 
         def _json(self, code: int, obj: Dict[str, Any]) -> None:
             self._send(code, json.dumps(obj).encode(), "application/json")
@@ -819,11 +996,17 @@ def handler(w: Watcher):
                 line = outbox_put(w.root, text)
             except OSError as exc:
                 return self._json(500, {"error": f"could not queue it: {exc}"})
+            if w.engine is not None:
+                w.engine.poke()   # the pane's long poll takes it now
             return self._json(200, {"id": line["id"], "queued": True})
 
         def do_POST(self):
             if urlsplit(self.path).path == "/send":
                 return self._post_send()
+            if urlsplit(self.path).path == "/touch":
+                return self._post_touch()
+            if urlsplit(self.path).path == "/quit":
+                return self._post_quit()
             if self.path != "/seen" or self.headers.get("X-Token") != w.token:
                 return self._send(403, b"forbidden", "text/plain")
             w.mark_seen()
@@ -834,6 +1017,25 @@ def handler(w: Watcher):
 
 VIEWS = ("now", "review", "agents", "topics")
 PANE_LOCK = threading.Lock()
+
+
+def _build(w: "Watcher", key: tuple) -> Dict[str, Any]:
+    """Draw one page: ("pane", view, width, zoom, part) is pane.show's (without the outbox), ("web", view, zoom,
+    part) pane.web_view's. In this process compare() takes the working tree from the engine."""
+    from . import pane   # here: pane may ask this module where the page is
+    with PANE_LOCK:  # the pane's views set its module's zoom: one view at a time
+        if key[0] == "pane":
+            _k, view, width, zoom, part = key
+            return pane.show(w.root, width, view, part or None, zoom, take=False)
+        _k, view, zoom, part = key
+        return pane.web_view(w.root, view, part, zoom)
+
+
+def _page_of(w: "Watcher", key: tuple) -> tuple:
+    """(version, page) for a page's key: from the engine's pages when there is an engine, else drawn now."""
+    if w.pages is not None:
+        return w.pages.get(key)
+    return (w.engine.version if w.engine else 0), _build(w, key)
 WEB = "web.json"   # where a running watcher listens: {"url", "port", "pid", "id"}, under .git/system-diff
 STARTING = "web.starting"   # a watcher being started: {"pid", "port", "at"}, until it has written web.json
 STARTING_FOR = 60.0         # how long a start is waited for (a large repository, a slow disk) before another is tried
@@ -912,6 +1114,39 @@ def _whoami(port: int, ident: str, timeout: float = 1.0) -> Optional[bool]:
         conn.close()
 
 
+def _version_key(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in v.split(".")[:3])
+    except ValueError:
+        return ()
+
+
+def older(version: str) -> bool:
+    """Whether an engine of `version` ("" for one from before engines said) is older than this system-diff."""
+    from . import __version__
+    return _version_key(version) < _version_key(__version__)
+
+
+def _retire(port: int, pid: int, token: str) -> None:
+    """Stop an older engine of this repository (it said it is ours, by /whoami): POST /quit, or, for one from before
+    /quit, end its process. Never raises."""
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+        conn.request("POST", "/quit", body=b"{}", headers={"X-Token": token, "Content-Type": "application/json"})
+        if conn.getresponse().status == 200:
+            conn.close()
+            time.sleep(0.3)
+            return
+        conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        os.kill(pid, signal.SIGTERM)   # Windows: TerminateProcess
+        time.sleep(0.3)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _look(root: Path) -> tuple:
     """(url, state) of this repository's watcher: state "up" (url set), "busy" (web.json names a server that did not
     answer in time: leave it be), "starting" (one is being started) or "none". A web.json naming a server that is gone,
@@ -925,6 +1160,9 @@ def _look(root: Path) -> tuple:
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             raw, port, pid, ident = None, 0, 0, ""
         ours = _whoami(port, ident) if port and _alive(pid) else False
+        if ours and older(str(info.get("version") or "")):
+            _retire(port, pid, str(info.get("token") or ""))   # an upgrade: the next look starts this version's
+            ours = False
         if ours:
             return f"http://localhost:{port}/", "up"   # what a browser opens here, or through a forwarded port
         if ours is None:
@@ -1031,11 +1269,18 @@ def start_detached(root: Path, port: int = 8765, wait: float = 3.0) -> Optional[
         return None
 
 
-def _write_web(root: Path, url: str, port: int, ident: str = "") -> Optional[Path]:
+def _write_web(root: Path, url: str, port: int, ident: str = "", token: str = "") -> Optional[Path]:
+    """web.json: where this server listens, who it is (id, for /whoami) and its token (for /page and /touch: the
+    pane and the hooks read it here). Readable by its owner only, where the file system can say so."""
     try:
         f = _web_file(root)
         tmp = f.with_suffix(f".{os.getpid()}.tmp")
-        tmp.write_text(json.dumps({"url": url, "port": port, "pid": os.getpid(), "id": ident}), encoding="utf-8")
+        from . import __version__
+        data = json.dumps({"url": url, "port": port, "pid": os.getpid(), "id": ident, "token": token,
+                           "version": __version__})
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            out.write(data)
         os.replace(tmp, f)
     except (OSError, subprocess.CalledProcessError):
         return None
@@ -1073,7 +1318,13 @@ def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: O
     server = ThreadingHTTPServer(("127.0.0.1", port), handler(w))
     bound = server.server_address[1]
     url = f"http://127.0.0.1:{bound}/"
-    web = _write_web(root, url, bound, w.ident)
+    web = _write_web(root, url, bound, w.ident, w.token)
+    if config_path is None:   # the engine reads the repository's own config, as the views do
+        try:
+            w.engine = live.Engine(root, interval=min(interval, live.INTERVAL)).start()
+            w.pages = live.Pages(w.engine, lambda key: _build(w, key)).start()
+        except Exception:  # noqa: BLE001 - no engine: every look reads for itself, as before
+            w.engine, w.pages = None, None
     thread = threading.Thread(target=w.loop, daemon=True)
     thread.start()
     if threading.current_thread() is threading.main_thread() and hasattr(signal, "SIGTERM"):
@@ -1088,5 +1339,7 @@ def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: O
         pass
     finally:
         w.stop.set()
+        if w.engine is not None:
+            w.engine.stop()
         server.server_close()
         _forget_web(web, bound)

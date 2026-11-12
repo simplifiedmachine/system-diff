@@ -13,14 +13,16 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
-from . import activity, config, graph, learn, textmap
-from .compare import compare, turn_sha
-from .extract import Code
-from .sources import GitSource
+if TYPE_CHECKING:
+    from . import textmap
+
+# The views read the system (git, the extractors): imported where they are used, so the thin client (`fast`, which
+# only asks the running engine) starts in a few tens of milliseconds, even on Windows.
 
 VIEWS = ("now", "map", "changes", "topics")
 
@@ -69,6 +71,9 @@ def _told(item: Dict[str, Any], width: int, style: str = "") -> List[textmap.Lin
 
 
 def view_now(root: Path, width: int, part: Optional[str]) -> Dict[str, Any]:
+    from . import activity, config, graph, learn
+    from .compare import compare, turn_sha
+    from .extract import Code
     cfg = config.lenient(root)
     code = Code(cfg)
     events = activity.events(root, 200)
@@ -187,6 +192,9 @@ def zoom_diagram(hood: dict, focus: Optional[str], most: int = 12) -> Dict[str, 
 
 
 def view_map(root: Path, width: int) -> Dict[str, Any]:
+    from . import activity, graph
+    from .compare import compare
+    from .extract import Code
     c = compare(root, "checkpoint", ".")
     focus = activity.now(activity.events(root, 200), Code(c.cfg))["part"]
     g = graph.overview(c.after, c.cfg, graph.change_marks(c.diff, c.before, c.after), c.before)
@@ -200,6 +208,8 @@ def view_map(root: Path, width: int) -> Dict[str, Any]:
 
 
 def view_changes(root: Path, width: int) -> Dict[str, Any]:
+    from . import learn
+    from .compare import compare, turn_sha
     out: List[textmap.Line] = []
     for point in ["checkpoint"] + (["turn"] if turn_sha(root) else []):
         c = compare(root, point, ".")
@@ -212,6 +222,9 @@ def view_changes(root: Path, width: int) -> Dict[str, Any]:
 
 
 def view_topics(root: Path, width: int) -> Dict[str, Any]:
+    from . import learn
+    from .compare import compare
+    from .sources import GitSource
     c = compare(root, "checkpoint", ".")
     text = learn.system_markdown(learn.system_topics(GitSource(c.head_sha, root), c.after, c.cfg))
     return {"head": [], "diagram": None, "rows": markdown_rows(text, width), "picks": [], "part": ""}
@@ -252,20 +265,81 @@ def still_reading(page: Dict[str, Any], partial: Optional[Dict[str, int]]) -> No
     page["reading"] = {"done": done, "total": total}
 
 
+# How long the thin client waits for the engine: a look at what it has (it answers from memory), and a long poll
+# (it holds the request up to LONG_POLL seconds for a newer version, then answers with what it has).
+LONG_POLL = 25.0
+ASK_TIMEOUT = 10.0
+
+
+def from_engine(root: Path, width: int, view: str, part: Optional[str], zoom: int, since: Optional[int] = None,
+                take: bool = True) -> Optional[Dict[str, Any]]:
+    """The page from the resident engine (`system-diff watch`), with its model "version": the pane's and the terminal
+    view's thin client. None when no engine runs here (or an older one without pages, or it failed): then the caller
+    reads the system itself. Never raises."""
+    try:
+        from . import live
+    except Exception:  # noqa: BLE001 - an engine without the client: read in-process, as before
+        return None
+    ask = getattr(live, "client_page", None)
+    if ask is None:
+        return None
+    try:
+        got = ask(root, view, width, zoom, part or "", since=since, take=take,
+                  timeout=(LONG_POLL + 10.0) if since is not None else ASK_TIMEOUT)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(got, dict) or not isinstance(got.get("page"), dict):
+        return None
+    page = dict(got["page"])
+    page["version"] = got.get("version")
+    return page
+
+
+def start_engine(root: Path) -> None:
+    """Start the resident engine in the background (guarded against a second one), not waiting for it; not when the
+    config says `[web] start = false` or SYSTEM_DIFF_WEB_START=0. Never raises."""
+    try:
+        import os
+        if os.environ.get("SYSTEM_DIFF_WEB_START", "1") == "0":
+            return
+        from . import config
+        if (config.lenient(root).get("web") or {}).get("start", True) is False:
+            return
+        from . import watch
+        start = getattr(watch, "start_detached", None)
+        if start is not None:
+            start(root, wait=0)
+    except Exception:  # noqa: BLE001 - only a head start
+        pass
+
+
+def build(root: Path, width: int, view: str, part: Optional[str], zoom: int, take: bool = True) -> Dict[str, Any]:
+    """The page read in this process: a time-boxed read (a first one of a large repository is spread over the looks,
+    each reading files for a few seconds and drawing what is known so far), the "Still reading" rows on top."""
+    from . import compare as comparing, extract, pane, progress
+    progress.begin(root)   # a long first read says where it is, for the pane to show meanwhile
+    comparing.time_box(extract.COLD_BUDGET)
+    try:
+        page = pane.show(root, width, view, part or None, zoom, take=take)
+        still_reading(page, comparing.partial())
+        return page
+    finally:
+        comparing.time_box(None)
+        progress.end()
+
+
 def main(root: Path, width: int, view: str = "now", part: Optional[str] = None, protocol: int = 1,
-         zoom: int = -1) -> int:
+         zoom: int = -1, since: Optional[int] = None, take: bool = True, start: Optional[bool] = None) -> int:
+    """Protocol 2: ask the running engine (with `since`, wait for a version newer than that) and print its page with
+    its "version"; with none running, start one (`start`; left out, only for a long poll: the pane's own runs, through
+    `fast`, always start one) and answer from a read in this process meanwhile, so the first look still shows
+    something."""
     if protocol >= 2:
-        from . import compare as comparing, extract, pane, progress
-        progress.begin(root)   # a long first read says where it is, for the pane to show meanwhile
-        # The pane asks again every few seconds: a first read of a large repository is spread over its looks, each
-        # reading files for a few seconds and drawing what is known so far (compare.time_box).
-        comparing.time_box(extract.COLD_BUDGET)
-        try:
-            page = pane.show(root, width, view, part or None, zoom)
-            still_reading(page, comparing.partial())
-        finally:
-            comparing.time_box(None)
-            progress.end()
+        page = from_engine(root, width, view, part, zoom, since, take)
+        if page is None:
+            if start or (start is None and since is not None):
+                start_engine(root)
+            page = build(root, width, view, part, zoom, take)
         print(json.dumps(page, ensure_ascii=False))
         return 0
     got = show(root, width, view, part or None)
@@ -273,3 +347,63 @@ def main(root: Path, width: int, view: str = "now", part: Optional[str] = None, 
         got[key] = [[list(run) for run in line] for line in got[key]]
     print(json.dumps(got, ensure_ascii=False))
     return 0
+
+
+def find_root(start: Optional[Path] = None) -> Path:
+    """The repository holding the current directory, by looking for .git upwards (no git process: the thin client's
+    whole run is a few tens of milliseconds); the directory itself outside one."""
+    here = Path(start or Path.cwd()).resolve()
+    for d in (here, *here.parents):
+        if (d / ".git").exists():
+            return d
+    return here
+
+
+def fast(argv: Sequence[str]) -> Optional[int]:
+    """`system-diff [--repo R] panel ...` without loading the CLI: the pane runs it on every look. None when the
+    arguments are not ones this knows (the CLI then parses them and says what is wrong)."""
+    args = list(argv)
+    repo: Optional[str] = None
+    if args[:1] == ["--repo"] and len(args) > 2:
+        repo, args = args[1], args[2:]
+    if args[:1] != ["panel"]:
+        return None
+    opts: Dict[str, str] = {"--width": "80", "--view": "now", "--part": "", "--zoom": "-1", "--protocol": "1"}
+    since: Optional[int] = None
+    take = True
+    rest = args[1:]
+    i = 0
+    try:
+        while i < len(rest):
+            flag = rest[i]
+            if flag == "--take":
+                take, i = True, i + 1
+                continue
+            if flag == "--no-take":
+                take, i = False, i + 1
+                continue
+            name, eq, value = flag.partition("=")
+            if not eq:
+                if i + 1 >= len(rest):
+                    return None
+                value, i = rest[i + 1], i + 2
+            else:
+                i += 1
+            if name == "--since":
+                since = int(value)
+            elif name in opts:
+                opts[name] = value
+            else:
+                return None
+        width, zoom, protocol = int(opts["--width"]), int(opts["--zoom"]), int(opts["--protocol"])
+    except ValueError:
+        return None
+    if opts["--view"] not in ("now", "review", "map", "changes", "topics", "agents"):
+        return None
+    for stream in (sys.stdout, sys.stderr):   # UTF-8 whatever the code page (the diagrams' box-drawing characters)
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):
+            pass
+    root = find_root(Path(repo) if repo else None)
+    return main(root, width, opts["--view"], opts["--part"] or None, protocol, zoom, since, take, start=protocol >= 2)

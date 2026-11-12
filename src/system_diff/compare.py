@@ -6,6 +6,11 @@ The working tree is read as a SNAPSHOT: a commit made with a temporary index, so
 not) and nothing the person uses changes: not their index, not HEAD, not a branch. The checkpoint and the turn are
 such snapshots kept under refs/worktree/system-diff/: in this clone only, never pushed, and each worktree its own, so
 agents working in parallel worktrees (and the people watching them) never move each other's.
+
+Inside the resident engine's process (live.Engine, run by `system-diff watch`) the working tree is not snapshotted:
+the engine keeps it in memory, told of each change (POST /touch, a cheap `git status`), and registers itself in LIVE;
+a comparison with the working tree then takes the engine's blueprint and commit as they are. The result is the same
+as a snapshot's for the same files.
 """
 from __future__ import annotations
 
@@ -28,7 +33,8 @@ from .extract import EXTRACT_VERSION, Code, extract
 from . import progress
 from .sources import GitSource, git, git_dir, run_hidden
 
-CHECKPOINT_REF = "refs/worktree/system-diff/checkpoint"
+CHECKPOINT_REF = "refs/worktree/system-diff/checkpoint"   # before 0.7, one for every branch: still read, never written
+BRANCH_CHECKPOINTS = "refs/worktree/system-diff/checkpoints/"   # + the branch: what the person has seen on that branch
 OLD_CHECKPOINT_REF = "refs/system-diff/checkpoint"  # before 0.2, shared by every worktree: still read, never written
 TURN_REF = "refs/worktree/system-diff/turn"
 WORKTREE = (".", "worktree")
@@ -74,10 +80,24 @@ def snapshot(root: Path) -> str:
     return _git_env(root, env, "commit-tree", tree, *(["-p", head] if head else []), "-m", "system-diff snapshot")
 
 
+def _branch(root: Path) -> Optional[str]:
+    """The branch checked out here, or None (a detached HEAD)."""
+    try:
+        return git("symbolic-ref", "-q", "--short", "HEAD", cwd=root).strip() or None
+    except subprocess.CalledProcessError:
+        return None
+
+
+def checkpoint_ref(root: Path) -> str:
+    """Where this branch's checkpoint is kept: each branch has its own, as a branch can hold a different design."""
+    branch = _branch(root)
+    return BRANCH_CHECKPOINTS + branch if branch else CHECKPOINT_REF
+
+
 def checkpoint(root: Path, ref: Optional[str] = None) -> str:
-    """Mark `ref` (default: the working tree as it is now) as seen. Returns the commit it points at."""
+    """Mark `ref` (default: the working tree as it is now) as seen, on the branch checked out. Returns the commit."""
     sha = git("rev-parse", "--verify", f"{ref}^{{commit}}", cwd=root).strip() if ref else snapshot(root)
-    git("update-ref", CHECKPOINT_REF, sha, cwd=root)
+    git("update-ref", checkpoint_ref(root), sha, cwd=root)
     return sha
 
 
@@ -88,8 +108,45 @@ def _ref(root: Path, name: str) -> Optional[str]:
         return None
 
 
+def checkpoint_point(root: Path) -> tuple:
+    """(commit, label) the person last saw on this branch, or (None, "") when there is nothing to go by.
+
+    The branch's own checkpoint first. A branch with none yet (new, or never looked at) starts from the newest
+    checkpoint of another branch (or one from before 0.7) when that one's commit is in this branch's history: what
+    was seen there still holds here. Otherwise it starts where this branch and that one parted, so what shows is what
+    this branch changed, not every difference between the two branches."""
+    own = _ref(root, checkpoint_ref(root))
+    if own:
+        return own, "checkpoint"
+    try:
+        listed = git("for-each-ref", "--sort=-creatordate", "--format=%(objectname) %(refname)",
+                     BRANCH_CHECKPOINTS, CHECKPOINT_REF, OLD_CHECKPOINT_REF, cwd=root).split("\n")
+    except subprocess.CalledProcessError:
+        listed = []
+    head = _head(root)
+    for line in listed:
+        if not line.strip() or not head:
+            continue
+        sha, name = line.split(" ", 1)
+        where = name.removeprefix(BRANCH_CHECKPOINTS) if name.startswith(BRANCH_CHECKPOINTS) else "another branch"
+        # a checkpoint is a snapshot whose parent is the commit it was taken on: that commit is what a branch shares
+        base = _ref(root, f"{sha}^") or sha
+        try:
+            run_hidden(["git", "merge-base", "--is-ancestor", base, head], cwd=root, check=True, capture_output=True)
+            return base, f"what you saw on {where}"
+        except subprocess.CalledProcessError:
+            pass
+        try:
+            fork = git("merge-base", head, base, cwd=root).strip()
+        except subprocess.CalledProcessError:
+            fork = ""
+        if fork:
+            return fork, f"where this branch left {where}"
+    return None, ""
+
+
 def checkpoint_sha(root: Path) -> Optional[str]:
-    return _ref(root, CHECKPOINT_REF) or _ref(root, OLD_CHECKPOINT_REF)
+    return checkpoint_point(root)[0]
 
 
 def mark_turn(root: Path) -> str:
@@ -107,8 +164,8 @@ def resolve(root: Path, point: str) -> tuple:
     """(commit, label) for a point: `checkpoint` (else HEAD, when nothing was marked yet), `turn`, `.` for the working
     tree, or any commit."""
     if point == "checkpoint":
-        sha = checkpoint_sha(root)
-        return (sha, "checkpoint") if sha else (_head(root) or snapshot(root), "HEAD (no checkpoint yet)")
+        sha, label = checkpoint_point(root)
+        return (sha, label) if sha else (_head(root) or snapshot(root), "HEAD (no checkpoint yet)")
     if point == "turn":
         sha = turn_sha(root)
         if not sha:
@@ -118,6 +175,41 @@ def resolve(root: Path, point: str) -> tuple:
     if point in WORKTREE:
         return snapshot(root), "working tree"
     return git("rev-parse", "--verify", f"{point}^{{commit}}", cwd=root).strip(), point
+
+
+@dataclass
+class Live:
+    """The working tree as the resident engine holds it: a commit of it (made from the engine's own index, parent
+    HEAD, so git can diff and read it like a snapshot), its blueprint (partial, with `known` the paths read, while the
+    engine's first read is still under way), the config it was read with, and a source of its files."""
+    sha: str
+    blueprint: Dict[str, Any]
+    known: Optional[set]
+    cfg: Dict[str, Any]
+    source: Any
+    version: int = 0
+    identity: str = ""   # sha1 of the sorted (path, blob) pairs: the same files, the same identity
+
+
+# {repository root (resolved, case-folded where the file system is): a callable giving its Live, or None}: set by the
+# resident engine for the repositories it holds, in its own process only.
+LIVE: Dict[str, Any] = {}
+
+
+def live_key(root: Path) -> str:
+    return os.path.normcase(str(Path(root).resolve()))
+
+
+def live(root: Path) -> Optional[Live]:
+    """The working tree of `root` as the engine in this process holds it, or None (no engine here, or it has nothing
+    yet)."""
+    if not LIVE:
+        return None
+    get = LIVE.get(live_key(root))
+    try:
+        return get() if get is not None else None
+    except Exception:  # noqa: BLE001 - the engine failing must not stop a comparison: it is made the old way
+        return None
 
 
 @dataclass
@@ -216,10 +308,13 @@ def _read(sha: str, cfg: Dict[str, Any], source, keep_in: Optional[Path] = None,
 
 
 def _compare(root: Path, base: str, a_sha: str, a_label: str, head: str, b_sha: str, b_label: str,
-             config_path: Optional[str]) -> Comparison:
+             config_path: Optional[str], held: Optional[Live] = None) -> Comparison:
     global _partial
-    head_src = GitSource(b_sha, root)
-    cfg = config.load(head_src, root, config_path)
+    if held is not None:   # the working tree as the resident engine holds it: nothing to snapshot or read again
+        head_src, cfg = held.source, held.cfg
+    else:
+        head_src = GitSource(b_sha, root)
+        cfg = config.load(head_src, root, config_path)
     keep_a = root if base in ("checkpoint", "turn") else None
     # the working tree's too: its snapshot's id changes with any file, so a kept one is never stale, and the pane,
     # asking every few seconds, does not read every file again each time
@@ -231,7 +326,11 @@ def _compare(root: Path, base: str, a_sha: str, a_label: str, head: str, b_sha: 
     # partial base against a whole head that it was all added. So the diff while the code is still being read is the
     # true diff of the files read so far, and grows to the whole diff as the reading goes on.
     progress.stage(f"Reading the code at {b_label}")
-    b, b_known = _read(b_sha, cfg, head_src, keep_b)
+    if held is not None:
+        b, b_known = dict(held.blueprint), (set(held.known) if held.known is not None else None)
+        keep_b = None
+    else:
+        b, b_known = _read(b_sha, cfg, head_src, keep_b)
     progress.stage(f"Reading the code at {a_label}")
     a, a_known = _read(a_sha, cfg, lambda: GitSource(a_sha, root), keep_a, only=b_known)
     if a_known is not None and b_known is None:
@@ -255,12 +354,20 @@ def _compare(root: Path, base: str, a_sha: str, a_label: str, head: str, b_sha: 
 
 def compare(root: Path, base: str = "checkpoint", head: str = ".", config_path: Optional[str] = None) -> Comparison:
     """The typed diff from `base` to `head`, both read with the head's config so a part keeps one name."""
-    (a_sha, a_label), (b_sha, b_label) = resolve(root, base), resolve(root, head)
+    held = live(root) if config_path is None and (head in WORKTREE or base in WORKTREE) else None
+    a_sha, a_label = (held.sha, "working tree") if held is not None and base in WORKTREE else resolve(root, base)
+    if held is not None and head in WORKTREE:
+        return _compare(root, base, a_sha, a_label, head, held.sha, "working tree", config_path, held)
+    b_sha, b_label = resolve(root, head)
     return _compare(root, base, a_sha, a_label, head, b_sha, b_label, config_path)
 
 
 def compare_worktree(root: Path, bases: Iterable[str], config_path: Optional[str] = None) -> List[Comparison]:
     """The working tree against each of `bases` (e.g. the checkpoint and the turn), snapshotted and read once."""
+    held = live(root) if config_path is None else None
+    if held is not None:
+        return [_compare(root, base, *resolve(root, base), ".", held.sha, "working tree", config_path, held)
+                for base in bases]
     progress.stage("Taking a snapshot of the working tree")
     b_sha, b_label = resolve(root, ".")
     return [_compare(root, base, *resolve(root, base), ".", b_sha, b_label, config_path) for base in bases]
