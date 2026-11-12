@@ -358,3 +358,16 @@ test('x on an objective clears it (system-diff\'s own notes, never the code), an
   expect(asked.slice(more).some(a => a.includes('objectives'))).toBe(false)
   await ui.unmount()
 })
+
+test('a page that only says the system is being read never blanks a drawn diagram', async ($, on) => {
+  const more: Record<string, unknown> = {} // what the fake engine answers on top of the page: below, "reading"
+  answer(on, [], 0, '', [], more)
+  await $.command.run(RUN)
+  Object.assign(more, { rows: [[['◐ Reading the system… 3 of 430 files', 'attention']]], blocks: [],
+                        reading: { done: 3, total: 430, stage: 'Reading the code' } })
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect(await ui.find({ type: 'Text', text: /API now answers GET \/health/ })).toBeDefined()   // the diagram stays
+  expect(await ui.find({ type: 'Text', text: /3 of 430 files/ })).toBeDefined()               // the progress shows
+  await ui.unmount()
+})

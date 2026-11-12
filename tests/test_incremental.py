@@ -237,4 +237,21 @@ def test_the_pane_page_while_reading(tmp_path, monkeypatch, capsys):
     panel.main(r, 100, protocol=2)
     page = json.loads(capsys.readouterr().out)
     assert page["rows"][0][0][0].startswith("◐ Still reading the code: ") and page["rows"][0][0][1] == "attention"
-    assert compare._deadline is None   # the time box is the panel's only
+    assert compare._deadline_now() is None   # the time box is the panel's only
+
+
+def test_one_threads_time_box_does_not_cut_another_threads_read_short(repo):
+    """The terminal view reads time-boxed in its thread; a full read in another thread of the same process (the
+    engine's, a hook's) is never cut short by it."""
+    import threading
+    compare.time_box(0.0)      # this thread: a box that is already over
+    seen = {}
+
+    def other():
+        seen["c"] = compare.compare(repo, "checkpoint", ".")
+        seen["partial"] = compare.partial()
+    t = threading.Thread(target=other)
+    t.start()
+    t.join(60)
+    compare.time_box(None)
+    assert seen["partial"] is None and "partial" not in seen["c"].after

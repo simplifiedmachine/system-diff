@@ -196,6 +196,7 @@ async function asking($: EngineInterface, since?: number): Promise<{ argv: strin
   return { argv, key: [columns, shown, zoomed, level].join('|') }
 }
 
+let noted = false // the last page applied left a progress note over the diagram: it stays until a real page
 let drawnVersion = -1 // the engine's model version of the page drawn (-1: none yet, or read without an engine)
 let drawnKey = '' // the ask it was drawn for
 
@@ -206,6 +207,18 @@ async function apply($: EngineInterface, out: string, data: Page, key: string): 
   if (key !== (await asking($)).key) return false
   const v = typeof data.version === 'number' ? data.version : -1
   if (v >= 0 && v < drawnVersion && key === drawnKey) return false
+  // Never trade a drawn diagram for less: a page that only says the system is being read (the engine restarting,
+  // no page kept yet) keeps the diagram on screen with the progress as a note, and an empty page draws nothing.
+  const shownPage = await read($, page)
+  const placeholder = !!data.reading && !data.reading.stale && !(data.blocks?.length)
+  if (placeholder && shownPage && !shownPage.reading && (shownPage.rows?.length ?? 0) > 0) {
+    const said = (data.rows?.[0] ?? []).map(run => run[0]).join('').trim()
+    if (said) await update($, note, () => said)
+    noted = !!said
+    return true
+  }
+  noted = false
+  if (!(data.rows?.length)) return false
   drawnVersion = v
   drawnKey = key
   if (out !== last) {
@@ -239,7 +252,7 @@ async function refresh($: EngineInterface): Promise<void> {
           continue
         }
         await apply($, got.out, data, key)
-        if ((await read($, note)) !== '') await update($, note, () => '')
+        if (!noted && (await read($, note)) !== '') await update($, note, () => '')
         void longPoll($).catch(() => undefined) // the engine answered: follow it
       } else {
         await update($, note, () => failure
@@ -325,7 +338,7 @@ async function longPoll($: EngineInterface): Promise<void> {
       return
     }
     pollLive = true
-    if (drawn && (await read($, note)) !== '') await update($, note, () => '')
+    if (drawn && !noted && (await read($, note)) !== '') await update($, note, () => '')
     // a newer page, or one for what no longer shows: at once; nothing new (it waited its 25 s): a moment later
     after = drawn && drawnVersion === before ? 500 : 0
   } finally {

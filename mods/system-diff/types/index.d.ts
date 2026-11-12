@@ -30,7 +30,7 @@ export type Page = {
   send?: { id: string; text: string }[] // typed in the web page's Send to Claude box, for the session
   version?: number // the engine's model version it was drawn from; absent when read without the engine
   // while the system is still being read: how far; with `stage`, nothing is drawn yet (the engine is starting)
-  reading?: { done: number; total: number; stage?: string }
+  reading?: { done?: number; total?: number; stage?: string; stale?: boolean; at?: number }
 }
 
 declare module 'claude-code' {

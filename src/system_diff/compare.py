@@ -298,22 +298,26 @@ _LOCK = threading.Lock()
 
 # A time box (the pane's): a read of the code stops at this time.monotonic() deadline, and what was not read yet is
 # left for the next read, which goes on from there (each file's facts are kept by content). None: read everything.
-_deadline: Optional[float] = None
-_partial: Optional[Dict[str, int]] = None
+# The time box is each thread's own: one thread's time-boxed read (the terminal view's, the pane's) must not cut short
+# another thread's full read in the same process (the engine's, a hook's).
+_box = threading.local()
+
+
+def _deadline_now() -> Optional[float]:
+    return getattr(_box, "deadline", None)
 
 
 def time_box(seconds: Optional[float]) -> None:
     """From now on, reads of the code in this process stop after `seconds` in all (None: no limit); see partial()."""
-    global _deadline, _partial
-    _deadline = None if seconds is None else time.monotonic() + seconds
-    _partial = None
+    _box.deadline = None if seconds is None else time.monotonic() + seconds
+    _box.partial = None
     with _LOCK:
         _PARTIALS.clear()   # a new time box reads on from where the last stopped
 
 
 def partial() -> Optional[Dict[str, int]]:
     """How far the last time-boxed read got, {"done": files read, "total": files}, when it did not get through all."""
-    return _partial
+    return getattr(_box, "partial", None)
 
 
 def _blueprint(sha: str, cfg: Dict[str, Any], source, keep_in: Optional[Path] = None) -> dict:
@@ -347,10 +351,10 @@ def _read(sha: str, cfg: Dict[str, Any], source, keep_in: Optional[Path] = None,
         if got is not None:   # the same read again in this process: the time box has run out, nothing more to read
             return dict(got[0]), got[1]
         src = source() if callable(source) else source
-        if _deadline is None and only is None:
+        if _deadline_now() is None and only is None:
             bp, known = extract(src, cfg), None
         else:
-            bp, known = extraction.read_blueprint(src, cfg, deadline=_deadline if only is None else None, only=only)
+            bp, known = extraction.read_blueprint(src, cfg, deadline=_deadline_now() if only is None else None, only=only)
         if known is not None:
             with _LOCK:
                 _PARTIALS[pkey] = (bp, known)
@@ -373,7 +377,6 @@ def _read(sha: str, cfg: Dict[str, Any], source, keep_in: Optional[Path] = None,
 
 def _compare(root: Path, base: str, a_sha: str, a_label: str, head: str, b_sha: str, b_label: str,
              config_path: Optional[str], held: Optional[Live] = None) -> Comparison:
-    global _partial
     if held is not None:   # the working tree as the resident engine holds it: nothing to snapshot or read again
         head_src, cfg = held.source, held.cfg
     else:
@@ -400,7 +403,7 @@ def _compare(root: Path, base: str, a_sha: str, a_label: str, head: str, b_sha: 
     if a_known is not None and b_known is None:
         b, b_known = _read(b_sha, cfg, head_src, keep_b, only=a_known)
     if b.get("partial"):
-        _partial = dict(b["partial"])
+        _box.partial = dict(b["partial"])
     progress.stage("Comparing")
     for side, point, label in ((a, base, a_label), (b, head, b_label)):
         if point in ("checkpoint", "turn") or point in WORKTREE:
