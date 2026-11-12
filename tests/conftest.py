@@ -126,3 +126,5 @@ def plain_terminal(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     # nor asks a model to regroup the diagram (tests/test_regroup.py turns it back on, with the model mocked)
     monkeypatch.setenv("SYSTEM_DIFF_REGROUP", "0")
+    # nor starts a real web server from a page (the web tests start theirs themselves)
+    monkeypatch.setenv("SYSTEM_DIFF_WEB_START", "0")

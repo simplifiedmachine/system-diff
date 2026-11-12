@@ -728,11 +728,19 @@ def take_outbox(root: Path) -> List[Dict[str, str]]:
 
 
 def web_url(root: Path) -> str:
-    """The address of the running web page with the same views, or ""."""
+    """The address of the running web page with the same views, or "". With none running, one is started (in the
+    background, never waited for: a later page shows its link), so the page does not depend on the session's start
+    hook having run (on Windows, where hooks run through sh, it may not)."""
     try:
-        from . import watch
+        from . import config, watch
         url = getattr(watch, "web_url", None)
-        return (url(root) or "") if url else ""
+        found = (url(root) or "") if url else ""
+        if (not found and os.environ.get("SYSTEM_DIFF_WEB_START", "1") != "0"
+                and (config.lenient(root).get("web") or {}).get("start", True) is not False):
+            start = getattr(watch, "start_detached", None)
+            if start is not None:
+                start(root, wait=0)
+        return found
     except Exception:
         return ""
 

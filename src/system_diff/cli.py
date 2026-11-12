@@ -205,6 +205,7 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
+    sub.add_parser("doctor", help="why system-diff is slow or quiet here: times a read, checks hooks, web, git")
     pg = sub.add_parser("progress", help="what a long read of the system is doing now (for the pane, while it waits)")
     pg.add_argument("--wait", type=float, default=0, help="seconds to wait first (the pane's pace)")
     pn = sub.add_parser("panel", help="what a pane beside the agent shows, as JSON (for the Claude Code mod)")
@@ -269,6 +270,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "hook":
         from . import agent
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
+    if args.cmd == "doctor":
+        from . import doctor
+        return doctor.main(root)
     if args.cmd == "progress":
         from .progress import line
         if args.wait:

@@ -82,6 +82,14 @@ group = "In Claude Code"
 paths = ["src/system_diff/tui.py"]
 
 [[components]]
+id = "doctor"
+label = "Doctor"
+kind = "interface"
+about = "why it is slow or quiet here"
+group = "In Claude Code"
+paths = ["src/system_diff/doctor.py"]
+
+[[components]]
 id = "statusline"
 label = "Status line"
 kind = "interface"

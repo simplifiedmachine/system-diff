@@ -290,11 +290,17 @@ class Tui:
 
     # The page, as the pane asks the engine for it (never taking what the web page sent to Claude: the pane does).
     def _pane(self, width: int, view: str, part: str, zoom: int) -> Dict[str, Any]:
-        from . import pane, progress
+        from . import compare as comparing, extract, pane, panel, progress
         progress.begin(self.root)
+        # as the pane does: a first read of a large repository spread over the looks, a few seconds each, the page
+        # drawn from what is known so far
+        comparing.time_box(extract.COLD_BUDGET)
         try:
-            return pane.show(self.root, width, view, part or None, zoom, take=False)
+            page = pane.show(self.root, width, view, part or None, zoom, take=False)
+            panel.still_reading(page, comparing.partial())
+            return page
         finally:
+            comparing.time_box(None)
             progress.end()
 
     def _read_progress(self) -> str:

@@ -84,7 +84,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,52 C246,52 246,99 278,99 L478,99 C507,99 507,112 536,112" marker-end="url(#ar-call-same)"><title>cli → activity</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,52 272,52" marker-end="url(#ar-call-same)"><title>cli → compare</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,248 272,248" marker-end="url(#ar-call-same)"><title>cli → diff</title></path>
-<path class="be k-call s-same" d="M214,52 C250,52 250,112 220,112" marker-end="url(#ar-call-same)"><title>cli → mcp</title></path>
+<path class="be k-call s-same" d="M214,52 C280,52 280,428 220,428" marker-end="url(#ar-call-same)"><title>cli → doctor</title></path>
 <path class="be k-call s-same" d="M478,52 C526.7,52 526.7,188 484,188" marker-end="url(#ar-call-same)"><title>compare → extract</title></path>
 <path class="be k-call s-same" d="M478,52 C516.7,52 516.7,128 484,128" marker-end="url(#ar-call-same)"><title>compare → config</title></path>
 <path class="be k-call s-same" d="M478,52 C536.7,52 536.7,248 484,248" marker-end="url(#ar-call-same)"><title>compare → diff</title></path>
@@ -93,6 +93,14 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,548 C544,548 544,308 484,308" marker-end="url(#ar-call-same)"><title>design → graph</title></path>
 <path class="be k-call s-same" d="M478,248 C514,248 514,188 484,188" marker-end="url(#ar-call-same)"><title>diff → extract</title></path>
 <path class="be k-call s-same" d="M478,248 C507,248 507,52 536,52" marker-end="url(#ar-call-same)"><title>diff → sources</title></path>
+<path class="be k-call s-same" d="M214,428 C246,428 246,279 278,279 L478,279 C507,279 507,112 536,112" marker-end="url(#ar-call-same)"><title>doctor → activity</title></path>
+<path class="be k-call s-same" d="M214,428 C280,428 280,52 220,52" marker-end="url(#ar-call-same)"><title>doctor → cli</title></path>
+<path class="be k-call s-same" d="M214,428 C243,428 243,52 272,52" marker-end="url(#ar-call-same)"><title>doctor → compare</title></path>
+<path class="be k-call s-same" d="M214,428 C243,428 243,188 272,188" marker-end="url(#ar-call-same)"><title>doctor → extract</title></path>
+<path class="be k-call s-same" d="M214,428 C260,428 260,308 220,308" marker-end="url(#ar-call-same)"><title>doctor → panel</title></path>
+<path class="be k-call s-same" d="M214,428 C246,428 246,219 278,219 L478,219 C507,219 507,52 536,52" marker-end="url(#ar-call-same)"><title>doctor → sources</title></path>
+<path class="be k-call s-same" d="M214,428 C243,428 243,1028 272,1028" marker-end="url(#ar-call-same)"><title>doctor → src/system_diff</title></path>
+<path class="be k-call s-same" d="M214,428 C270,428 270,248 220,248" marker-end="url(#ar-call-same)"><title>doctor → watch</title></path>
 <path class="be k-call s-same" d="M478,188 C514,188 514,128 484,128" marker-end="url(#ar-call-same)"><title>extract → config</title></path>
 <path class="be k-call s-same" d="M478,188 C507,188 507,52 536,52" marker-end="url(#ar-call-same)"><title>extract → sources</title></path>
 <path class="be k-call s-same" d="M478,188 C544,188 544,1028 484,1028" marker-end="url(#ar-call-same)"><title>extract → src/system_diff</title></path>
@@ -114,11 +122,11 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,112 C243,112 243,908 272,908" marker-end="url(#ar-call-same)"><title>mcp → textmap</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,848 272,848" marker-end="url(#ar-call-same)"><title>panel → learn</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,52 272,52" marker-end="url(#ar-call-same)"><title>panel → compare</title></path>
+<path class="be k-call s-same" d="M214,308 C243,308 243,128 272,128" marker-end="url(#ar-call-same)"><title>panel → config</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,188 272,188" marker-end="url(#ar-call-same)"><title>panel → extract</title></path>
 <path class="be k-call s-same" d="M214,308 C246,308 246,159 278,159 L478,159 C507,159 507,52 536,52" marker-end="url(#ar-call-same)"><title>panel → sources</title></path>
 <path class="be k-call s-same" d="M214,308 C246,308 246,219 278,219 L478,219 C507,219 507,112 536,112" marker-end="url(#ar-call-same)"><title>panel → activity</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,428 272,428" marker-end="url(#ar-call-same)"><title>panel → architecture</title></path>
-<path class="be k-call s-same" d="M214,308 C243,308 243,128 272,128" marker-end="url(#ar-call-same)"><title>panel → config</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,308 272,308" marker-end="url(#ar-call-same)"><title>panel → graph</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,488 272,488" marker-end="url(#ar-call-same)"><title>panel → agents</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,608 272,608" marker-end="url(#ar-call-same)"><title>panel → canvas</title></path>
@@ -129,15 +137,17 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,788 C514,788 514,728 484,728" marker-end="url(#ar-call-same)"><title>regroup → narrate</title></path>
 <path class="be k-call s-same" d="M478,788 C507,788 507,52 536,52" marker-end="url(#ar-call-same)"><title>regroup → sources</title></path>
 <path class="be k-call s-same" d="M478,1028 C507,1028 507,52 536,52" marker-end="url(#ar-call-same)"><title>src/system_diff → sources</title></path>
-<path class="be k-call s-same" d="M214,428 C246,428 246,279 278,279 L478,279 C507,279 507,112 536,112" marker-end="url(#ar-call-same)"><title>statusline → activity</title></path>
-<path class="be k-call s-same" d="M214,428 C243,428 243,128 272,128" marker-end="url(#ar-call-same)"><title>statusline → config</title></path>
-<path class="be k-call s-same" d="M214,428 C243,428 243,188 272,188" marker-end="url(#ar-call-same)"><title>statusline → extract</title></path>
-<path class="be k-call s-same" d="M214,428 C246,428 246,219 278,219 L478,219 C507,219 507,52 536,52" marker-end="url(#ar-call-same)"><title>statusline → sources</title></path>
-<path class="be k-call s-same" d="M214,428 C243,428 243,908 272,908" marker-end="url(#ar-call-same)"><title>statusline → textmap</title></path>
+<path class="be k-call s-same" d="M214,488 C246,488 246,279 278,279 L478,279 C507,279 507,112 536,112" marker-end="url(#ar-call-same)"><title>statusline → activity</title></path>
+<path class="be k-call s-same" d="M214,488 C243,488 243,128 272,128" marker-end="url(#ar-call-same)"><title>statusline → config</title></path>
+<path class="be k-call s-same" d="M214,488 C243,488 243,188 272,188" marker-end="url(#ar-call-same)"><title>statusline → extract</title></path>
+<path class="be k-call s-same" d="M214,488 C246,488 246,279 278,279 L478,279 C507,279 507,52 536,52" marker-end="url(#ar-call-same)"><title>statusline → sources</title></path>
+<path class="be k-call s-same" d="M214,488 C243,488 243,908 272,908" marker-end="url(#ar-call-same)"><title>statusline → textmap</title></path>
+<path class="be k-call s-same" d="M214,368 C250,368 250,308 220,308" marker-end="url(#ar-call-same)"><title>tui → panel</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,1028 272,1028" marker-end="url(#ar-call-same)"><title>tui → src/system_diff</title></path>
 <path class="be k-call s-same" d="M214,368 C280,368 280,52 220,52" marker-end="url(#ar-call-same)"><title>tui → cli</title></path>
+<path class="be k-call s-same" d="M214,368 C243,368 243,52 272,52" marker-end="url(#ar-call-same)"><title>tui → compare</title></path>
+<path class="be k-call s-same" d="M214,368 C243,368 243,188 272,188" marker-end="url(#ar-call-same)"><title>tui → extract</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,848 272,848" marker-end="url(#ar-call-same)"><title>tui → learn</title></path>
-<path class="be k-call s-same" d="M214,368 C250,368 250,308 220,308" marker-end="url(#ar-call-same)"><title>tui → panel</title></path>
 <path class="be k-call s-same" d="M214,248 C246,248 246,159 278,159 L478,159 C507,159 507,112 536,112" marker-end="url(#ar-call-same)"><title>watch → activity</title></path>
 <path class="be k-call s-same" d="M214,248 C243,248 243,52 272,52" marker-end="url(#ar-call-same)"><title>watch → compare</title></path>
 <path class="be k-call s-same" d="M214,248 C243,248 243,248 272,248" marker-end="url(#ar-call-same)"><title>watch → diff</title></path>
@@ -152,7 +162,8 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <g class="bn t-component s-same" transform="translate(14,226)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Live page</text><text x="12" y="35" class="bn-s">1 file</text><title>Live page</title></g>
 <g class="bn t-component s-same" transform="translate(14,286)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Pane beside the chat</text><text x="12" y="35" class="bn-s">2 files</text><title>Pane beside the chat</title></g>
 <g class="bn t-component s-same" transform="translate(14,346)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Terminal view</text><text x="12" y="35" class="bn-s">1 file</text><title>Terminal view</title></g>
-<g class="bn t-component s-same" transform="translate(14,406)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Status line</text><text x="12" y="35" class="bn-s">1 file</text><title>Status line</title></g>
+<g class="bn t-component s-same" transform="translate(14,406)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Doctor</text><text x="12" y="35" class="bn-s">1 file</text><title>Doctor</title></g>
+<g class="bn t-component s-same" transform="translate(14,466)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Status line</text><text x="12" y="35" class="bn-s">1 file</text><title>Status line</title></g>
 <g class="bn t-component s-same" transform="translate(278,30)"><rect class="box" width="200" height="62" rx="8"/><text x="12" y="19" class="bn-t">Checkpoints and</text><text x="12" y="35" class="bn-t">snapshots</text><text x="12" y="51" class="bn-s">1 file</text><title>Checkpoints and snapshots</title></g>
 <g class="bn t-component s-same" transform="translate(278,106)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Config</text><text x="12" y="35" class="bn-s">1 file</text><title>Config</title></g>
 <g class="bn t-component s-same" transform="translate(278,166)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Extraction</text><text x="12" y="35" class="bn-s">1 file</text><title>Extraction</title></g>
