@@ -159,7 +159,10 @@ def pending(root: Path, name: str) -> int:
     p = _load(root)["plan"] or {}
     if name != MAIN and p and name not in {g.get("name") for g in p.get("agents") or []}:
         return 0
-    since = float(p.get("at") or 0)
+    if p.get("after") is not None:   # by message number: two messages can share a millisecond
+        after = int(p["after"])
+        return sum(1 for m in inbox(root, name, mark=False) if int(m.get("n") or 0) > after)
+    since = float(p.get("at") or 0)   # a plan from before message numbers were kept
     return sum(1 for m in inbox(root, name, mark=False) if float(m.get("at") or 0) > since)
 
 
@@ -372,7 +375,10 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
     last = latest[-1]["n"] if latest else 0
     data["agents"] = {k: v for k, v in data["agents"].items() if k == MAIN}
     data["claims"], data["ids"], data["warned"] = {}, {}, {}
-    data["plan"] = {"task": task, "at": at, "agents": [{k: v for k, v in g.items() if k != "brief"} for g in agents]}
+    # "after": the last message number at the plan, the plan's own announcement included: what counts as since the
+    # plan (times alone tie within a millisecond)
+    data["plan"] = {"task": task, "at": at, "after": last,
+                    "agents": [{k: v for k, v in g.items() if k != "brief"} for g in agents]}
     for g in agents:
         a = _agent(data, g["name"])
         a["brief"] = g["brief"]

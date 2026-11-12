@@ -541,3 +541,15 @@ def test_web_view_gives_each_view_as_structured_json_agreeing_with_the_pane(repo
     assert "b:api" in fastapi["parts"] and "t:fastapi" in topics["diagram"]["lights"]["b:api"]
     zoomed = pane.web_view(repo, "now", part="api")
     assert zoomed["part"] == "api" and zoomed["diagram"]["title"].startswith(("Inside", "Zoomed"))
+
+
+def test_messages_in_the_same_millisecond_as_the_plan_still_count(repo, monkeypatch):
+    """What is pending since a plan is counted by message number: on a fast machine the plan and the next message
+    can share a millisecond (this made CI fail now and then)."""
+    from system_diff import agents
+    monkeypatch.setattr(agents.time, "time", lambda: 1_800_000_000.0)
+    agents.plan(repo, compare(repo, "HEAD", "."), "make the store faster")
+    new = [g["name"] for g in agents.state(repo)["plan"]["agents"]][0]
+    assert agents.pending(repo, new) == 0
+    agents.publish(repo, "all", "at work", sender="main")
+    assert agents.pending(repo, new) == 1
