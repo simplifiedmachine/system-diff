@@ -1,236 +1,119 @@
+<div align="center">
+
 # system-diff
 
-**See what Claude Code is doing to your system while it works, learn your system as it goes, and have a team of
-agents build it in parallel, block by block.**
+### `git diff` shows you lines. **system-diff shows you what Claude just did to your system.**
 
-system-diff is two things:
+[![PyPI](https://img.shields.io/pypi/v/system-diff.svg)](https://pypi.org/project/system-diff/)
+[![CI](https://github.com/simplifiedmachine/system-diff/actions/workflows/ci.yml/badge.svg)](https://github.com/simplifiedmachine/system-diff/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/system-diff.svg)](https://pypi.org/project/system-diff/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/simplifiedmachine/system-diff/blob/main/LICENSE)
 
-1. **The System diff pane.** Claude Code edits files; system-diff tells you what those edits do to the *system*: which
-   part Claude is working on and what that part is, the endpoints, connections, stored data and outside systems it
-   adds, changes or removes, why each of those matters, and when one needs you to look before Claude goes on. Right in
-   Claude Code, beside the chat. So you follow what is happening, learn the parts and the technology behind them, and
-   steer Claude well when it asks.
-2. **A multi-agent orchestrator for system development.** `plan_agents` splits the work by the system's blocks, one
-   agent per area; the agents run in parallel, claim their blocks, and tell each other what they change over an async
-   bus whose topics are the blocks. The pane's Agents tab shows them live: a lane per agent, its blocks in its colour.
+![The System diff: your system drawn as a designer would, live, with where Claude is working](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/screenshots/now.png)
+
+</div>
+
+AI agents now write code faster than any person can read it. One prompt, forty files changed, three hundred lines of
+output, and a question at the end: *"Shall I go on?"* You say yes, because you can't tell. You are still in the loop,
+but you are steering blind.
+
+**system-diff keeps the human in the loop at the level that matters: the system.** While Claude Code works, it shows
+the system the way a designer draws it (who uses it, where they come in, the parts inside, the data and outside
+systems they rely on) and what each change does to it, in plain words: *a new call to Amazon S3, three new endpoints,
+the API now reaching the database directly, past the logic layer.* What matters most comes first, with why it
+matters. So you know what you are saying yes to.
+
+## The vision
+
+Version control gave us a history of **text**. As more of our software is written by agents, we need a history of
+**design**: what changed in the system, who asked for it, which agent did it, and whether it still holds what we
+care about. system-diff is a step towards that: a living, visual model of your system that every agent's work is
+measured against, that you can read in a glance, and that teaches you as it goes.
+
+The future we are building for: **people design, agents build, and nobody loses the plot.** Teams of agents working
+in parallel on different blocks of a system, the person seeing all of it at once, the system's history told request
+by request. If that future excites you, [come build it with us](#contributing).
+
+## What you see
+
+<table>
+<tr>
+<td width="50%"><a href="https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/screenshots/now.png"><img src="https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/screenshots/now.png" alt="Now"></a><br>
+<b>Now</b>: the system, where Claude is working, and what is <b>worth a look</b>, ranked by consequence, each with why it matters.</td>
+<td width="50%"><a href="https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/screenshots/review.png"><img src="https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/screenshots/review.png" alt="Review"></a><br>
+<b>Review</b>: everything since you last looked: added, changed and removed, on the diagram.</td>
+</tr>
+<tr>
+<td><a href="https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/screenshots/agents.png"><img src="https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/screenshots/agents.png" alt="Agents"></a><br>
+<b>Agents</b>: a team of agents building in parallel, each on its own blocks, in its own colour, talking over a bus.</td>
+<td><a href="https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/screenshots/topics.png"><img src="https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/screenshots/topics.png" alt="Topics"></a><br>
+<b>Topics</b>: the stack, technology by technology; pick one and the parts that use it light up.</td>
+</tr>
+</table>
+
+And **History**: how the system got here, step by step, as *"You asked: “add document uploads” → it got: a call to
+Amazon S3, three endpoints under /flows/documents"*, for the whole system or any one block.
+
+It lives in a pane beside the chat in Claude Code, in your browser at `http://localhost:8765/`, and in a terminal of
+its own (`system-diff tui`). All three show the same live picture.
 
 ## Install
 
-Three steps. First the engine, in a terminal (Python 3.11 or newer):
+1. The engine (Python 3.11+):
+   ```sh
+   pip install "system-diff[mcp]"        # or: pipx install "system-diff[mcp]"
+   ```
+2. The plugin, in Claude Code:
+   ```
+   /plugin marketplace add simplifiedmachine/system-diff
+   /plugin install system-diff
+   ```
+3. Restart Claude Code. The pane opens beside the chat; `/system-diff` opens it again.
 
-```
-pip install "system-diff[mcp]"
-```
+<details><summary>Windows, tmux, and a pane that opens above the chat</summary>
 
-(or `pipx install "system-diff[mcp]"`). Then, in Claude Code:
-
-```
-/plugin marketplace add simplifiedmachine/system-diff
-/plugin install system-diff
-```
-
-and restart Claude Code. The pane opens beside the chat, and the same views open in your browser.
-
-The pane sits beside the chat in Claude Code's fullscreen layout (from 110 columns wide). Where it opens above the
-chat instead (Windows, tmux), turn that layout on, then open a new terminal and start Claude Code again:
+The pane sits beside the chat in Claude Code's fullscreen layout (110+ columns). Where it opens above the chat
+instead, turn that layout on, then open a new terminal and start Claude Code again:
 
 ```
 setx CLAUDE_CODE_NO_FLICKER 1                                    # Windows (PowerShell or cmd)
 echo 'export CLAUDE_CODE_NO_FLICKER=1' >> ~/.bashrc              # macOS and Linux (~/.zshrc for zsh)
 ```
 
-On Windows, `python -m pip install "system-diff[mcp]"` works where `pip` is not on PATH, and the pane finds
-system-diff through `python -m system_diff` too.
-
-<!-- system-map:begin -->
-![System map, generated from the code](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg)
-
-<details><summary>How this map is made</summary>
-
-Regenerated by `system-diff` from the code: the parts and their columns from `system-diff.toml`, the connections from imports, API calls and the settings each part reads, the outside systems from the settings a deploy configuration sets, and the tables from the migrations. Parts used everywhere are drawn without the arrows into them, and each part keeps only its strongest connections; `system-diff map` writes all of them to `system.json`.
-
-Read by the code but set by no deploy configuration, so not drawn: Headless Chromium (Docker or Playwright) (png).
-
+On Windows, `python -m pip install "system-diff[mcp]"` works where `pip` is not on PATH. If anything is slow or quiet,
+`python -m system_diff doctor` says why.
 </details>
-<!-- system-map:end -->
 
 ## In Claude Code
 
-The plugin brings everything, in every session and every project:
+- **The pane**: `n` Now · `r` Review · `a` Agents · `t` Topics · `h` History. Arrows pick a block (its connections
+  light up), Enter zooms in, `b` goes back, `f` follows Claude. `/system-diff close` hides it, `/system-diff tui` opens
+  it in a terminal of its own.
+- **In the chat**: one line under an edit that changes the system's structure, and one at the end of the turn.
+- **Ask Claude** "what is the API part?" or "what did this change do to the system?": it answers from system-diff's
+  MCP tools, with a diagram.
+- **Teams of agents**: for work that spans the system, Claude plans a team with `plan_agents`, one agent per block;
+  they claim their blocks and tell each other what they change over a bus. Watch them in the Agents tab.
+- **Objectives**: system-diff learns what you keep asking for ("fast on large repos", "must work on Windows"), shows
+  it, keeps it in front of Claude and every agent, and marks changes that touch it. `x` clears one you disagree with.
 
-- **The System diff pane** beside the chat. Claude Code opens it by itself when the terminal is wide enough;
-  `/system-diff` opens it again, `/system-diff close` hides it, `/system-diff tui` opens the same in a terminal of
-  its own.
-- **The same views in your browser**, at http://localhost:8765/: started with each session, linked in the pane.
-- **The hooks** that follow what Claude reads and edits, ask it to plan a team, and carry the agents' messages.
-- **The MCP server** Claude uses to explain the system, show what changed and plan a team, and **its skill**.
+Everything stays on your machine, under `.git/system-diff/`: never committed, never sent anywhere. The only exception
+is the optional LLM features (regrouping the diagram, learning objectives), which send structure, never code, to the
+LLM your own Claude Code already uses. `SYSTEM_DIFF_LLM=off` turns them off.
 
-**Where the engine comes from.** The plugin uses, in order: a project's own `.venv` with system-diff in it (a project
-that pins it), then the system-diff you installed (`pip install "system-diff[mcp]"` or pipx). Where there is none,
-the pane says how to install it, and the hooks stay quiet and never hold a session up.
+## How it works
 
-**Other ways in.** From a clone, `claude --plugin-dir mods/system-diff` loads the plugin for one launch. Without the
-plugin, `system-diff setup claude` wires the hooks, the skill and the MCP server into Claude Code by hand. Upgrading
-from a version before the plugin carried the hooks: run `system-diff setup claude --undo` (with `--scope local` or
-`project` where you set it up there), so they do not run twice. Should another marketplace you added also have a
-plugin called system-diff, `/plugin install system-diff@system-diff` names this one.
+- **A resident engine per repository** keeps your system in memory: parts, entry points, connections, settings,
+  stored data and outside systems, read from the code (Python and TypeScript/JavaScript today: FastAPI, Flask,
+  Express, Next.js, React, Vue, Svelte, SQLAlchemy, Alembic, Prisma, compose files…).
+- **Edits arrive as events**: Claude's from its hooks, everyone else's from file times. Only changed files are read
+  again, and git is read directly in Python, so a look takes about 0.1 s and an edit shows within a second, even in
+  large repositories on slow machines.
+- **Changes are ranked by consequence** (outside systems and data first, internals last) and said in plain words.
+- **Deterministic**: the same code gives the same picture, byte for byte. The LLM only ever adds names and groupings,
+  labelled as its proposals.
 
-You get both features at once:
-
-- **The pane** shows what Claude does to the system and teaches you the parts it touches (below).
-- **The orchestrator** has Claude plan a team for each prompt that spans the system's blocks: agents run in parallel,
-  each on its own blocks, talking over the bus, and the pane's Agents tab shows them as they work (see
-  [A team of agents](#a-team-of-agents-by-the-systems-blocks)).
-
-### The System diff pane
-
-A tab beside Claude Code's own file diff: your system drawn the way a system designer draws it, live, with what
-Claude is changing in it. `/system-diff close` (or "× close" in its tab row) hides it; `/system-diff` brings it back.
-
-- **Now** follows Claude, in the order your attention needs it:
-  - **What Claude is doing** ("● Claude is working ✎ Editing API") and what you asked.
-  - **WORTH A LOOK**: the few changes most worth understanding, ranked by consequence (a new outside system, stored
-    data, an entry point, a new dependency or a boundary crossed, a part added or removed). Each says in plain words
-    why it matters and what it touches, lit in the diagram; the rest are in Review.
-  - **You asked … → changed …**: your request beside the parts it changed, and the changed parts it did not name.
-  - **OBJECTIVES**: what you keep asking Claude for, learned from your requests (below).
-  - **The system diagram**:
-    - What it draws: who uses the system (people, programs, AI agents), where they come in, the containers that do
-      the work with their components inside, and the data and outside systems it relies on. Flows join them, named
-      for what they carry (HTTPS, MCP, SQL, a terminal).
-    - Colours: Claude's component is lit in blue; what this turn added is green, changed yellow, removed red.
-    - **Pick:** click the diagram, then ← ↑ ↓ → picks a box. Its flows in and out light up with the boxes at their
-      other ends, and a line says what it uses and what uses it.
-    - **Zoom:** Enter (or a second click) zooms in on a container's components, with the lines between them. `b` goes
-      back, `f` follows Claude again.
-    - **Scroll:** `[` `]` scroll a wide diagram across; shift ↑ ↓, Page Up/Down or the wheel scroll a tall one.
-    - **Zoom:** ⊖ and ⊕ in the tab row (or `-` and `=`) draw the diagrams compact (narrower boxes, no flow labels) or
-      tiny (titles only), to fit more of the system in a narrow pane; below 110 columns it is compact by itself.
-  - **This turn**: each change to the design, and what it trades off.
-  - **Learn**: how the part Claude works on is designed.
-    - The principle its place calls for: an edge of the system, an adapter, a shared foundation, a coordinator.
-    - Where it sits, and what to watch, such as cycles and layering.
-    - The basics of a technology only where it is new: new to the system this turn, or one you marked new to you.
-  - **What just happened**: the system diff, step by step. Each change an edit made is said in plain words, with why
-    it matters and the file it came from. Edits that changed no structure are told once.
-- **Review**: everything you have not marked as seen, across turns: the system diagram since your checkpoint with its
-  changes coloured, every block to pick and zoom into, then every change read for design and the exact list. Once
-  you have understood it, tell Claude "mark it as seen" (or run `system-diff checkpoint`): from then on you see only
-  what is new to you. Before you have marked anything, it starts from before your last commit, and lists the parts
-  whose code changed even when their structure did not.
-- **Agents**: the team at work. A lane per agent in its own colour, live: time runs left to right since the turn
-  began, with a mark where it read (◎), edited (✎), changed the system (▲) or told the others something (✉), then what
-  it is doing now and how many of its blocks it has touched. Pick an agent to light its blocks; the system diagram
-  draws each agent's blocks in its colour, with `@agent` after them; the bus, newest first; and a warning when two agents edit one
-  block, or one edits a block claimed for another.
-- **Topics**: the stack, technology by technology. Pick one and the parts that use it light up in the diagram (pick a
-  block in the diagram and the technologies it uses light up); space
-  marks it new to you, so Learn explains its basics.
-
-One meaning per colour, so your eye goes where it should:
-
-- **Blue:** where Claude is and what you picked.
-- **Yellow:** what changed and what needs you.
-- **Green:** what is new, done or to learn.
-- **White:** what to read.
-- **Gray:** the background (why, when, labels).
-- **Red:** only what was taken away.
-
-`n` `r` `a` `t` switch views.
-
-### History: how the system got here
-
-`h: History` lists how the system changed, newest first, each step said as what you asked and what it got: "2 days
-ago · You asked: “add document uploads to flows” → it got: a call to Amazon S3, 3 endpoints under /flows/documents".
-Pick one for every change and why it matters; ↵ shows it on the diagram. `h` on any box shows that box's own history.
-It is recorded as Claude works (your requests come from the hooks, or from Claude Code's own session history) and
-read back from the last 50 commits; kept in `.git/system-diff/history.jsonl`. `system-diff history [--part id]` prints
-it.
-
-### What you are optimising for: objectives
-
-While you iterate with Claude you keep asking for the same things ("fast on large repositories", "must work on
-Windows"). system-diff learns these from your requests, in the background with the LLM your Claude Code uses (only
-your requests are read, never code), and keeps them as objectives:
-(The LLM is the gateway your Claude Code uses, or the `claude` command itself, so Bedrock, Vertex and
-subscriptions work; `SYSTEM_DIFF_LLM=off` turns every LLM use off.)
-
-- shown in the pane, the web page and the terminal view, each with how often you asked and its evidence on hover;
-- given to Claude with every request, and to every agent of a team in its brief, so later iterations keep them;
-- marked on changes that touch one; and, when agents test or measure one, their verdict (holds, broken) shows next
-  to it and in the Agents tab (the `check_objective` MCP tool).
-
-`x` on an objective clears it, if it is wrong. `system-diff objectives` lists them (`clear`, `restore`, `learn`).
-They are kept in `.git/system-diff/objectives.json`: on your machine, never committed. `SYSTEM_DIFF_OBJECTIVES=0`
-turns the learning off.
-
-### How it stays fast
-
-One engine per repository (the web page's server, started by the first view that needs it) keeps the system in
-memory. Claude's edits reach it from the hooks as they happen, other edits through a look at file times (in Python,
-no git), and only the files that changed are read again: a page is about 0.1 s, an edit shows within a second or two.
-It runs git a handful of times when it starts and not per look, which matters where starting a program is slow. Each file's
-reading is kept by its content, so every branch and worktree reuses it. Each branch keeps its own checkpoint (what
-you have seen there). `system-diff doctor` times a look on your machine and says what is slow.
-
-### In a browser
-
-The same views (Now, Review, Agents, Topics) as a web page at http://localhost:8765/, on your machine only (in a
-GitHub Codespace, forward the port: `gh codespace ports forward 8765:8765 -c <codespace>` on your own computer, or
-VS Code's Ports panel). The
-session-start hook starts it in the background; `system-diff watch` starts it by hand. Hover a block to pick it and
-light its flows, click to zoom in. The pane shows the link in its tab row (🌐) while it runs. `[web] start = false` in
-`system-diff.toml` turns the start with the session off. A Send to Claude box sends what you type to the live
-session, through the pane, as your own message; only the page system-diff serves can send.
-
-### In a separate terminal
-
-The same views in a terminal tab or window of their own, beside Claude Code: `system-diff tui` (or
-`system-diff tui --view review`) in the project. It draws the pane's own page with the pane's keys: ← ↑ ↓ → pick a
-block, Enter zooms in, `b` goes back, `f` follows Claude, `n` `r` `a` `t` switch views, `[` `]` scroll across,
-shift+↑ ↓ and Page Up/Down scroll down, `-` `=` zoom, `q` quits. From Claude Code, `/system-diff tui` opens one where it
-can (a tmux window, Windows Terminal, macOS Terminal, a Linux desktop's terminal) and always answers with the command
-to run in a new terminal. Standard library only, on Linux, macOS and Windows.
-
-### A team of agents, by the system's blocks
-
-Claude does most work alone unless asked otherwise, so system-diff asks it to plan a team:
-
-- **Planning:** at each prompt, the hook tells Claude to call `plan_agents` with the task. The plan splits the task by
-  the system's blocks, one agent per area it touches (a container, else a part). Each agent gets the blocks it owns
-  (claimed for it), the blocks it depends on, and a brief to launch it with. Claude then launches the agents in
-  parallel as subagents. Turn this off with `[agents] orchestrate = false` in `system-diff.toml`.
-- **The bus:** an async publish/subscribe channel whose topics are the blocks. Each agent follows the blocks its own
-  depend on. Every change an agent makes to a block's structure is published on that block's topic as it happens
-  ("API no longer answers DELETE /orders/{id}"), with why it matters. Agents publish their own notes with `publish`
-  (to a block, to "all", or to "agent:<name>"). Each agent's unread messages reach it with its next tool result
-  of any kind (a read, an edit, a shell command, a search), once: nobody waits on anybody.
-- **Claims:** `claim` gives an agent its blocks. An edit to someone else's block is published to its owner and shown
-  under Needs your attention.
-- **One agent, one area:** when an agent (the main conversation included) edits blocks in two or more areas in one
-  turn, the edit hook tells it, once that turn, to plan a team with `plan_agents` and hand the rest to agents.
-
-The MCP tools: `plan_agents`, `claim`, `publish`, `subscribe`, `inbox`, `team`. It all stays in `.git/system-diff/`
-(`agents.json`, `bus.jsonl`), never pushed.
-
-### In the conversation
-
-- **After an edit that changes the system's structure**, one line under it: "System diff: API now answers GET
-  /health · a new way in: it needs the same checks as the others". Edits that change no structure stay quiet.
-- **Messages from other agents** on the bus arrive with an agent's next tool result of any kind, not only after
-  an edit.
-- **At the end of each turn**, one line on what the turn did to the system, or which parts it edited when the
-  structure stayed the same; nothing for a turn that only talked.
-- **Ask Claude** "what is the API part?" or "what does this change do?": the MCP server gives it `explain` (the facts
-  to teach from, and a diagram to show you), `system_diff` (the exact list of changes; `base: turn` for this turn
-  only), `system_map`, `draw` (pictures of a process or a sequence of calls) and `checkpoint` (mark what you have
-  seen, so the next diff shows only what is new to you).
-
-The pane and the hooks send nothing anywhere: the working tree is read as a snapshot (untracked files included)
-without touching your index, HEAD or branches; the checkpoint and the start of each turn live under
-`refs/worktree/system-diff/` (each worktree its own, for Claude sessions in parallel), and what the hooks note under
-`.git/system-diff/`, never pushed. Only the optional lessons you ask an LLM for (`e` in the terminal view, `diff
---narrate`) go to your own LLM, and they carry the structure, never the code.
+The design principles are in [docs/design.md](https://github.com/simplifiedmachine/system-diff/blob/main/docs/design.md).
 
 ## Configuration
 
@@ -295,6 +178,59 @@ that did not change keeps its place.
 - **Web page by hand** (`system-diff watch`): the pane's views in a browser, at http://localhost:8765/, without
   Claude Code.
 
+## Roadmap
+
+Where system-diff is going. Each item is open for contributors: comment on its issue, or open one.
+
+**Next**
+- [ ] More languages: Go, Java/Kotlin, C#, Rust (extraction is per file, so a new language is one module).
+- [ ] Hooks on Windows without `sh`, so Claude's edits arrive as events there too.
+- [ ] History in the terminal view; renames followed through history.
+- [ ] macOS in CI.
+- [ ] One engine shared by the hooks and the MCP tools (no reading of their own).
+
+**Then**
+- [ ] Other coding agents: Cursor, Codex CLI, Gemini CLI, Aider, through the same engine.
+- [ ] Guardrails from objectives: "the UI never talks to the database" checked on every change, like a test.
+- [ ] Export to C4, Structurizr and Mermaid; import a hand-drawn architecture as the target to compare against.
+- [ ] Team mode: share objectives, checkpoints and history with your team (opt-in, committed).
+
+**Later**
+- [ ] Replay a session: watch a system being built, request by request.
+- [ ] Design reviews in pull requests with the system diff, its history and what it does to the objectives.
+- [ ] Monorepos and systems that span repositories.
+
+## Contributing
+
+system-diff is young, and the most useful things it could do haven't been built yet. Contributions of every size are
+welcome: a bug report with the doctor's output, a new language, a better diagram layout, a sharper explanation of a
+change, documentation, ideas.
+
+- **Report a bug**: [open an issue](https://github.com/simplifiedmachine/system-diff/issues/new/choose) with what you
+  did, what you expected, what happened, your OS and versions, and the output of `python -m system_diff doctor`.
+  Screenshots of the pane or the web page help a lot.
+- **Suggest a feature**: open an issue describing the problem it solves for you, or pick one from the roadmap.
+- **Send a pull request**: read [CONTRIBUTING.md](https://github.com/simplifiedmachine/system-diff/blob/main/CONTRIBUTING.md) for the setup (a two-minute `pip install -e
+  ".[dev]"`), how the code is laid out, and what a good PR looks like: tests with it, CI green on Linux and Windows,
+  and the system map regenerated. system-diff draws its own architecture below; your PR's comment shows what it does
+  to it.
+
+Good first issues are labelled [`good first issue`](https://github.com/simplifiedmachine/system-diff/labels/good%20first%20issue).
+
+## system-diff, drawn by itself
+
+<!-- system-map:begin -->
+![System map, generated from the code](https://raw.githubusercontent.com/simplifiedmachine/system-diff/main/docs/diagrams/system.svg)
+
+<details><summary>How this map is made</summary>
+
+Regenerated by `system-diff` from the code: the parts and their columns from `system-diff.toml`, the connections from imports, API calls and the settings each part reads, the outside systems from the settings a deploy configuration sets, and the tables from the migrations. Parts used everywhere are drawn without the arrows into them, and each part keeps only its strongest connections; `system-diff map` writes all of them to `system.json`.
+
+Read by the code but set by no deploy configuration, so not drawn: Headless Chromium (Docker or Playwright) (png).
+
+</details>
+<!-- system-map:end -->
+
 ## License
 
-MIT
+MIT. See [LICENSE](https://github.com/simplifiedmachine/system-diff/blob/main/LICENSE).

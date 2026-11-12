@@ -1,0 +1,30 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Screenshots of the pane or the web page help.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `python -m system_diff doctor`
+      description: Run it in the repository where it happened.
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: OS, Python, `system-diff --version`, Claude Code version
+      placeholder: Windows 11, Python 3.12, system-diff 0.8.0, Claude Code 2.1.322
+    validations:
+      required: true
+  - type: textarea
+    id: repo
+    attributes:
+      label: The repository
+      description: Languages, frameworks and size of the repository (or a small one where it happens).
