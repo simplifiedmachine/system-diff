@@ -232,14 +232,39 @@ def rows(root: Path, width: int = 80) -> List[textmap.Line]:
     return got["head"] + got["rows"]
 
 
+def still_reading(page: Dict[str, Any], partial: Optional[Dict[str, int]]) -> None:
+    """While the code is still being read (a first look at a large repository), a row at the top of the page says
+    so: the diagram below shows only what the files read so far say, and fills in look by look."""
+    if not partial or not isinstance(page.get("rows"), list):
+        return
+    done, total = int(partial.get("done") or 0), int(partial.get("total") or 0)
+    said = [[[f"◐ Still reading the code: {done:,} of {total:,} files so far — the diagram fills in as it goes",
+              "attention"]],
+            [["  Parts and connections not read yet are missing for now; this page updates by itself.", "muted"]],
+            []]
+    page["rows"] = said + page["rows"]
+    for block in page.get("blocks") or []:   # the blocks' places are rows of the page: they move down with it
+        if isinstance(block.get("y"), int):
+            block["y"] += len(said)
+        if isinstance(block.get("slot"), list) and block["slot"]:
+            block["slot"] = [block["slot"][0] + len(said), *block["slot"][1:]]
+    page["wide"] = max(int(page.get("wide") or 0), max(sum(len(run[0]) for run in row) for row in said))
+    page["reading"] = {"done": done, "total": total}
+
+
 def main(root: Path, width: int, view: str = "now", part: Optional[str] = None, protocol: int = 1,
          zoom: int = -1) -> int:
     if protocol >= 2:
-        from . import pane, progress
+        from . import compare as comparing, extract, pane, progress
         progress.begin(root)   # a long first read says where it is, for the pane to show meanwhile
+        # The pane asks again every few seconds: a first read of a large repository is spread over its looks, each
+        # reading files for a few seconds and drawing what is known so far (compare.time_box).
+        comparing.time_box(extract.COLD_BUDGET)
         try:
             page = pane.show(root, width, view, part or None, zoom)
+            still_reading(page, comparing.partial())
         finally:
+            comparing.time_box(None)
             progress.end()
         print(json.dumps(page, ensure_ascii=False))
         return 0

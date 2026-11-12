@@ -14,7 +14,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.5.13' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.6.0' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
@@ -298,6 +298,65 @@ async function zoomBy($: EngineInterface, by: number): Promise<void> {
   await refresh($)
 }
 
+// `/system-diff tui`: the same views in a terminal of their own (`system-diff tui`). A plugin cannot type into another
+// terminal, so it opens one where it can (a tmux window, Windows Terminal, macOS Terminal, a Linux desktop's terminal)
+// and always answers with the command to run, for when it cannot.
+const TUI_LINUX = '[ -n "$DISPLAY$WAYLAND_DISPLAY" ] || exit 1; cd "$1" || exit 1; shift; ' +
+  'if command -v gnome-terminal >/dev/null 2>&1; then gnome-terminal -- "$@" >/dev/null 2>&1 & exit 0; fi; ' +
+  'for t in x-terminal-emulator konsole xfce4-terminal xterm; do if command -v "$t" >/dev/null 2>&1; then ' +
+  'nohup "$t" -e "$@" >/dev/null 2>&1 & exit 0; fi; done; exit 1'
+
+async function terminal($: EngineInterface): Promise<string> {
+  const got = await run($, ['tui', '--command'])
+  if (got?.old) return 'The terminal view needs a newer system-diff: pip install -U "system-diff[mcp]" (or pipx upgrade system-diff)'
+  if (!got) {
+    return failure ? `system-diff is installed but failed here: ${failure}`
+      : 'system-diff is not installed. In a terminal: pip install "system-diff[mcp]" (Python 3.11+), then: system-diff tui'
+  }
+  let argv = ['system-diff', 'tui']
+  let line = 'system-diff tui'
+  try {
+    const said = JSON.parse(got.out) as { argv?: unknown; line?: unknown }
+    if (Array.isArray(said.argv) && said.argv.every(a => typeof a === 'string') && typeof said.line === 'string') {
+      argv = said.argv as string[]
+      line = said.line
+    }
+  } catch {
+    // the plain command, then
+  }
+  let dir = ''
+  try {
+    dir = await $.session.root()
+  } catch {
+    // the session's own directory, then
+  }
+  const ps = (text: string) => `'${text.replace(/'/g, "''")}'`
+  const apple = (text: string) => text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const sq = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`
+  const tries: Array<[string, string[]]> = [
+    ['in a new tmux window', ['sh', '-c', '[ -n "$TMUX" ] && exec tmux new-window -c "$1" "$2"', 'sh', dir || '.', line]],
+    ...(dir ? [['in a new Windows Terminal tab', ['wt', '-w', '0', 'new-tab', '-d', dir, ...argv]] as [string, string[]]] : []),
+    ['in a new Terminal window', ['osascript', '-e',
+      `tell application "Terminal" to do script "${apple((dir ? `cd ${sq(dir)} && ` : '') + line)}"`,
+      '-e', 'tell application "Terminal" to activate']],
+    ['in a new terminal window', ['sh', '-c', TUI_LINUX, 'sh', dir || '.', ...argv]],
+    ['in a new window', ['powershell', '-NoProfile', '-Command', `Start-Process -FilePath ${ps(argv[0] ?? '')}` +
+      (argv.length > 1 ? ` -ArgumentList ${ps(argv.slice(1).join(' '))}` : '') + (dir ? ` -WorkingDirectory ${ps(dir)}` : '')]],
+  ]
+  const where = dir ? `, in ${dir}` : ''
+  for (const [how, cmd] of tries) {
+    try {
+      const done = await $.process.run(cmd, { timeoutMs: 10000 })
+      if (done.exitCode === 0) {
+        return `Opened the System diff ${how}. If it did not open, run this in a new terminal${where}:\n  ${line}`
+      }
+    } catch {
+      // not here: the next way
+    }
+  }
+  return `Run this in a new terminal tab or window${where}:\n  ${line}\n(No terminal could be opened from here.)`
+}
+
 function open($: EngineInterface) {
   return $.ui.open({ id: PANE, title: 'System diff', columns: WIDEST })
 }
@@ -308,8 +367,8 @@ export const register: Register = on => {
     // `/system-diff` opens it; `/system-diff-pane` too, the name it had first. A name someone else holds is skipped.
     for (const name of COMMANDS) {
       try {
-        await $.command.register({ name, description: 'Show the System diff pane beside the chat (close: hide it)',
-                                   argumentHint: '[close]' })
+        await $.command.register({ name, description: 'Show the System diff pane beside the chat (close: hide it; ' +
+                                     'tui: the same in a terminal of its own)', argumentHint: '[close|tui]' })
       } catch {
         // taken
       }
@@ -325,6 +384,7 @@ export const register: Register = on => {
         await $.ui.close({ id: PANE })
         return { text: 'System diff pane closed. /system-diff opens it again.' }
       }
+      if (e.args.trim().toLowerCase() === 'tui') return { text: await terminal($) }
       await refresh($)
       await open($)
       return { text: 'System diff pane opened.' }

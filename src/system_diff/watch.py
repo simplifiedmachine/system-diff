@@ -10,6 +10,7 @@ what was typed to .git/system-diff/outbox.jsonl, where the pane picks it up and 
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import secrets
@@ -600,6 +601,9 @@ class Watcher:
     def __init__(self, root: Path, base: str = "checkpoint", config_path: Optional[str] = None, interval: float = 2.0):
         self.root, self.base, self.config_path, self.interval = root, base, config_path, interval
         self.token = secrets.token_urlsafe(16)
+        # who this server is, for web_url to tell it from another program that took its port: kept in web.json and
+        # answered at GET /whoami. It opens nothing (unlike the token, which /seen and /send need).
+        self.ident = secrets.token_hex(16)
         self.lock = threading.Lock()
         self.state: Dict[str, Any] = {"version": 0, "headline": "Reading the code…", "plan": "", "svg": "",
                                       "changes": 0, "base": base, "at": "", "error": "", "turn": "", "focus": None,
@@ -754,6 +758,8 @@ def handler(w: Watcher):
                 return self._send(200, PAGE.replace("__TOKEN__", w.token).encode(), "text/html; charset=utf-8")
             if path == "/web":
                 return self._web()
+            if path == "/whoami":   # this is system-diff's server for the repository whose web.json names this id
+                return self._json(200, {"app": "system-diff", "id": w.ident, "pid": os.getpid()})
             if self.path.startswith("/state"):
                 return self._send(200, json.dumps(w.snapshot_state()).encode(), "application/json")
             return self._send(404, b"not found", "text/plain")
@@ -828,7 +834,9 @@ def handler(w: Watcher):
 
 VIEWS = ("now", "review", "agents", "topics")
 PANE_LOCK = threading.Lock()
-WEB = "web.json"   # where a running watcher listens: {"url", "port", "pid"}, under .git/system-diff
+WEB = "web.json"   # where a running watcher listens: {"url", "port", "pid", "id"}, under .git/system-diff
+STARTING = "web.starting"   # a watcher being started: {"pid", "port", "at"}, until it has written web.json
+STARTING_FOR = 60.0         # how long a start is waited for (a large repository, a slow disk) before another is tried
 
 
 OUTBOX = "outbox.jsonl"   # typed on the page for Claude: {"id", "at", "text"} per line; the pane takes and removes them
@@ -853,7 +861,7 @@ def _web_file(root: Path) -> Path:
 
 
 def _alive(pid: int) -> bool:
-    if os.name == "nt":   # os.kill(pid, 0) would end the process there: the port answering says enough
+    if os.name == "nt":   # os.kill(pid, 0) would end the process there: GET /whoami says enough
         return True
     try:
         os.kill(pid, 0)
@@ -862,14 +870,6 @@ def _alive(pid: int) -> bool:
     except OSError:
         return False
     return True
-
-
-def _answers(port: int, timeout: float = 0.3) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
-            return True
-    except OSError:
-        return False
 
 
 def forwarded(port: int, env=os.environ) -> str:
@@ -887,27 +887,82 @@ def origins(port: int, env=os.environ) -> set:
     return out
 
 
-def web_url(root: Path) -> Optional[str]:
-    """The URL of the page a watcher for this repository serves, if one is running (its process alive, its port
-    answering); else None, and a file left by one that is gone is removed."""
+def _whoami(port: int, ident: str, timeout: float = 1.0) -> Optional[bool]:
+    """Whether the server on `port` is the one web.json names: True when its GET /whoami gives web.json's id; False
+    when nothing listens there or what does is something else (another program, an older system-diff); None when it
+    did not answer in time (a server busy reading a large repository is still ours, so not to be replaced)."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)   # no proxy: this machine only
     try:
-        f = _web_file(root)
-        if not f.exists():
+        conn.request("GET", "/whoami", headers={"Accept": "application/json"})
+        r = conn.getresponse()
+        body = r.read(4096)
+        if r.status != 200:
+            return False
+        info = json.loads(body.decode("utf-8"))
+        return bool(ident) and isinstance(info, dict) and info.get("app") == "system-diff" and info.get("id") == ident
+    except (ConnectionError, OSError) as exc:
+        if isinstance(exc, (socket.timeout, TimeoutError)):
             return None
+        return False
+    except (ValueError, UnicodeDecodeError, http.client.HTTPException):
+        return False
+    finally:
+        conn.close()
+
+
+def _look(root: Path) -> tuple:
+    """(url, state) of this repository's watcher: state "up" (url set), "busy" (web.json names a server that did not
+    answer in time: leave it be), "starting" (one is being started) or "none". A web.json naming a server that is gone,
+    or a port that another program now holds, is removed."""
+    f = _web_file(root)
+    if f.exists():
         try:
-            info = json.loads(f.read_text(encoding="utf-8"))
-            url, port, pid = str(info["url"]), int(info["port"]), int(info["pid"])
-        except (OSError, ValueError, KeyError, TypeError):
-            url, port, pid = "", 0, 0
-        if port and _alive(pid) and _answers(port):
-            return f"http://localhost:{port}/"   # what a browser opens here, or through a forwarded port
+            raw = f.read_text(encoding="utf-8")
+            info = json.loads(raw)
+            port, pid, ident = int(info["port"]), int(info["pid"]), str(info.get("id") or "")
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            raw, port, pid, ident = None, 0, 0, ""
+        ours = _whoami(port, ident) if port and _alive(pid) else False
+        if ours:
+            return f"http://localhost:{port}/", "up"   # what a browser opens here, or through a forwarded port
+        if ours is None:
+            return None, "busy"
         try:
-            f.unlink()
+            if raw is None or f.read_text(encoding="utf-8") == raw:   # not one that has just started since
+                f.unlink()
         except OSError:
             pass
-        return None
+    return None, ("starting" if _starting(root) else "none")
+
+
+def web_url(root: Path) -> Optional[str]:
+    """The URL of the page a watcher for this repository serves, if one is running: web.json names it, and the server
+    on its port says it is that one (GET /whoami); else None, and a file left by one that is gone, or whose port another
+    program now holds, is removed. Cheap enough to ask at every look of the pane: a server started earlier that came up
+    since is found."""
+    try:
+        return _look(root)[0]
     except Exception:  # noqa: BLE001 - not a repository, git missing: no page
         return None
+
+
+def _starting(root: Path) -> Optional[dict]:
+    """The start under way, if any: web.starting written by start_detached less than STARTING_FOR ago, by a process
+    that is still there (where that can be told). A stale one is removed."""
+    f = git_dir(root) / STARTING
+    try:
+        info = json.loads(f.read_text(encoding="utf-8"))
+        if time.time() - float(info["at"]) < STARTING_FOR and _alive(int(info["pid"])):
+            return info
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        f.unlink()
+    except OSError:
+        pass
+    return None
 
 
 def _free(port: int) -> bool:
@@ -923,15 +978,23 @@ def _free(port: int) -> bool:
             return False
 
 
-def start_detached(root: Path, port: int = 8765) -> Optional[str]:
+def start_detached(root: Path, port: int = 8765, wait: float = 3.0) -> Optional[str]:
     """The URL of this repository's watcher: the running one's, else one started in the background, on the first free
-    port from `port` (ten tried), that outlives the caller. None if it could not be started. Never raises."""
+    port from `port` (ten tried), that outlives the caller. None if it could not be started, or if it is not up yet
+    after `wait` seconds: it writes web.json as soon as it listens, before reading the system, and web_url (the pane
+    asks at every look) finds it then. Only one is started at a time: while one starts (web.starting) or a running one
+    is busy, none is. Never raises."""
     try:
-        url = web_url(root)
-        if url:
+        url, state = _look(root)
+        if url or state in ("busy", "starting"):
             return url
         free = next((p for p in range(port, port + 10) if _free(p)), None)
         if free is None:
+            return None
+        marker = git_dir(root) / STARTING
+        try:   # claimed at once, so two callers at the same moment start one server, not two
+            fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        except FileExistsError:
             return None
         kw: Dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
                               "cwd": str(root), "close_fds": True}
@@ -939,27 +1002,47 @@ def start_detached(root: Path, port: int = 8765) -> Optional[str]:
             kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
         else:
             kw["start_new_session"] = True
-        subprocess.Popen([sys.executable, "-m", "system_diff", "--repo", str(root), "watch", "--port", str(free)], **kw)
-        deadline = time.time() + 3
+        try:
+            child = subprocess.Popen([sys.executable, "-m", "system_diff", "--repo", str(root), "watch",
+                                      "--port", str(free)], **kw)
+            os.write(fd, json.dumps({"pid": child.pid, "port": free, "at": time.time()}).encode())
+        except Exception:
+            os.close(fd)
+            marker.unlink()
+            raise
+        os.close(fd)
+        deadline = time.time() + wait
         while time.time() < deadline:
             url = web_url(root)
             if url:
                 return url
+            if child.poll() is not None:   # it could not start (the port taken meanwhile): another may try
+                try:
+                    marker.unlink()
+                except OSError:
+                    pass
+                return None
             time.sleep(0.1)
         return None
     except Exception:  # noqa: BLE001 - a convenience: never stop the caller
         return None
 
 
-def _write_web(root: Path, url: str, port: int) -> Optional[Path]:
+def _write_web(root: Path, url: str, port: int, ident: str = "") -> Optional[Path]:
     try:
         f = _web_file(root)
-        tmp = f.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"url": url, "port": port, "pid": os.getpid()}), encoding="utf-8")
+        tmp = f.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"url": url, "port": port, "pid": os.getpid(), "id": ident}), encoding="utf-8")
         os.replace(tmp, f)
-        return f
     except (OSError, subprocess.CalledProcessError):
         return None
+    try:   # started: the start under way is done (the one start_detached made for this port)
+        marker = f.parent / STARTING
+        if int(json.loads(marker.read_text(encoding="utf-8")).get("port", -1)) == port:
+            marker.unlink()
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return f
 
 
 def _forget_web(f: Optional[Path], port: int) -> None:
@@ -981,14 +1064,15 @@ def _interrupt(*_: Any) -> None:
 def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: Optional[str] = None,
           interval: float = 2.0, ready=None) -> None:
     """Run until interrupted. `ready(url)` is called once the server listens (tests use port 0). While it runs,
-    .git/system-diff/web.json says where (web_url reads it)."""
+    .git/system-diff/web.json says where (web_url reads it): written as soon as it listens, before the first read of
+    the system, which in a large repository takes long (the page shows "Reading the code…" meanwhile)."""
     w = Watcher(root, base, config_path, interval)
     server = ThreadingHTTPServer(("127.0.0.1", port), handler(w))
-    thread = threading.Thread(target=w.loop, daemon=True)
-    thread.start()
     bound = server.server_address[1]
     url = f"http://127.0.0.1:{bound}/"
-    web = _write_web(root, url, bound)
+    web = _write_web(root, url, bound, w.ident)
+    thread = threading.Thread(target=w.loop, daemon=True)
+    thread.start()
     if threading.current_thread() is threading.main_thread() and hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _interrupt)   # stopped by kill: still forget web.json
     try:

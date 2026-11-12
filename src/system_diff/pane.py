@@ -18,12 +18,24 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import activity, agents, architecture, canvas, config, design, graph, inside, profile
-from .compare import checkpoint_sha, compare, turn_sha
-from .extract import Code, first_party, outside_imports
+from . import activity, agents, architecture, regroup, canvas, config, design, graph, inside, profile
+from .compare import checkpoint_sha, compare as _compare, turn_sha
+from .extract import Code
 from .learn import STDLIB, BASIC
-from .sources import GitSource, git
-from .topics import ROLE_OF, TECH, tech_key
+from .sources import git
+from .topics import ROLE_OF, TECH, TOP_PACKAGE, tech_key
+
+
+def compare(root: Path, base: str, head: str = "."):
+    """A comparison with the LLM's regrouping of the diagram, when one is ready (regroup.ensure reads it, and starts
+    the background job that makes it; it never waits). Not for a partial read: the structure is not known yet."""
+    c = _compare(root, base, head)
+    try:
+        c.regroup = None if c.after.get("partial") else regroup.ensure(root, c.after, c.cfg)
+    except Exception:  # noqa: BLE001 - only an improvement of the picture
+        c.regroup = None
+    return c
+
 
 SLOT = 2          # rows under a diagram for the picked box's detail
 SIGN = {"added": "+", "removed": "−", "changed": "~", "warn": "▲", "info": "◆"}
@@ -240,7 +252,9 @@ def _now_model(c, root: Path, part: str, now: Dict[str, Any], marks) -> Tuple[Di
     if part and part in c.after["components"]:          # a component: its modules, and what is around them
         model = inside.internals(c, root, part, now.get("path", "") if agent == part else "", marks)
         if model:
-            holder = architecture.groups_of(c.after, c.cfg, design.kinds(c.after, c.cfg)).get(part, "")
+            ov = getattr(c, "regroup", None)
+            holder = architecture.groups_of(c.after, c.cfg, architecture.kinds_with(c.after, c.cfg, ov),
+                                            overlay=ov).get(part, "")
             where = f" · in {holder[2:]}" if holder else ""
             more = f", {model['more']} more not drawn" if model["more"] else ""
             return model, f"Inside {model['title']}", (f"{model['files']} modules{more}{where} · b back · f follow "
@@ -344,28 +358,20 @@ def view_review(root: Path, width: int) -> Dict[str, Any]:
     return page.json(view="review", part="")
 
 
-def stack(source, bp: dict, cfg: Dict[str, Any]) -> Dict[str, Dict[str, int]]:
-    """Technology key -> {part: files that import it}, for the whole system: from the blueprint's own record of
-    what each part imports, else read from its files."""
-    if bp.get("stack"):
-        found: Dict[str, Counter] = defaultdict(Counter)
-        for part, names in bp["stack"].items():
-            for name, n in names.items():
-                key = tech_key(name)
-                if key and key not in BASIC:
-                    found[key][part] = max(found[key][part], n)
-        return {k: dict(v) for k, v in found.items()}
-    code = Code(cfg)
-    own = first_party(source.files, cfg["code"]["python_paths"])
-    files = [f for f in source.files if code.is_code(f) and not code.is_test(f)]
-    texts = source.read_many(files)
-    out: Dict[str, Counter] = defaultdict(Counter)
-    for f in files:
-        for name in outside_imports(f, texts[f], own, cfg["code"]["aliases"]):
-            key = tech_key(name)
-            if key and key.split(".")[0] not in BASIC and key not in BASIC:
-                out[key][code.part_of(f)] += 1
-    return {k: dict(v) for k, v in out.items()}
+def stack(bp: dict) -> Dict[str, Dict[str, int]]:
+    """Technology key -> {part: files that import it}, for the whole system, from what the extraction recorded for
+    each part (its "imported" names when the blueprint has them, else its "stack" of packages): no file is read again,
+    so it is quick in a large repository and names exactly the parts the diagram draws."""
+    names_of = bp.get("imported") or bp.get("stack") or {}
+    found: Dict[str, Counter] = defaultdict(Counter)
+    for part, names in names_of.items():
+        if part not in (bp.get("components") or {part: None}):
+            continue
+        for name, n in (names or {}).items():
+            key = tech_key(name) or tech_key(TOP_PACKAGE.get(name, ""))
+            if key and key not in BASIC and key.split(".")[0] not in BASIC:
+                found[key][part] = max(found[key][part], int(n or 1))
+    return {k: dict(v) for k, v in found.items()}
 
 
 def _stack_view(c, root: Path) -> Dict[str, Any]:
@@ -373,7 +379,7 @@ def _stack_view(c, root: Path) -> Dict[str, Any]:
     library last); the system diagram; and for each box the technology it uses."""
     cfg = c.cfg
     agent = activity.now(activity.events(root, 200), Code(cfg))["part"]
-    techs = stack(GitSource(c.head_sha, root), c.after, cfg)
+    techs = stack(c.after)
     kind = design.kinds(c.after, cfg)
     rows: Dict[str, List[str]] = defaultdict(list)
     model = architecture.system(c, None, agent)
@@ -383,7 +389,14 @@ def _stack_view(c, root: Path) -> Dict[str, Any]:
         for p, n in techs[key].items():
             col[kind.get(p, "logic")] += n
         rows[col.most_common(1)[0][0]].append(key)
-    order = [(k, h) for k, h in cfg["picture"]["columns"] if rows.get(k)]
+    # every row its heading: the configured columns, then any layer they leave out (a config that renames or drops
+    # a column must not hide the technology of the parts in it)
+    headings = [tuple(kh) for kh in cfg["picture"]["columns"]]
+    named = {k for k, _ in headings}
+    headings += [(k, h) for k, h in config.DEFAULTS["picture"]["columns"] if k not in named]
+    named |= {k for k, _ in headings}
+    headings += [(k, k.capitalize()) for k in sorted(rows) if k not in named]
+    order = [(k, h) for k, h in headings if rows.get(k)]
     parts = {key: sorted({"b:" + p for p in ps} | {"b:" + holder[p] for p in ps if p in holder})
              for key, ps in techs.items()}
     boxes: Dict[str, Tuple[str, List[str]]] = {}

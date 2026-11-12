@@ -124,3 +124,5 @@ def plain_terminal(monkeypatch):
                 "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ATTENDED", "CODESPACE_NAME",
                 "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"):
         monkeypatch.delenv(var, raising=False)
+    # nor asks a model to regroup the diagram (tests/test_regroup.py turns it back on, with the model mocked)
+    monkeypatch.setenv("SYSTEM_DIFF_REGROUP", "0")

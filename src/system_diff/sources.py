@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, List, Optional
 
 
 def git(*args: str, cwd: Path) -> str:
@@ -36,7 +36,18 @@ class GitSource:
     def __init__(self, ref: str, root: Path):
         self.root, self.ref = Path(root), ref
         self.label = git("rev-parse", "--short", ref, cwd=self.root).strip()
-        self.files = [f for f in git("ls-tree", "-r", "-z", "--name-only", ref, cwd=self.root).split("\0") if f]
+        # each file's blob id too: a content address, so what was read from a file once (extract's per-file facts)
+        # is known again wherever and whenever the same content turns up
+        self.files: List[str] = []
+        self.blobs: Dict[str, str] = {}
+        for entry in git("ls-tree", "-r", "-z", ref, cwd=self.root).split("\0"):
+            head, tab, path = entry.partition("\t")
+            if not tab:
+                continue
+            self.files.append(path)
+            mode_type_id = head.split()
+            if len(mode_type_id) == 3 and mode_type_id[1] == "blob":
+                self.blobs[path] = mode_type_id[2]
         self._cache: Dict[str, str] = {}
 
     def read_many(self, paths: Iterable[str]) -> Dict[str, str]:

@@ -16,12 +16,14 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import config
 from .diff import diff, numstat
+from . import extract as extraction
 from .extract import EXTRACT_VERSION, Code, extract
 from . import progress
 from .sources import GitSource, git, git_dir
@@ -132,26 +134,73 @@ class Comparison:
 
 # A commit reads the same every time: the live page, the terminal view and the hook compare the working tree with the
 # same checkpoint again and again, so its blueprint is read once. Keyed by commit, config and extractor; the last few.
+# Only a whole blueprint is kept so: a partial one (see time_box) is kept for this process only, in _PARTIALS.
 _BLUEPRINTS: Dict[Tuple[str, str], dict] = {}
+_PARTIALS: Dict[tuple, Tuple[dict, set]] = {}
 _KEEP = 8
 _LOCK = threading.Lock()
+
+# A time box (the pane's): a read of the code stops at this time.monotonic() deadline, and what was not read yet is
+# left for the next read, which goes on from there (each file's facts are kept by content). None: read everything.
+_deadline: Optional[float] = None
+_partial: Optional[Dict[str, int]] = None
+
+
+def time_box(seconds: Optional[float]) -> None:
+    """From now on, reads of the code in this process stop after `seconds` in all (None: no limit); see partial()."""
+    global _deadline, _partial
+    _deadline = None if seconds is None else time.monotonic() + seconds
+    _partial = None
+    with _LOCK:
+        _PARTIALS.clear()   # a new time box reads on from where the last stopped
+
+
+def partial() -> Optional[Dict[str, int]]:
+    """How far the last time-boxed read got, {"done": files read, "total": files}, when it did not get through all."""
+    return _partial
 
 
 def _blueprint(sha: str, cfg: Dict[str, Any], source, keep_in: Optional[Path] = None) -> dict:
     """The blueprint of a commit, read once per process; with `keep_in` (a repository) also kept on disk, for the
     hooks, each its own process, that compare the working tree with the same turn and checkpoint again and again."""
+    return _read(sha, cfg, source, keep_in)[0]
+
+
+def _read(sha: str, cfg: Dict[str, Any], source, keep_in: Optional[Path] = None,
+          only: Optional[set] = None) -> Tuple[dict, Optional[set]]:
+    """_blueprint, and None; or, when the time box ran out first, a partial blueprint and the paths it read (see
+    extract.read_blueprint). With `only`, the blueprint of just those paths (partial, unless they are all)."""
     key = (sha, json.dumps(cfg, sort_keys=True, default=str) + EXTRACT_VERSION)  # a newer extractor reads it again
-    with _LOCK:
-        bp = _BLUEPRINTS.get(key)
+    bp = None
+    if only is None:
+        with _LOCK:
+            bp = _BLUEPRINTS.get(key)
     path = None
-    if bp is None and keep_in is not None:
+    if keep_in is not None:
         path = git_dir(keep_in, "blueprints") / f"{sha}-{hashlib.sha1(key[1].encode()).hexdigest()[:10]}.json"
+    if bp is None and path is not None and only is None:
         try:
             bp = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             bp = None
+    known = None
     if bp is None:
-        bp = extract(source() if callable(source) else source, cfg)
+        pkey = (key, None if only is None else hashlib.sha1("\0".join(sorted(only)).encode()).hexdigest())
+        with _LOCK:
+            got = _PARTIALS.get(pkey)
+        if got is not None:   # the same read again in this process: the time box has run out, nothing more to read
+            return dict(got[0]), got[1]
+        src = source() if callable(source) else source
+        if _deadline is None and only is None:
+            bp, known = extract(src, cfg), None
+        else:
+            bp, known = extraction.read_blueprint(src, cfg, deadline=_deadline if only is None else None, only=only)
+        if known is not None:
+            with _LOCK:
+                _PARTIALS[pkey] = (bp, known)
+                while len(_PARTIALS) > _KEEP:
+                    del _PARTIALS[next(iter(_PARTIALS))]
+            return dict(bp), known
         if path is not None:
             try:
                 path.write_text(json.dumps(bp), encoding="utf-8")
@@ -163,26 +212,44 @@ def _blueprint(sha: str, cfg: Dict[str, Any], source, keep_in: Optional[Path] = 
         _BLUEPRINTS[key] = bp
         while len(_BLUEPRINTS) > _KEEP:
             del _BLUEPRINTS[next(iter(_BLUEPRINTS))]
-    return dict(bp)  # a copy: callers label it ("ref") for the person, and nothing else changes a blueprint
+    return dict(bp), None  # a copy: callers label it ("ref") for the person, and nothing else changes a blueprint
 
 
 def _compare(root: Path, base: str, a_sha: str, a_label: str, head: str, b_sha: str, b_label: str,
              config_path: Optional[str]) -> Comparison:
+    global _partial
     head_src = GitSource(b_sha, root)
     cfg = config.load(head_src, root, config_path)
-    progress.stage(f"Reading the code at {a_label}")
-    a = _blueprint(a_sha, cfg, lambda: GitSource(a_sha, root), root if base in ("checkpoint", "turn") else None)
-    progress.stage(f"Reading the code at {b_label}")
+    keep_a = root if base in ("checkpoint", "turn") else None
     # the working tree's too: its snapshot's id changes with any file, so a kept one is never stale, and the pane,
     # asking every few seconds, does not read every file again each time
-    b = _blueprint(b_sha, cfg, head_src, root if head in WORKTREE else None)
+    keep_b = root if head in WORKTREE else None
+    # The head first: under a time box (the pane's) it is what the person waits to see. When the time box leaves it
+    # partial, the base is read for the same files only (every one of them, whatever the time: most are the same
+    # content as the head's, read already, so only the changed ones are read again), and the other way round. Like
+    # with like: a partial head against a whole base would say that everything not read yet was removed, and a
+    # partial base against a whole head that it was all added. So the diff while the code is still being read is the
+    # true diff of the files read so far, and grows to the whole diff as the reading goes on.
+    progress.stage(f"Reading the code at {b_label}")
+    b, b_known = _read(b_sha, cfg, head_src, keep_b)
+    progress.stage(f"Reading the code at {a_label}")
+    a, a_known = _read(a_sha, cfg, lambda: GitSource(a_sha, root), keep_a, only=b_known)
+    if a_known is not None and b_known is None:
+        b, b_known = _read(b_sha, cfg, head_src, keep_b, only=a_known)
+    if b.get("partial"):
+        _partial = dict(b["partial"])
     progress.stage("Comparing")
     for side, point, label in ((a, base, a_label), (b, head, b_label)):
         if point in ("checkpoint", "turn") or point in WORKTREE:
             side["ref"] = label  # a snapshot's commit id means nothing to a person
     d = diff(a, b, numstat(root, a_sha, b_sha, cfg), cfg.get("deploy", []), Code(cfg))
-    tip = "HEAD" if head in WORKTREE else b_sha
-    d["commits"] = git("log", "--format=%s%n%n%b", f"{a_sha}..{tip}", cwd=root)[:6000] if a_sha != b_sha else ""
+    tip = ("HEAD" if _head(root) else "") if head in WORKTREE else b_sha
+    d["commits"] = ""
+    if a_sha != b_sha and tip:   # no commit yet (a new repository): no commit messages either
+        try:
+            d["commits"] = git("log", "--format=%s%n%n%b", f"{a_sha}..{tip}", cwd=root)[:6000]
+        except subprocess.CalledProcessError:
+            pass
     return Comparison(d, a, b, cfg, a_label, b_label, a_sha, b_sha)
 
 

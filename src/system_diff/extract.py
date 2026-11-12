@@ -18,13 +18,17 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import threading
+import time
 from collections import Counter, defaultdict
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from . import progress
 from .config import segment_rx
 
-EXTRACT_VERSION = "2"  # what a blueprint records: a blueprint cached by another version is read again
+EXTRACT_VERSION = "3"  # what a blueprint records: a blueprint cached by another version is read again
 
 
 def glob_rx(pattern: str) -> re.Pattern:
@@ -212,37 +216,92 @@ def _attributes(text: str, local: str) -> Counter:
     return Counter({n: k for n, k in found.items() if not n.startswith("__")})
 
 
+CHAIN = re.compile(r"(?<![\w.])[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+")  # a.b.c: an attribute reached through a name
+DOTTED = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
+
+
+def _attribute_table(text: str, heads: Optional[set] = None) -> Dict[str, Counter]:
+    """_attributes for every name at once (or every name starting with one of `heads`), in one pass: `a.b.c` counts
+    b for a and c for a.b."""
+    table: Dict[str, Counter] = defaultdict(Counter)
+    for m in CHAIN.finditer(text):
+        chain = m.group(0)
+        if heads is not None and chain[: chain.index(".")] not in heads:
+            continue
+        segments = chain.split(".")
+        for i in range(1, len(segments)):
+            table[".".join(segments[:i])][segments[i]] += 1
+    return table
+
+
+def py_import_facts(text: str) -> List[list]:
+    """A Python file's imports as written, before they are looked up among the repository's files (which takes the
+    other files): ["from", dots, module, [[name, bound as, {attribute: uses}]]] for each `from` import, then
+    ["import", [dotted names], alias or None, [{attribute: uses} for each]] for each plain one. What a file uses of
+    a module it imports whole (`rules.approve(…)`) is counted here, from its text."""
+    table = None
+    heads: set = set()
+
+    def attributes(local: str) -> Dict[str, int]:
+        nonlocal table
+        if not DOTTED.fullmatch(local):
+            return dict(_attributes(text, local))
+        if table is None:
+            table = _attribute_table(text, heads)
+        found = table.get(local) or {}
+        return {n: k for n, k in found.items() if not n.startswith("__")}
+
+    lists = {m.start(): m.group(3) for m in PY_FROM_LIST.finditer(text)}
+    froms, imports = [], []
+    for m in PY_FROM.finditer(text):
+        dots, mod, names = m.groups()
+        froms.append((len(dots), mod, _listed(lists.get(m.start(), names))))
+    for m in PY_IMPORT.finditer(text):
+        dotted_names = [d.strip() for d in m.group(1).split(",")]
+        alias = re.match(r"[ \t]+as[ \t]+(\w+)", text[m.end(): m.end() + 80])
+        bound = [alias.group(1) if alias and i == len(dotted_names) - 1 else d for i, d in enumerate(dotted_names)]
+        imports.append((dotted_names, alias.group(1) if alias else None, bound))
+    heads.update(local.split(".")[0] for _d, _m, listed in froms for _n, local in listed)
+    heads.update(b.split(".")[0] for _d, _a, bound in imports for b in bound)
+    out: List[list] = [["from", dots, mod, [[n, local, attributes(local) if n != "*" else {}] for n, local in listed]]
+                       for dots, mod, listed in froms]
+    out += [["import", dotted_names, alias, [attributes(b) for b in bound]] for dotted_names, alias, bound in imports]
+    return out
+
+
+def _py_reached(path: str, facts: List[list], files: set, python_paths: Iterable[str]) -> List[Tuple[str, Counter]]:
+    """py_imports from a file's py_import_facts."""
+    module_file, relative_file, nearest, package = _resolver(path, files, python_paths)
+    out: List[Tuple[str, Counter]] = []
+    for entry in facts:
+        if entry[0] == "from":
+            _, dots, mod, listed = entry
+            base = package[: len(package) - (dots - 1)] if dots else []
+            stem = ".".join(base + ([mod] if mod else []))
+            find = relative_file if dots else module_file
+            modules = [(find(f"{stem}.{n}"), n, attrs) for n, _local, attrs in listed if n != "*"]
+            modules = [(f, n, attrs) for f, n, attrs in modules if f]
+            if modules:  # `from pkg import mod`: the modules themselves
+                out += [(f, Counter(attrs) or Counter([n])) for f, n, attrs in modules]
+                continue
+            target = nearest(stem, find)
+            if target:
+                took = [n for n, _local, _attrs in listed if n != "*"]
+                out.append((target, Counter(took or [stem.rsplit(".", 1)[-1] or "*"])))
+        else:
+            _, dotted_names, _alias, attrs = entry
+            for dotted, used in zip(dotted_names, attrs):
+                target = nearest(dotted)
+                if target:
+                    out.append((target, Counter(used) or Counter([dotted.rsplit(".", 1)[-1]])))
+    return out
+
+
 def py_imports(path: str, text: str, files: set, python_paths: Iterable[str] = ("",)) -> List[Tuple[str, Counter]]:
     """Each import of a Python file that reaches one of `files`, in the order written: the file, and the names it
     takes from it (`from x import a, b`), or what it uses of a module it imports whole. Imports of anything else (the
     standard library, packages) reach nothing and are left out."""
-    module_file, relative_file, nearest, package = _resolver(path, files, python_paths)
-    lists = {m.start(): m.group(3) for m in PY_FROM_LIST.finditer(text)}
-    out: List[Tuple[str, Counter]] = []
-    for m in PY_FROM.finditer(text):
-        dots, mod, names = m.groups()
-        listed = _listed(lists.get(m.start(), names))
-        base = package[: len(package) - (len(dots) - 1)] if dots else []
-        stem = ".".join(base + ([mod] if mod else []))
-        find = relative_file if dots else module_file
-        modules = [(find(f"{stem}.{n}"), n, local) for n, local in listed if n != "*"]
-        modules = [(f, n, local) for f, n, local in modules if f]
-        if modules:  # `from pkg import mod`: the modules themselves
-            out += [(f, _attributes(text, local) or Counter([n])) for f, n, local in modules]
-            continue
-        target = nearest(stem, find)
-        if target:
-            took = [n for n, _ in listed if n != "*"]
-            out.append((target, Counter(took or [stem.rsplit(".", 1)[-1] or "*"])))
-    for m in PY_IMPORT.finditer(text):
-        dotted_names = [d.strip() for d in m.group(1).split(",")]
-        alias = re.match(r"[ \t]+as[ \t]+(\w+)", text[m.end(): m.end() + 80])
-        for i, dotted in enumerate(dotted_names):
-            target = nearest(dotted)
-            if target:
-                local = alias.group(1) if alias and i == len(dotted_names) - 1 else dotted
-                out.append((target, _attributes(text, local) or Counter([dotted.rsplit(".", 1)[-1]])))
-    return out
+    return _py_reached(path, py_import_facts(text), files, python_paths)
 
 
 def py_targets(path: str, text: str, files: set, python_paths: Iterable[str] = ("",)) -> List[str]:
@@ -251,30 +310,35 @@ def py_targets(path: str, text: str, files: set, python_paths: Iterable[str] = (
     return [f for f, _ in py_imports(path, text, files, python_paths)]
 
 
+def _py_bound(path: str, facts: List[list], files: set,
+              python_paths: Iterable[str]) -> Dict[str, Tuple[str, Optional[str]]]:
+    """_py_bindings from a file's py_import_facts."""
+    module_file, relative_file, nearest, package = _resolver(path, files, python_paths)
+    out: Dict[str, Tuple[str, Optional[str]]] = {}
+    for entry in facts:
+        if entry[0] == "from":
+            _, dots, mod, listed = entry
+            base = package[: len(package) - (dots - 1)] if dots else []
+            stem = ".".join(base + ([mod] if mod else []))
+            find = relative_file if dots else module_file
+            for n, local, _attrs in listed:
+                module = find(f"{stem}.{n}")
+                if module:
+                    out[local] = (module, None)
+                else:
+                    owner = find(stem) if stem else None
+                    if owner:
+                        out[local] = (owner, n)
+        else:
+            _, dotted_names, alias, _attrs = entry
+            if alias and module_file(dotted_names[-1]):
+                out[alias] = (module_file(dotted_names[-1]), None)
+    return out
+
+
 def _py_bindings(path: str, text: str, files: set, python_paths: Iterable[str]) -> Dict[str, Tuple[str, Optional[str]]]:
     """What each name a Python file imports is bound to: (file, None) for a module, (file, name) for a name in one."""
-    module_file, relative_file, nearest, package = _resolver(path, files, python_paths)
-    lists = {m.start(): m.group(3) for m in PY_FROM_LIST.finditer(text)}
-    out: Dict[str, Tuple[str, Optional[str]]] = {}
-    for m in PY_FROM.finditer(text):
-        dots, mod, names = m.groups()
-        base = package[: len(package) - (len(dots) - 1)] if dots else []
-        stem = ".".join(base + ([mod] if mod else []))
-        find = relative_file if dots else module_file
-        for n, local in _listed(lists.get(m.start(), names)):
-            module = find(f"{stem}.{n}")
-            if module:
-                out[local] = (module, None)
-            else:
-                owner = find(stem) if stem else None
-                if owner:
-                    out[local] = (owner, n)
-    for m in PY_IMPORT.finditer(text):
-        alias = re.match(r"[ \t]+as[ \t]+(\w+)", text[m.end(): m.end() + 80])
-        dotted = m.group(1).split(",")[-1].strip()
-        if alias and module_file(dotted):
-            out[alias.group(1)] = (module_file(dotted), None)
-    return out
+    return _py_bound(path, py_import_facts(text), files, python_paths)
 
 
 def _clause_names(clause: str, local: bool = False) -> List[str]:
@@ -314,35 +378,52 @@ def _ts_resolve(path: str, spec: str, files: set, aliases: Optional[Dict[str, st
                 None)
 
 
-def ts_imports(path: str, text: str, files: set, aliases: Optional[Dict[str, str]] = None) -> List[Tuple[str, Counter]]:
-    """Each import of a JavaScript or TypeScript file that reaches one of `files`: the file and the names it takes
-    (named imports, a default import's name, a namespace's name; else the file's own name)."""
+def ts_import_facts(text: str) -> List[list]:
+    """A JavaScript or TypeScript file's imports as written: [specifier, the names its clause takes or None]."""
     named = {m.start(2): _clause_names(m.group(1)) for m in TS_CLAUSE.finditer(text)}
     named.update({m.start(2): _clause_names(m.group(1)) for m in TS_REQUIRE.finditer(text)})
+    return [[m.group(1), named.get(m.start(1))] for m in TS_IMPORT.finditer(text)]
+
+
+def _ts_reached(path: str, facts: List[list], files: set, aliases: Optional[Dict[str, str]]) -> List[Tuple[str, Counter]]:
     out = []
-    for m in TS_IMPORT.finditer(text):
-        target = _ts_resolve(path, m.group(1), files, aliases)
+    for spec, names in facts:
+        target = _ts_resolve(path, spec, files, aliases)
         if target:
             stem = target.rsplit("/", 1)[-1].split(".")[0]
             if stem == "index" and "/" in target:  # a folder's index: the folder's name
                 stem = target.rsplit("/", 2)[-2]
-            out.append((target, Counter(named.get(m.start(1)) or [stem])))
+            out.append((target, Counter(names or [stem])))
     return out
+
+
+def ts_imports(path: str, text: str, files: set, aliases: Optional[Dict[str, str]] = None) -> List[Tuple[str, Counter]]:
+    """Each import of a JavaScript or TypeScript file that reaches one of `files`: the file and the names it takes
+    (named imports, a default import's name, a namespace's name; else the file's own name)."""
+    return _ts_reached(path, ts_import_facts(text), files, aliases)
 
 
 def ts_targets(path: str, text: str, files: set, aliases: Optional[Dict[str, str]] = None) -> List[str]:
     return [f for f, _ in ts_imports(path, text, files, aliases)]
 
 
+def ts_binding_facts(text: str) -> List[list]:
+    """[specifier, the names its clause binds here] for each import clause and require of a JavaScript file."""
+    return [[m.group(2), _clause_names(m.group(1), local=True)] for rx in (TS_CLAUSE, TS_REQUIRE) for m in rx.finditer(text)]
+
+
+def _ts_bound(path: str, facts: List[list], files: set, aliases: Optional[Dict[str, str]]) -> Dict[str, str]:
+    out = {}
+    for spec, names in facts:
+        target = _ts_resolve(path, spec, files, aliases)
+        if target:
+            out.update({name: target for name in names})
+    return out
+
+
 def _ts_bindings(path: str, text: str, files: set, aliases: Optional[Dict[str, str]]) -> Dict[str, str]:
     """The file each name a JavaScript file imports comes from."""
-    out = {}
-    for rx in (TS_CLAUSE, TS_REQUIRE):
-        for m in rx.finditer(text):
-            target = _ts_resolve(path, m.group(2), files, aliases)
-            if target:
-                out.update({name: target for name in _clause_names(m.group(1), local=True)})
-    return out
+    return _ts_bound(path, ts_binding_facts(text), files, aliases)
 
 
 def python_roots(files: Iterable[str]) -> List[str]:
@@ -413,21 +494,31 @@ def first_party(files: Iterable[str], python_paths: Iterable[str] = ("",)) -> se
     return out
 
 
-def outside_imports(path: str, text: str, own: set, aliases: Optional[Dict[str, str]] = None) -> List[str]:
-    """What a file imports from outside the repository: packages and the standard library, by the name it imports
-    them by (`http.server`, `fastapi.responses`, `@prisma/client`). `own`: first_party's names."""
-    found = set()
+def outside_names(path: str, text: str) -> List[str]:
+    """Every name a file imports by, before the repository's own ones are told apart (outside_imports does that)."""
     if path.endswith(".py"):
         names = [mod for dots, mod, _ in PY_FROM.findall(text) if mod and not dots]
-        names += [m.strip() for mods in PY_IMPORT.findall(text) for m in mods.split(",")]
+        return names + [m.strip() for mods in PY_IMPORT.findall(text) for m in mods.split(",")]
+    return TS_IMPORT.findall(text)
+
+
+def _outside(path: str, names: Iterable[str], own: set, aliases: Optional[Dict[str, str]] = None) -> List[str]:
+    found = set()
+    if path.endswith(".py"):
         found = {n for n in names if n and n.split(".")[0] not in own and n != "__future__"}
     else:
-        for spec in TS_IMPORT.findall(text):
+        for spec in names:
             if spec.startswith(".") or any(spec.startswith(a) for a in (aliases or {})):
                 continue
             parts = spec.split("/")
             found.add("/".join(parts[:2]) if spec.startswith("@") else parts[0])
     return sorted(found)
+
+
+def outside_imports(path: str, text: str, own: set, aliases: Optional[Dict[str, str]] = None) -> List[str]:
+    """What a file imports from outside the repository: packages and the standard library, by the name it imports
+    them by (`http.server`, `fastapi.responses`, `@prisma/client`). `own`: first_party's names."""
+    return _outside(path, outside_names(path, text), own, aliases)
 
 
 def top_package(name: str) -> str:
@@ -572,25 +663,39 @@ def _value(expr: str, constants: Dict[str, str]) -> Optional[str]:
 
 def _constants(texts: Iterable[str]) -> Dict[str, str]:
     """String constants and class attributes (`API_V1_STR: str = "/api/v1"`) that hold one value everywhere."""
+    return _one_value(CONSTANT.findall(text) for text in texts)
+
+
+def _one_value(found: Iterable[Iterable[Tuple[str, str]]]) -> Dict[str, str]:
     seen: Dict[str, set] = defaultdict(set)
-    for text in texts:
-        for name, value in CONSTANT.findall(text):
+    for pairs in found:
+        for name, value in pairs:
             seen[name].add(value)
     return {name: next(iter(values)) for name, values in seen.items() if len(values) == 1}
+
+
+def _prefix_arg(text: str) -> Optional[List[str]]:
+    arg = PREFIX_ARG.search(text)
+    return [arg.group(1), arg.group(2)] if arg else None
 
 
 def find_routes(code: List[str], texts: Dict[str, str], owner: Dict[str, str], files: set,
                 python_paths: Iterable[str], aliases_of: Callable[[str], Dict[str, str]]) -> Dict[str, str]:
     """{"METHOD /path": part} for every route the code serves, each under the prefixes its routers are mounted with."""
+    return _routes(code, {f: code_facts(f, texts[f]) for f in code}, owner, files, python_paths, aliases_of)
+
+
+def _routes(code: List[str], facts: Dict[str, dict], owner: Dict[str, str], files: set,
+            python_paths: Iterable[str], aliases_of: Callable[[str], Dict[str, str]]) -> Dict[str, str]:
+    """find_routes from the code files' facts (code_facts); a file without facts (not read yet) serves nothing."""
     routes: Dict[str, str] = {}
-    py = sorted(f for f in code if f.endswith(".py"))
-    constants = _constants(texts[f] for f in py)
+    py = sorted(f for f in code if f.endswith(".py") and f in facts)
+    constants = _one_value(facts[f]["constants"] for f in py)
     defs: Dict[Tuple[str, str], str] = {}  # (file, router variable) -> its own prefix
     for f in py:
-        for m in ROUTER.finditer(texts[f]):
-            arg = PREFIX_ARG.search(m.group(3))
-            defs[(f, m.group(1))] = (_value(arg.group(2), constants) or "") if arg else ""
-    bindings = {f: _py_bindings(f, texts[f], files, python_paths) for f in py}
+        for var, arg in facts[f]["routers"]:
+            defs[(f, var)] = (_value(arg[1], constants) or "") if arg else ""
+    bindings = {f: _py_bound(f, facts[f]["imports"], files, python_paths) for f in py}
 
     def node(f: str, expr: str) -> Optional[Tuple[str, str]]:
         head, _, attr = expr.partition(".")
@@ -603,13 +708,12 @@ def find_routes(code: List[str], texts: Dict[str, str], owner: Dict[str, str], f
 
     mounted: Dict[Tuple[str, str], Tuple[Tuple[str, str], str, bool]] = {}
     for f in py:
-        for m in MOUNT.finditer(texts[f]):
-            parent, child = node(f, m.group(1)), node(f, m.group(3))
+        for parent_expr, child_expr, arg in facts[f]["mounts"]:
+            parent, child = node(f, parent_expr), node(f, child_expr)
             if not parent or not child or child in mounted or parent == child:
                 continue
-            arg = PREFIX_ARG.search(m.group(4) or "")
-            prefix = (_value(arg.group(2), constants) or "") if arg else ""
-            replaces = bool(arg) and arg.group(1) == "url_prefix"  # Flask: the blueprint's own prefix gives way
+            prefix = (_value(arg[1], constants) or "") if arg else ""
+            replaces = bool(arg) and arg[0] == "url_prefix"  # Flask: the blueprint's own prefix gives way
             mounted[child] = (parent, prefix, replaces)
 
     def full(n: Tuple[str, str], depth: int = 0) -> str:
@@ -619,24 +723,22 @@ def find_routes(code: List[str], texts: Dict[str, str], owner: Dict[str, str], f
         return defs[n]
 
     for f in py:
-        text = texts[f]
         own = [k for k in defs if k[0] == f]
-        for var, method, path in PY_ROUTE.findall(text):
+        for var, method, path in facts[f]["routes"]:
             n = node(f, var) or (own[0] if len(own) == 1 else None)
             routes[f"{method.upper()} {api_path((full(n) if n else '') + path)}"] = owner[f]
-        for var, path, rest in FLASK_ROUTE.findall(text):
+        for var, path, methods in facts[f]["flask"]:
             n = node(f, var) or (own[0] if len(own) == 1 else None)
-            listed = re.search(r"methods\s*=\s*[\[(]([^\])]*)", rest)
-            for method in (re.findall(r"""["'](\w+)["']""", listed.group(1)) if listed else []) or ["GET"]:
+            for method in methods or ["GET"]:
                 routes[f"{method.upper()} {api_path((full(n) if n else '') + path)}"] = owner[f]
 
-    js = sorted(f for f in code if not f.endswith(".py"))
-    servers = [f for f in js
-               if any(_library(n, JS_SERVERS) for n in outside_imports(f, texts[f], set(), aliases_of(f)))]
+    js = sorted(f for f in code if not f.endswith(".py") and f in facts)
+    servers = [f for f in js if any(_library(n, JS_SERVERS) for n in
+                                    _outside(f, [spec for spec, _ in facts[f]["imports"]], set(), aliases_of(f)))]
     mounts: Dict[str, Tuple[str, str]] = {}  # a file of routes -> (the file that mounts it, under this prefix)
     for f in servers:
-        names = _ts_bindings(f, texts[f], files, aliases_of(f))
-        for prefix, child in JS_MOUNT.findall(texts[f]):
+        names = _ts_bound(f, facts[f]["bindings"], files, aliases_of(f))
+        for prefix, child in facts[f]["js_mounts"]:
             if names.get(child) and names[child] not in mounts and names[child] != f:
                 mounts[names[child]] = (f, prefix)
 
@@ -644,14 +746,14 @@ def find_routes(code: List[str], texts: Dict[str, str], owner: Dict[str, str], f
         return js_prefix(mounts[f][0], depth + 1) + mounts[f][1] if f in mounts and depth < 12 else ""
 
     for f in servers:
-        for _var, method, path in JS_ROUTE.findall(texts[f]):
+        for method, path in facts[f]["js_routes"]:
             routes[f"{method.upper()} {api_path(js_prefix(f) + path)}"] = owner[f]
     for f in js:
         m = NEXT_ROUTE.search(f)
         if m:
             segments = [s for s in m.group(1).split("/") if s and not (s[0] == "(" and s[-1] == ")") and s[0] != "@"]
             path = "/" + "/".join(_next_segment(s) for s in segments)
-            for method in sorted(set(NEXT_METHOD.findall(texts[f]))):
+            for method in facts[f]["next"]:
                 routes[f"{method} {api_path(path)}"] = owner[f]
             continue
         m = NEXT_PAGES_API.search(f)
@@ -684,17 +786,32 @@ def _upgrade(text: str) -> str:
     return text[start.start(): start.end() + end.start()] if end else text[start.start():]
 
 
+def alembic_facts(text: str) -> Optional[dict]:
+    """What an Alembic revision file says: its revision, the ones it follows, and what its upgrade() does to the
+    tables in order ([operation, arguments]); None for a file that is no revision."""
+    if not ("op." in text and "def upgrade" in text):
+        return None
+    return {**_alembic_heads(text), "ops": alembic_ops(_upgrade(text))}
+
+
+def _alembic_heads(text: str) -> dict:
+    r = REVISION.search(text)
+    d = DOWN_REVISION.search(text)
+    down = set(re.findall(r"\w+", d.group(2) or "")) | {d.group(1)} - {None} if d else set()
+    return {"revision": r.group(1) if r else None, "down": sorted(down)}
+
+
 def alembic_order(revisions: Dict[str, str]) -> List[str]:
     """Alembic revision files in the order they run, by each one's down_revision; by name where that cannot tell."""
-    rev, down = {}, {}
-    for f, text in revisions.items():
-        r = REVISION.search(text)
-        d = DOWN_REVISION.search(text)
-        rev[f] = r.group(1) if r else f
-        down[f] = set(re.findall(r"\w+", d.group(2) or "")) | {d.group(1)} - {None} if d else set()
+    return _alembic_order({f: _alembic_heads(text) for f, text in revisions.items()})
+
+
+def _alembic_order(facts: Dict[str, dict]) -> List[str]:
+    rev = {f: x["revision"] or f for f, x in facts.items()}
+    down = {f: set(x["down"]) for f, x in facts.items()}
     by_rev = {r: f for f, r in rev.items()}
     order, done = [], set()
-    pending = sorted(revisions)
+    pending = sorted(facts)
     while pending:
         ready = [f for f in pending if all(by_rev.get(d) in done or d not in by_rev for d in down[f])]
         if not ready:  # a cycle or a gap: the rest by name
@@ -705,15 +822,24 @@ def alembic_order(revisions: Dict[str, str]) -> List[str]:
     return order
 
 
-def alembic_run(upgrade: str, tables: Dict[str, set]) -> None:
-    """What one revision's upgrade() does to the tables, in the order it does it: a table made or dropped, a column
-    added, dropped or renamed (the columns kept are those added after a table was made, as for SQL migrations)."""
+def alembic_ops(upgrade: str) -> List[list]:
+    """What one revision's upgrade() does, in the order it does it: [operation, arguments]."""
     ops = sorted([(m.start(), "create", m.groups()) for m in OP_CREATE.finditer(upgrade)]
                  + [(m.start(), "drop", m.groups()) for m in OP_DROP.finditer(upgrade)]
                  + [(m.start(), "add", m.groups()) for m in OP_ADD_COLUMN.finditer(upgrade)]
                  + [(m.start(), "remove", m.groups()) for m in OP_DROP_COLUMN.finditer(upgrade)]
                  + [(m.start(), "rename", m.groups()) for m in OP_RENAME_COLUMN.finditer(upgrade)])
-    for _at, op, args in ops:
+    return [[op, list(args)] for _at, op, args in ops]
+
+
+def alembic_run(upgrade: str, tables: Dict[str, set]) -> None:
+    """What one revision's upgrade() does to the tables, in the order it does it: a table made or dropped, a column
+    added, dropped or renamed (the columns kept are those added after a table was made, as for SQL migrations)."""
+    _alembic_apply(alembic_ops(upgrade), tables)
+
+
+def _alembic_apply(ops: List[list], tables: Dict[str, set]) -> None:
+    for op, args in ops:
         table = qualify(args[0], "public")
         if op == "create":
             tables[table] |= set()
@@ -798,22 +924,24 @@ class Code:
         return next((name[: -len(s)] for s in self.strip if name.endswith(s)), name)
 
 
-def _package_json(path: str, files: set, source, cache: Dict[str, dict]) -> dict:
-    """The dependencies of the package.json nearest above `path`."""
+def _package_json(path: str, files: set, deps: Dict[str, Any]) -> Any:
+    """The dependencies of the package.json nearest above `path` (`deps`: each package.json's, as read)."""
     folder = path.rsplit("/", 1)[0] if "/" in path else ""
     while True:
         name = f"{folder}/package.json" if folder else "package.json"
         if name in files:
-            if name not in cache:
-                try:
-                    data = json.loads(source.read(name) or "{}")
-                    cache[name] = data.get("dependencies") or {} if isinstance(data, dict) else {}
-                except ValueError:
-                    cache[name] = {}
-            return cache[name]
+            return deps.get(name) or {}
         if not folder:
             return {}
         folder = folder.rsplit("/", 1)[0] if "/" in folder else ""
+
+
+def package_dependencies(text: str) -> Any:
+    try:
+        data = json.loads(text or "{}")
+    except ValueError:
+        return {}
+    return data.get("dependencies") or {} if isinstance(data, dict) else {}
 
 
 def find_outside(imported: Dict[str, Counter], env: Dict[str, Counter], containers: Dict[str, dict],
@@ -860,15 +988,322 @@ def find_outside(imported: Dict[str, Counter], env: Dict[str, Counter], containe
     return out, primary
 
 
-def extract(source, cfg: Dict[str, Any]) -> dict:
-    """The blueprint of one source."""
+# ── what each file says, read once per content ───────────────────────────────────────────────────────────────────
+#
+# Reading a large repository is mostly reading each file: its imports, routes, settings, tables. What a file says
+# depends only on its content (and its path), so it is kept by the file's git blob id (a content address) and read
+# again only when the content changes; what depends on the other files (an import reaching a file, a route a call
+# matches, which part owns what, the counts) is worked out again each time from every file's facts (`_combine`), fast.
+# An edit re-reads the one file; the base of a comparison and the working tree share every file they have in common.
+
+FACTS_VERSION = "1"   # what a file's facts hold: facts kept by another version are read again
+COLD_BUDGET = 4.0     # seconds one budgeted read (the pane's) spends reading files nobody read yet; the next goes on
+PRUNE_AT = 256        # entries a shard of the facts store holds before the ones not used lately are let go
+
+
+def code_facts(path: str, text: str) -> dict:
+    """What a code file says, in itself: everything extract needs of it, before it is set among the other files."""
+    # the AWS services called count only in a file that imports boto3 (or aioboto3)
+    out: Dict[str, Any] = {"lines": text.count("\n"), "aws": sorted(set(AWS_CALL.findall(text))) if "boto" in text else []}
+    if path.endswith(".py"):
+        out["imports"] = py_import_facts(text)
+        out["env"] = [a or b for a, b in ENV_PY.findall(text)] + settings_fields(text)
+        out["constants"] = [list(c) for c in CONSTANT.findall(text)]
+        out["routers"] = [[m.group(1), _prefix_arg(m.group(3))] for m in ROUTER.finditer(text)]
+        out["mounts"] = [[m.group(1), m.group(3), _prefix_arg(m.group(4) or "")] for m in MOUNT.finditer(text)]
+        out["routes"] = [list(r) for r in PY_ROUTE.findall(text)]
+        flask = []
+        for var, path_, rest in FLASK_ROUTE.findall(text):
+            listed = re.search(r"methods\s*=\s*[\[(]([^\])]*)", rest)
+            flask.append([var, path_, re.findall(r"""["'](\w+)["']""", listed.group(1)) if listed else []])
+        out["flask"] = flask
+        out["tables"] = model_tables(path, text)
+    else:
+        out["imports"] = ts_import_facts(text)
+        out["bindings"] = ts_binding_facts(text)
+        out["env"] = ENV_TS.findall(text)
+        out["api"] = API_STR.findall(text)
+        out["called"] = called_paths(text)
+        out["js_mounts"] = [list(m) for m in JS_MOUNT.findall(text)]
+        out["js_routes"] = [[method, path_] for _var, method, path_ in JS_ROUTE.findall(text)]
+        out["next"] = sorted(set(NEXT_METHOD.findall(text)))
+    return out
+
+
+def _sql_facts(text: str) -> dict:
+    text = SQL_COMMENT.sub("", text)  # "CREATE TABLE IF NOT EXISTS only." in a comment is not a table
+    return {"create": CREATE_TABLE.findall(text), "add": [list(a) for a in ADD_COLUMN.findall(text)]}
+
+
+def _prisma_facts(text: str) -> List[str]:
+    out = []
+    for model, body in PRISMA_MODEL.findall(text):
+        mapped = PRISMA_MAP.search(body)
+        out.append(mapped.group(1) if mapped else model)
+    return out
+
+
+SECTIONS: Dict[str, Callable[[str, str], Any]] = {  # what a file is read for, and what reading it for that gives
+    "code": lambda path, text: code_facts(path, text),
+    "tsconfig": lambda path, text: path_prefixes([path], lambda _f: text),
+    "keys": lambda path, text: sorted(set(CONFIG_KEY.findall(text))),
+    "compose": lambda path, text: compose_services(text),
+    "sql": lambda path, text: _sql_facts(text),
+    "alembic": lambda path, text: alembic_facts(text),
+    "prisma": lambda path, text: _prisma_facts(text),
+    "package": lambda path, text: package_dependencies(text),
+}
+
+
+class FactStore:
+    """Each file's facts, by blob id and path, under the git dir: files/v<FACTS_VERSION>/<first two hex>.json, one JSON
+    object per shard ({"<blob> <path>": {section: facts}}). Shards are read when first needed and written back
+    whole (merged with what another process wrote meanwhile, then swapped in), so a lost race only loses cache."""
+
+    def __init__(self, folder: Path):
+        self.folder = folder
+        self.shards: Dict[str, dict] = {}
+        self.stamps: Dict[str, float] = {}
+        self.dirty: set = set()
+        self.used: Dict[str, set] = defaultdict(set)
+        self.lock = threading.Lock()
+
+    def _load(self, name: str, again: bool = False) -> dict:
+        """A shard as last read; `again`: read it again if another process wrote it since (and this one has nothing
+        unwritten in it)."""
+        if name in self.shards and not (again and name not in self.dirty):
+            return self.shards[name]
+        path = self.folder / f"{name}.json"
+        try:
+            stamp = path.stat().st_mtime
+        except OSError:
+            stamp = 0.0
+        if name not in self.shards or stamp != self.stamps.get(name):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8")) if stamp else {}
+            except (OSError, ValueError):
+                data = {}
+            self.shards[name], self.stamps[name] = data if isinstance(data, dict) else {}, stamp
+        return self.shards[name]
+
+    def get(self, blob: str, path: str) -> Optional[dict]:
+        key = f"{blob} {path}"
+        with self.lock:
+            got = self._load(blob[:2]).get(key)
+            if got is None:   # perhaps read by another process meanwhile (the pane's, the hook's, the web page's)
+                got = self._load(blob[:2], again=True).get(key)
+            if got is not None:
+                self.used[blob[:2]].add(key)
+            return got
+
+    def put(self, blob: str, path: str, facts: dict) -> None:
+        key = f"{blob} {path}"
+        with self.lock:
+            self._load(blob[:2])[key] = facts
+            self.used[blob[:2]].add(key)
+            self.dirty.add(blob[:2])
+
+    def flush(self) -> None:
+        with self.lock:
+            for name in sorted(self.dirty):
+                path = self.folder / f"{name}.json"
+                mine = self.shards[name]
+                try:
+                    theirs = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+                    merged = {**(theirs if isinstance(theirs, dict) else {}), **mine}
+                except ValueError:   # half a file: what this process has
+                    merged = dict(mine)
+                except OSError:      # held by another process (Windows) this moment: written at the next flush
+                    continue
+                if len(merged) > max(PRUNE_AT, 4 * len(self.used[name])):   # old contents nobody reads any more
+                    merged = {k: v for k, v in merged.items() if k in self.used[name]}
+                try:
+                    self.folder.mkdir(parents=True, exist_ok=True)
+                    tmp = path.with_name(f"{name}.json.{os.getpid()}.{threading.get_ident()}")
+                    tmp.write_text(json.dumps(merged, separators=(",", ":")), encoding="utf-8")
+                    os.replace(tmp, path)
+                    self.stamps[name] = path.stat().st_mtime
+                except OSError:
+                    try:
+                        tmp.unlink()
+                    except OSError:
+                        pass
+                    continue   # kept dirty: written at the next flush
+                self.shards[name] = merged
+                self.dirty.discard(name)
+
+
+_STORES: Dict[str, FactStore] = {}
+_STORES_LOCK = threading.Lock()
+
+
+def fact_store(root: Path) -> Optional[FactStore]:
+    """The repository's store of per-file facts (one per process, shared by every source of the repository)."""
+    key = str(root)
+    with _STORES_LOCK:
+        if key not in _STORES:
+            try:
+                from .sources import git_dir
+                files = git_dir(Path(root), "files")
+            except Exception:  # noqa: BLE001 - no git dir: no store, every file read each time
+                return None
+            for old in files.iterdir():   # an older extractor's facts
+                if old.is_dir() and old.name != f"v{FACTS_VERSION}":
+                    shutil.rmtree(old, ignore_errors=True)
+            _STORES[key] = FactStore(files / f"v{FACTS_VERSION}")
+        return _STORES[key]
+
+
+ENTRY_NAMES = ("main", "app", "server", "index", "routes", "router", "api", "urls", "views", "settings", "config",
+               "__init__", "route", "page", "layout", "client", "models", "schema")
+
+
+def _reading_order(paths: List[str], sections: Dict[str, set], owner: Dict[str, str]) -> List[str]:
+    """The order files are read in when there is not time for all: what is not code first (the compose and config
+    files, migrations, tsconfig.json: few and telling), then the code across every part in turn, each part's entry
+    points and outer files first, so every part gets its connections early and the picture fills in evenly."""
+    rest = sorted(p for p in paths if "code" not in sections[p])
+    by_part: Dict[str, List[str]] = defaultdict(list)
+    for p in paths:
+        if "code" in sections[p]:
+            by_part[owner.get(p, "")].append(p)
+    queues = []
+    for part in sorted(by_part):
+        stem = lambda p: p.rsplit("/", 1)[-1].split(".")[0]  # noqa: E731
+        queues.append(sorted(by_part[part], key=lambda p: (stem(p) not in ENTRY_NAMES, p.count("/"), p)))
+    code: List[str] = []
+    for i in range(max((len(q) for q in queues), default=0)):
+        code += [q[i] for q in queues if i < len(q)]
+    return rest + code
+
+
+def _gather(source, sections: Dict[str, set], owner: Dict[str, str], cache: bool, deadline: Optional[float],
+            only: Optional[Iterable[str]]) -> Dict[str, dict]:
+    """Each file's facts, {path: {section: facts}}: kept ones by blob id, the rest read. With a `deadline`
+    (time.monotonic()) reading stops there (after at least one file) and the files not read yet are left out; with
+    `only`, the files outside it are left out and every one in it is read, whatever the time."""
+    blobs = getattr(source, "blobs", None)
+    store = fact_store(source.root) if cache and blobs is not None and getattr(source, "root", None) else None
+    if only is not None:
+        only = set(only)
+        deadline = None
+    known: Dict[str, dict] = {}
+    want: List[str] = []
+    kept: Dict[str, dict] = {}
+    for path, need in sections.items():
+        if only is not None and path not in only:
+            continue
+        blob = blobs.get(path) if store else None
+        got = store.get(blob, path) if blob else None
+        if got is not None and need <= got.keys():
+            known[path] = got
+        else:
+            want.append(path)
+            if got is not None:
+                kept[path] = got
+    total = len(sections)
+    if not want:
+        return known
+    if store is None:
+        deadline = None   # nowhere to keep what is read: a later read could not go on from here
+    want = _reading_order(want, sections, owner)
+    stage = progress._stage or "Reading the code"
+    flushed = time.monotonic()
+    i = 0
+    while i < len(want):
+        if deadline is not None and i and time.monotonic() >= deadline:
+            break
+        chunk = want[i: i + 64] if deadline is not None else want[i: i + 2000]   # fewer `git cat-file`s untimed
+        texts = source.read_many(chunk)
+        for path in chunk:
+            if deadline is not None and i and time.monotonic() >= deadline:
+                break
+            if i % 25 == 0:
+                progress.stage(stage, len(known), total)
+            facts = dict(kept.get(path) or {})
+            text = texts.get(path, "")
+            for name in sorted(sections[path] - facts.keys()):
+                facts[name] = SECTIONS[name](path, text)
+            known[path] = facts
+            if store is not None and blobs.get(path):
+                store.put(blobs[path], path, facts)
+            i += 1
+        if store is not None and time.monotonic() - flushed > 2:   # a long read keeps what it has as it goes
+            store.flush()
+            flushed = time.monotonic()
+    if store is not None:
+        store.flush()
+    progress.stage(stage, len(known), total)
+    return known
+
+
+def extract(source, cfg: Dict[str, Any], cache: bool = True) -> dict:
+    """The blueprint of one source: every file read (each one's facts kept by content, with `cache`)."""
+    return read_blueprint(source, cfg, cache=cache)[0]
+
+
+def read_blueprint(source, cfg: Dict[str, Any], deadline: Optional[float] = None, only: Optional[Iterable[str]] = None,
+                   cache: bool = True) -> Tuple[dict, Optional[set]]:
+    """The blueprint of one source, and None; or, when some files were not read (the `deadline` came first, or
+    `only` left them out), a PARTIAL blueprint and the paths it did read. A partial blueprint has every part (a code
+    file not read yet still counts as a file of its part) but only the connections, routes, settings and tables of
+    the files read, and says how far it got: "partial": {"done": files read, "total": files to read}. It is never
+    to be kept as the blueprint of its commit."""
     code_of = Code(cfg)
-    comps = cfg.get("components", [])
     files = [f for f in source.files if not code_of.skip.search(f)]
     fileset = set(files)
     code = [f for f in files if code_of.is_code(f) and not code_of.is_test(f)]
+    owner = {f: code_of.part_of(f) for f in code}
+
+    sections: Dict[str, set] = defaultdict(set)   # what each file is read for
+    for f in code:
+        sections[f].add("code")
+    if any(not f.endswith(".py") for f in files):
+        for f in files:
+            if TSCONFIG.search(f):
+                sections[f].add("tsconfig")
+    compose = compose_file(cfg, fileset)
+    config_rx = [glob_rx(p) for p in cfg.get("config_files", [])]
+    for f in files:
+        if f == compose or any(r.match(f) for r in config_rx):
+            sections[f].add("keys")
+    if compose in fileset:
+        sections[compose].add("compose")
+    mig = cfg.get("migrations", {})
+    mig_rx = glob_rx(mig.get("glob") or SQL_MIGRATIONS)
+    mig_files = sorted(f for f in files if mig_rx.match(f))
+    for f in mig_files:
+        sections[f].add("sql")
+    if not mig.get("glob"):
+        for f in files:
+            if ALEMBIC_FILE.search(f):
+                sections[f].add("alembic")
+            if f.endswith(".prisma"):
+                sections[f].add("prisma")
+    if any(not f.endswith(".py") for f in code):
+        for f in files:
+            if f == "package.json" or f.endswith("/package.json"):
+                sections[f].add("package")
+
+    facts = _gather(source, dict(sections), owner, cache, deadline, only)
+    bp = _combine(source, cfg, code_of, files, fileset, code, owner, compose, mig_files, facts)
+    if len(facts) < len(sections):
+        bp["partial"] = {"done": len(facts), "total": len(sections)}
+        return bp, set(facts)
+    return bp, None
+
+
+def _combine(source, cfg: Dict[str, Any], code_of: Code, files: List[str], fileset: set, code: List[str],
+             owner: Dict[str, str], compose: str, mig_files: List[str], facts: Dict[str, dict]) -> dict:
+    """The blueprint from every file's facts: what depends on the other files (an import reaching a file, a call a
+    route serves, who owns what) worked out here, each time."""
+    comps = cfg.get("components", [])
     python_paths = import_paths(files, cfg["code"]["python_paths"])
-    found_prefixes = path_prefixes(files, source.read) if any(not f.endswith(".py") for f in files) else {}
+    found_prefixes: Dict[str, Dict[str, str]] = {}
+    for f in sorted(f for f in facts if "tsconfig" in facts[f]):   # path_prefixes, file by file
+        for folder, prefixes in facts[f]["tsconfig"].items():
+            for key, where in prefixes.items():
+                found_prefixes.setdefault(folder, {}).setdefault(key, where)
 
     def aliases_of(f: str) -> Dict[str, str]:
         """The import prefixes a file is written with: the nearest tsconfig.json's, then the configured ones."""
@@ -876,14 +1311,10 @@ def extract(source, cfg: Dict[str, Any]) -> dict:
         return {**(found_prefixes.get(folder) or {}), **cfg["code"]["aliases"]} if folder is not None \
             else cfg["code"]["aliases"]
 
-    owner: Dict[str, str] = {}
     components: Dict[str, dict] = {}
     ui_files: Counter = Counter()
-    for n, f in enumerate(code):
-        if n % 25 == 0:
-            progress.stage(progress._stage or "Reading the code", n, len(code))
-        cid = code_of.part_of(f)
-        owner[f] = cid
+    for f in code:
+        cid = owner[f]
         meta = next((c for c in comps if c["id"] == cid), None)
         entry = components.setdefault(cid, {
             "label": (meta or {}).get("label", cid), "layer": meta.get("layer", "") if meta else "undeclared",
@@ -893,7 +1324,7 @@ def extract(source, cfg: Dict[str, Any]) -> dict:
         entry["files"] += 1
         ui_files[cid] += f.endswith(UI_EXT)
 
-    texts = source.read_many(code)
+    code_facts_of = {f: facts[f]["code"] for f in code if f in facts}
     own = first_party(source.files, cfg["code"]["python_paths"])
     flows, api, env_by_comp = Counter(), Counter(), defaultdict(Counter)
     uses: Dict[str, Counter] = defaultdict(Counter)
@@ -901,54 +1332,58 @@ def extract(source, cfg: Dict[str, Any]) -> dict:
     imported: Dict[str, Counter] = defaultdict(Counter)  # every outside name a part imports, by how many files
     aws: Dict[str, Counter] = defaultdict(Counter)
     for f in code:
-        text, cid = texts[f], owner[f]
-        components[cid]["lines"] += text.count("\n")
+        fx = code_facts_of.get(f)
+        if fx is None:
+            continue   # not read yet
+        cid = owner[f]
+        components[cid]["lines"] += fx["lines"]
         python = f.endswith(".py")
-        reached = (py_imports(f, text, fileset, python_paths) if python
-                   else ts_imports(f, text, fileset, aliases_of(f)))
+        reached = (_py_reached(f, fx["imports"], fileset, python_paths) if python
+                   else _ts_reached(f, fx["imports"], fileset, aliases_of(f)))
         for t, names in reached:
             if t in owner and owner[t] != cid:
                 flows[f"{cid}>{owner[t]}"] += 1
                 uses[f"{cid}>{owner[t]}"].update(names)
-        outside = outside_imports(f, text, own, aliases_of(f))
+        if python:
+            names = [e[2] for e in fx["imports"] if e[0] == "from" and e[2] and not e[1]]
+            names += [d for e in fx["imports"] if e[0] == "import" for d in e[1]]
+        else:
+            names = [spec for spec, _ in fx["imports"]]
+        outside = _outside(f, names, own, aliases_of(f))
         imported[cid].update(outside)
         stack[cid].update({top_package(n) for n in outside})
         for n in outside:
             if n.startswith("@aws-sdk/client-"):
                 aws[n.removeprefix("@aws-sdk/client-")][cid] += 1
         if any(_library(n, ("boto3", "aioboto3")) for n in outside):
-            for svc in set(AWS_CALL.findall(text)):
+            for svc in fx["aws"]:
                 aws[{"sesv2": "ses"}.get(svc, svc)][cid] += 1
-        if python:
-            env_by_comp[cid].update(a or b for a, b in ENV_PY.findall(text))
-            env_by_comp[cid].update(settings_fields(text))
-        else:
-            env_by_comp[cid].update(ENV_TS.findall(text))
-            for s in API_STR.findall(text) if cfg.get("api") else ():
+        env_by_comp[cid].update(fx["env"])
+        if not python:
+            for s in fx["api"] if cfg.get("api") else ():
                 target = next((a["component"] for a in cfg.get("api", []) if s.startswith(a["prefix"])), None)
                 if target and target != cid:
                     api[f"{cid}>{target}"] += 1
                     uses[f"{cid}>{target}"][api_path(s)] += 1
 
-    routes = find_routes(code, texts, owner, fileset, python_paths, aliases_of)
+    routes = _routes(code, code_facts_of, owner, fileset, python_paths, aliases_of)
     if not cfg.get("api"):  # nothing says who serves what the front end calls: the routes do
         served = sorted(((r.split(" ", 1)[1], cid) for r, cid in routes.items()),
                         key=lambda rc: (sum(map(_param, _segments(rc[0]))), rc[0]))
         for f in code:
-            if f.endswith(".py"):
+            if f.endswith(".py") or f not in code_facts_of:
                 continue
-            for path in called_paths(texts[f]):
+            for path in code_facts_of[f]["called"]:
                 target = next((cid for route, cid in served if path_matches(path, route)), None)
                 if target and target != owner[f]:
                     api[f"{owner[f]}>{target}"] += 1
                     uses[f"{owner[f]}>{target}"][path] += 1
 
-    compose = compose_file(cfg, fileset)
     config_rx = [glob_rx(p) for p in cfg.get("config_files", [])]
     configured = set()
     for f in files:
-        if f == compose or any(r.match(f) for r in config_rx):
-            configured |= set(CONFIG_KEY.findall(source.read(f)))
+        if (f == compose or any(r.match(f) for r in config_rx)) and f in facts:
+            configured |= set(facts[f]["keys"])
     externals, dormant = {}, {}
     for ext in cfg.get("externals", []):
         reads = {c: sum(n for v, n in vs.items() if matches(v, ext["env"])) for c, vs in env_by_comp.items()}
@@ -963,42 +1398,39 @@ def extract(source, cfg: Dict[str, Any]) -> dict:
             if var in vs:
                 internal[f"{c}>{container}"] += 1
 
-    containers = compose_services(source.read(compose)) if compose in fileset else {}
+    containers = facts[compose]["compose"] if compose in fileset and compose in facts else {}
 
     tables, migrations = defaultdict(set), []
     mig = cfg.get("migrations", {})
-    glob = mig.get("glob") or SQL_MIGRATIONS
-    mig_files = sorted(f for f in files if glob_rx(glob).match(f))
-    mig_texts = source.read_many(mig_files)
     for f in mig_files:
         name = f.rsplit("/", 1)[1]
         migrations.append(name)
+        if f not in facts:
+            continue
         num = int(re.match(r"\d+", name).group(0)) if re.match(r"\d+", name) else 0
         schema = next((s for lo, hi, s in mig.get("schemas", []) if lo <= num <= hi), "public")
-        text = SQL_COMMENT.sub("", mig_texts[f])  # "CREATE TABLE IF NOT EXISTS only." in a comment is not a table
-        for table in CREATE_TABLE.findall(text):
+        for table in facts[f]["sql"]["create"]:
             tables[qualify(table, schema)] |= set()
-        for table, col in ADD_COLUMN.findall(text):
+        for table, col in facts[f]["sql"]["add"]:
             tables[qualify(table, schema)].add(col)
     data_parts = set()
     if not mig.get("glob"):  # where the config names no migrations, the tables the code itself makes and defines
-        revisions = {f: t for f, t in source.read_many([f for f in files if ALEMBIC_FILE.search(f)]).items()
-                     if "op." in t and "def upgrade" in t}
-        for f in alembic_order(revisions):
+        revisions = {f: facts[f]["alembic"] for f in files
+                     if ALEMBIC_FILE.search(f) and f in facts and facts[f].get("alembic")}
+        for f in _alembic_order(revisions):
             migrations.append(f.rsplit("/", 1)[1])
-            alembic_run(_upgrade(revisions[f]), tables)
+            _alembic_apply(revisions[f]["ops"], tables)
         for f in code:
-            if f.endswith(".py"):
-                found = model_tables(f, texts[f])
+            if f.endswith(".py") and f in code_facts_of:
+                found = code_facts_of[f]["tables"]
                 for table in found:
                     tables[qualify(table, "public")] |= set()
                 if found:
                     data_parts.add(owner[f])
-        prisma = [f for f in files if f.endswith(".prisma")]
-        for f, text in source.read_many(prisma).items():
-            for model, body in PRISMA_MODEL.findall(text):
-                mapped = PRISMA_MAP.search(body)
-                tables[qualify(mapped.group(1) if mapped else model, "public")] |= set()
+        for f in files:
+            if f.endswith(".prisma") and f in facts:
+                for table in facts[f]["prisma"]:
+                    tables[qualify(table, "public")] |= set()
 
     store = mig.get("store", "postgres")
     detect = (cfg.get("detect") or {}).get("externals", "auto")
@@ -1011,12 +1443,13 @@ def extract(source, cfg: Dict[str, Any]) -> dict:
         if primary and primary in externals and not mig.get("store"):
             store = primary
 
-    serving, packages = set(routes.values()), {}
+    serving = set(routes.values())
+    deps = {f: x["package"] for f, x in facts.items() if "package" in x}
     for cid, entry in components.items():  # what people use, where nobody said: pages, or a UI library
         if entry["declared"] or entry["kind"] or cid in serving:
             continue
         sample = next(f for f in code if owner[f] == cid)
-        package = {} if sample.endswith(".py") else _package_json(sample, fileset, source, packages)
+        package = {} if sample.endswith(".py") else _package_json(sample, fileset, deps)
         if (ui_files[cid] * 2 > entry["files"] or any(lib in stack[cid] for lib in UI_LIBS)
                 or (any(lib in package for lib in UI_LIBS) and not any(lib in package for lib in JS_SERVERS))):
             entry["kind"] = "ui"
@@ -1037,6 +1470,9 @@ def extract(source, cfg: Dict[str, Any]) -> dict:
         "env": {c: sorted(v) for c, v in sorted(env_by_comp.items()) if v},
         "configured": sorted(configured),
         "stack": {c: dict(sorted(v.items(), key=lambda kv: (-kv[1], kv[0]))) for c, v in sorted(stack.items()) if v},
+        # every outside name each part imports (`fastapi.responses`, `@tanstack/react-query`), by how many files
+        "imported": {c: dict(sorted(v.items(), key=lambda kv: (-kv[1], kv[0])))
+                     for c, v in sorted(imported.items()) if v},
         "containers": containers,
         "container_labels": cfg.get("containers", {}),
         "tables": {t: sorted(c) for t, c in sorted(tables.items())},

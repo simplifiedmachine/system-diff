@@ -247,3 +247,25 @@ test('above the chat, the pane says how to have it beside the chat', async ($, o
   expect(await docked.find({ type: 'Text', text: /CLAUDE_CODE_NO_FLICKER/ })).toBeUndefined()
   await docked.unmount()
 })
+
+test('/system-diff tui opens a terminal running the terminal view, and always says the command', async ($, on) => {
+  const tried: string[][] = []
+  let opens = true
+  on('session.root', () => ({ value: '/work/shop' }))
+  on('process.run', (_: unknown, e: { argv: string[] }) => {
+    const argv = [...e.argv]
+    const ok = (stdout: string, exitCode = 0) =>
+      ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+    if (argv.includes('--command')) return ok(JSON.stringify({ argv: ['system-diff', 'tui'], line: 'system-diff tui' }))
+    tried.push(argv)
+    return ok('', opens && argv[0] === 'wt' ? 0 : 1) // Windows Terminal is there; nothing else is
+  })
+  let got = await $.command.run({ ...RUN, args: 'tui' })
+  expect(tried.some(a => a.join(' ') === 'wt -w 0 new-tab -d /work/shop system-diff tui')).toBe(true)
+  expect((got as { text?: string }).text).toContain('Opened the System diff in a new Windows Terminal tab')
+  expect((got as { text?: string }).text).toContain('system-diff tui')
+
+  opens = false // no terminal opens: the command to run is the answer
+  got = await $.command.run({ ...RUN, args: 'tui' })
+  expect((got as { text?: string }).text).toContain('Run this in a new terminal tab or window, in /work/shop:\n  system-diff tui')
+})

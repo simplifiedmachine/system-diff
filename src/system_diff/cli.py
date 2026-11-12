@@ -9,6 +9,7 @@
     system-diff checkpoint [--ref REF]                              -> mark what you have seen
     system-diff show [PART] [--base checkpoint]                     -> the map, or one part zoomed in, in the terminal
     system-diff watch [--base checkpoint] [--port 8765]             -> a live page of the diff since then
+    system-diff tui [--view now|review|agents|topics]               -> the pane's views in a terminal of their own
     system-diff setup claude [--scope user|project|local] [--undo]  -> the hooks, status line, a skill, the MCP server
     system-diff mcp                                                 -> the MCP server (stdio)
 
@@ -140,6 +141,20 @@ def _summarize(args, root: Path) -> int:
     return 0 if story else 1
 
 
+def _tui_command() -> dict:
+    """How to start `system-diff tui` from a new terminal with this same installation: `system-diff tui` where the
+    system-diff on PATH is this one, else this Python with -m."""
+    import subprocess
+    found = shutil.which("system-diff")
+    if found and Path(os.path.abspath(found)).parent == Path(os.path.abspath(sys.executable)).parent:
+        argv = ["system-diff", "tui"]
+    else:
+        argv = [sys.executable, "-m", "system_diff", "tui"]
+    import shlex
+    line = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    return {"argv": argv, "line": line}
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="system-diff", description=__doc__.split("\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -182,6 +197,11 @@ def parser() -> argparse.ArgumentParser:
     w.add_argument("--base", default="checkpoint")
     w.add_argument("--port", type=int, default=8765)
     w.add_argument("--interval", type=float, default=2.0, help="seconds between looks at the files")
+    tu = sub.add_parser("tui", help="the pane's views (Now, Review, Agents, Topics) in a terminal tab or window "
+                                    "of their own")
+    tu.add_argument("--view", default="now", choices=["now", "review", "agents", "topics"])
+    tu.add_argument("--command", action="store_true",
+                    help="print how to run this tui (JSON: argv and a line to type), for the plugin's /system-diff tui")
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
@@ -240,6 +260,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         from . import watch
         watch.serve(root, args.base, args.port, args.config, args.interval)
         return 0
+    if args.cmd == "tui":
+        if args.command:
+            print(json.dumps(_tui_command(), ensure_ascii=False))
+            return 0
+        from . import tui
+        return tui.main(root, args.view)
     if args.cmd == "hook":
         from . import agent
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")

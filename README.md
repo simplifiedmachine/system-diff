@@ -59,7 +59,8 @@ Read by the code but set by no deploy configuration, so not drawn: Headless Chro
 The plugin brings everything, in every session and every project:
 
 - **The System diff pane** beside the chat. Claude Code opens it by itself when the terminal is wide enough;
-  `/system-diff` opens it again, `/system-diff close` hides it.
+  `/system-diff` opens it again, `/system-diff close` hides it, `/system-diff tui` opens the same in a terminal of
+  its own.
 - **The same views in your browser**, at http://localhost:8765/: started with each session, linked in the pane.
 - **The hooks** that follow what Claude reads and edits, ask it to plan a team, and carry the agents' messages.
 - **The MCP server** Claude uses to explain the system, show what changed and plan a team, and **its skill**.
@@ -145,6 +146,15 @@ session-start hook starts it in the background; `system-diff watch` starts it by
 light its flows, click to zoom in. The pane shows the link in its tab row (🌐) while it runs. `[web] start = false` in
 `system-diff.toml` turns the start with the session off. A Send to Claude box sends what you type to the live
 session, through the pane, as your own message; only the page system-diff serves can send.
+
+### In a separate terminal
+
+The same views in a terminal tab or window of their own, beside Claude Code: `system-diff tui` (or
+`system-diff tui --view review`) in the project. It draws the pane's own page with the pane's keys: ← ↑ ↓ → pick a
+block, Enter zooms in, `b` goes back, `f` follows Claude, `n` `r` `a` `t` switch views, `[` `]` scroll across,
+shift+↑ ↓ and Page Up/Down scroll down, `-` `=` zoom, `q` quits. From Claude Code, `/system-diff tui` opens one where it
+can (a tmux window, Windows Terminal, macOS Terminal, a Linux desktop's terminal) and always answers with the command
+to run in a new terminal. Standard library only, on Linux, macOS and Windows.
 
 ### A team of agents, by the system's blocks
 

@@ -74,6 +74,14 @@ group = "In Claude Code"
 paths = ["src/system_diff/panel.py", "src/system_diff/pane.py"]
 
 [[components]]
+id = "tui"
+label = "Terminal view"
+kind = "interface"
+about = "in its own terminal"
+group = "In Claude Code"
+paths = ["src/system_diff/tui.py"]
+
+[[components]]
 id = "statusline"
 label = "Status line"
 kind = "interface"
@@ -166,6 +174,13 @@ label = "LLM summary"
 kind = "logic"
 group = "Explaining"
 paths = ["src/system_diff/narrate.py"]
+
+[[components]]
+id = "regroup"
+label = "LLM regrouping"
+kind = "logic"
+group = "Explaining"
+paths = ["src/system_diff/regroup.py"]
 
 [[components]]
 id = "learn"

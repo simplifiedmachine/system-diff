@@ -13,6 +13,11 @@ ids], via = "HTTPS"), a component's `group` (its container) and `about` (one lin
 system's `used_by` and `via` where no setting names it. Inferred where it does not: the front end's people, an API's
 callers, an MCP server's AI agents, a command line's developer, from the technology each entry point imports; the
 parts of a crowded column held in one container named for it.
+
+Reorganised where an LLM has proposed it (regroup.py): an overlay, given to `system`/`container` as `overlay` or set on
+the comparison as `cmp.regroup`, names containers for parts, gives parts short labels and columns, and folds away the
+parts that are not the running system. What the config declares always wins over it; parts it does not know are drawn
+as without it.
 """
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ from .design import kinds
 COLUMNS_FIRST = [("actors", "Who uses it")]
 SYSTEM_COLUMN = {"logic": "core", "data": "core", "store": "outside", "external": "outside"}  # four, at the top level
 MAIN_FLOWS = 4       # flows drawn from each box at the system level, strongest first
+FOLD_TITLE = "Docs and tools"   # the container of folded-away parts that changed
 CROWDED = 7          # more parts than this in a column, none grouped: they go in one container
 PROTOCOL = (("postgres", "SQL"), ("mysql", "SQL"), ("maria", "SQL"), ("sqlite", "SQL"), ("database", "SQL"),
             ("redis", "Redis"), ("valkey", "Redis"), ("mongo", "MongoDB"), ("smtp", "SMTP"), ("mail", "SMTP"),
@@ -54,13 +60,60 @@ def _meta(cfg: Dict[str, Any]) -> Dict[str, dict]:
     return {c["id"]: c for c in cfg.get("components", []) if "id" in c}
 
 
-def groups_of(bp: dict, cfg: Dict[str, Any], kind: Dict[str, str]) -> Dict[str, str]:
-    """Part -> its container ("g:<name>"), as declared; a crowded column with none declared is one container."""
+def _overlay(cmp, overlay: Optional[dict]) -> Optional[dict]:
+    ov = overlay if overlay is not None else getattr(cmp, "regroup", None)
+    return ov if isinstance(ov, dict) and isinstance(ov.get("parts"), dict) else None
+
+
+def _proposed(ov: Optional[dict], cid: str, field: str, cfg: Dict[str, Any]) -> Any:
+    """What the overlay proposes for a part's field, unless the config declares it (label, kind or group)."""
+    if not ov or _meta(cfg).get(cid, {}).get({"layer": "kind"}.get(field, field)):
+        return None
+    p = ov["parts"].get(cid)
+    return p.get(field) if isinstance(p, dict) else None
+
+
+def folded(bp: dict, cfg: Dict[str, Any], ov: Optional[dict]) -> Set[str]:
+    """The parts the overlay says are not the running system (docs, tools): never a declared one or one with routes."""
+    if not ov:
+        return set()
+    served = set(bp["routes"].values())
+    return {cid for cid in bp["components"] if _proposed(ov, cid, "fold", cfg) and cid not in served
+            and cid not in _meta(cfg)}
+
+
+def kinds_with(bp: dict, cfg: Dict[str, Any], ov: Optional[dict]) -> Dict[str, str]:
+    """design.kinds with the overlay's columns for the parts the config does not place; a part with routes stays an
+    entry point."""
+    kind = kinds(bp, cfg)
+    if ov:
+        served = set(bp["routes"].values())
+        for cid in bp["components"]:
+            layer = _proposed(ov, cid, "layer", cfg)
+            if layer in graph.PART_KINDS and cid not in served:
+                kind[cid] = layer
+    return kind
+
+
+def groups_of(bp: dict, cfg: Dict[str, Any], kind: Dict[str, str], overlay: Optional[dict] = None) -> Dict[str, str]:
+    """Part -> its container ("g:<name>"), as declared, else as the overlay proposes (a container still holding two
+    parts); a crowded column with none of either is one container."""
     meta = _meta(cfg)
     out = {cid: "g:" + meta[cid]["group"] for cid in bp["components"] if meta.get(cid, {}).get("group")}
+    gone = folded(bp, cfg, overlay)
+    if overlay:
+        proposed: Dict[str, List[str]] = defaultdict(list)
+        for cid in bp["components"]:
+            name = _proposed(overlay, cid, "group", cfg)
+            if isinstance(name, str) and name and cid not in out and cid not in gone \
+                    and not bp["components"][cid].get("quiet"):
+                proposed[name].append(cid)
+        for name, parts in proposed.items():
+            if len(parts) >= 2:
+                out.update({p: "g:" + name for p in parts})
     by_col: Dict[str, List[str]] = defaultdict(list)
     for cid in bp["components"]:
-        if cid not in out and not bp["components"][cid].get("quiet"):
+        if cid not in out and cid not in gone and not bp["components"][cid].get("quiet"):
             by_col[kind.get(cid, "logic")].append(cid)
     heading = dict(cfg["picture"]["columns"])
     for col, parts in by_col.items():
@@ -157,14 +210,17 @@ def _status(marks: dict, nid: str) -> str:
 
 
 def system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
-           stack: Optional[Dict[str, Dict[str, int]]] = None) -> Dict[str, Any]:
+           stack: Optional[Dict[str, Dict[str, int]]] = None, overlay: Optional[dict] = None) -> Dict[str, Any]:
     """The system level: {"columns", "nodes", "edges"}, ready for canvas.layered. A container's node lists its
     components as `items`; a flow names the boxes it joins and, where one end is a component in a container, that
     component (`from_item`, `to_item`), so a picked component lights its own flows."""
     bp, before, cfg = cmp.after, cmp.before, cmp.cfg
     marks = marks or graph.change_marks(cmp.diff, before, bp)
-    kind = {**kinds(before, cfg), **kinds(bp, cfg)}
-    group = {**groups_of(before, cfg, kind), **groups_of(bp, cfg, kind)}
+    ov = _overlay(cmp, overlay)
+    kind = {**kinds_with(before, cfg, ov), **kinds_with(bp, cfg, ov)}
+    group = {**groups_of(before, cfg, kind, ov), **groups_of(bp, cfg, kind, ov)}
+    fold = folded(before, cfg, ov) | folded(bp, cfg, ov)
+    about = (ov or {}).get("groups") or {}
     meta = _meta(cfg)
     comps = {**before["components"], **bp["components"]}
     gone = set(before["components"]) - set(bp["components"])
@@ -177,15 +233,22 @@ def system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
             continue
         st = "removed" if cid in gone else _status(marks, cid)
         col = kind.get(cid, "logic")
+        label = _proposed(ov, cid, "label", cfg) or c["label"]
+        if cid in fold:                      # not the running system: drawn only while it changes or is worked on
+            if st == "same" and cid != agent:
+                continue
+            group[cid] = "g:" + FOLD_TITLE
         if cid in group:
             gid = group[cid]
             box = nodes.setdefault(gid, {"id": gid, "col": col, "type": "group", "title": gid[2:], "sub": "",
                                          "status": "same", "items": []})
-            box["items"].append({"id": cid, "title": c["label"], "status": st, "agent": cid == agent,
+            if isinstance(about, dict) and about.get(gid[2:]):
+                box["about"] = about[gid[2:]]
+            box["items"].append({"id": cid, "title": label, "status": st, "agent": cid == agent,
                                  "hub": bool(c.get("hub"))})
             box_of[cid] = gid
         else:
-            nodes[cid] = {"id": cid, "col": col, "type": "component", "title": c["label"], "status": st,
+            nodes[cid] = {"id": cid, "col": col, "type": "component", "title": label, "status": st,
                           "agent": cid == agent, "sub": (_entry_sub(bp, cid, cfg) if cid in bp["components"]
                                                           and col in ("interface", "ui") else
                                                           meta.get(cid, {}).get("about", "")
@@ -256,10 +319,12 @@ def system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
 
 
 def container(cmp, box: str, marks: Optional[dict] = None, agent: Optional[str] = None,
-              stack: Optional[Dict[str, Dict[str, int]]] = None) -> Optional[Dict[str, Any]]:
+              stack: Optional[Dict[str, Dict[str, int]]] = None, overlay: Optional[dict] = None
+              ) -> Optional[Dict[str, Any]]:
     """One box zoomed in on: a container's components (or a lone part) as boxes, with the connections between them
     and every box outside it that they connect to, each flow as at the system level."""
-    whole = system(cmp, marks, agent, stack)
+    ov = _overlay(cmp, overlay)
+    whole = system(cmp, marks, agent, stack, ov)
     nodes = {n["id"]: n for n in whole["nodes"]}
     if box not in nodes:
         holder = next((n["id"] for n in whole["nodes"] if any(i["id"] == box for i in n.get("items", []))), None)
@@ -271,7 +336,7 @@ def container(cmp, box: str, marks: Optional[dict] = None, agent: Optional[str] 
     item = {i["id"]: i for i in me.get("items", [])}
     bp, before, cfg = cmp.after, cmp.before, cmp.cfg
     marks = marks or graph.change_marks(cmp.diff, before, bp)
-    kind = {**kinds(before, cfg), **kinds(bp, cfg)}
+    kind = {**kinds_with(before, cfg, ov), **kinds_with(bp, cfg, ov)}
     comps = {**before["components"], **bp["components"]}
     out_nodes: Dict[str, dict] = {}
     for cid in inside:

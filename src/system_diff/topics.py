@@ -218,6 +218,12 @@ CONCEPT: Dict[str, Tuple[str, str, str]] = {
 }
 
 
+# A package as the blueprint's "stack" records it (only the top name: `concurrent` for `concurrent.futures`) -> its
+# topic, where that topic is the one the package is imported for. Left out where the top name says too little
+# (`http` may be http.client, `urllib` urllib.parse, `google` any of Google's): the blueprint's "imported" names,
+# when it has them, say which.
+TOP_PACKAGE = {"concurrent": "concurrent.futures", "xml": "xml.etree"}
+
 def tech_key(name: str) -> Optional[str]:
     """The topic of an imported name: itself, an alias, or its nearest package (`sqlalchemy.orm` -> sqlalchemy)."""
     parts = name.split(".")
