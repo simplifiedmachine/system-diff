@@ -180,25 +180,42 @@ that did not change keeps its place.
 
 ## Roadmap
 
-Where system-diff is going. Each item is open for contributors: comment on its issue, or open one.
+Where system-diff is going. Every item is an issue: comment on it to take it on, or open a new one. Good places to
+start are labelled [`good first issue`](https://github.com/simplifiedmachine/system-diff/labels/good%20first%20issue).
 
-**Next**
-- [ ] More languages: Go, Java/Kotlin, C#, Rust (extraction is per file, so a new language is one module).
-- [ ] Hooks on Windows without `sh`, so Claude's edits arrive as events there too.
-- [ ] History in the terminal view; renames followed through history.
-- [ ] macOS in CI.
-- [ ] One engine shared by the hooks and the MCP tools (no reading of their own).
+**Next: reach more systems**
+- [ ] [Read language-agnostic system files (OpenAPI, GraphQL, compose, Kubernetes, Terraform, SQL, .env)](https://github.com/simplifiedmachine/system-diff/issues/1) (#1)
+- [ ] [Go support](https://github.com/simplifiedmachine/system-diff/issues/2) (#2) · good first issue
+- [ ] [Java/Kotlin (Spring) support](https://github.com/simplifiedmachine/system-diff/issues/3) (#3)
+- [ ] [Add your language: a guide and a plug-in point for new languages](https://github.com/simplifiedmachine/system-diff/issues/4) (#4)
+- [ ] [Better diagrams for large systems](https://github.com/simplifiedmachine/system-diff/issues/5) (#5)
+
+**Next: run well everywhere**
+- [ ] [Hooks on Windows without sh](https://github.com/simplifiedmachine/system-diff/issues/6) (#6)
+- [ ] [system-diff stop, and an idle timeout for engines](https://github.com/simplifiedmachine/system-diff/issues/7) (#7) · good first issue
+- [ ] [History in the terminal view](https://github.com/simplifiedmachine/system-diff/issues/8) (#8) · good first issue
+- [ ] [Follow renames through history](https://github.com/simplifiedmachine/system-diff/issues/9) (#9)
+- [ ] [macOS in CI](https://github.com/simplifiedmachine/system-diff/issues/10) (#10) · good first issue
+
+**Improve system-diff's own design**
+- [ ] [The engine as the single source of truth](https://github.com/simplifiedmachine/system-diff/issues/11) (#11)
+- [ ] [Layers, enforced by a test (system-diff checking its own design)](https://github.com/simplifiedmachine/system-diff/issues/12) (#12)
+- [ ] [One view model, three renderers (split pane.py)](https://github.com/simplifiedmachine/system-diff/issues/13) (#13)
+- [ ] [The web app as real files](https://github.com/simplifiedmachine/system-diff/issues/14) (#14) · good first issue
+- [ ] [One background-job runner](https://github.com/simplifiedmachine/system-diff/issues/15) (#15)
+- [ ] [One state store for .git/system-diff/](https://github.com/simplifiedmachine/system-diff/issues/16) (#16)
+- [ ] [One schema for the page format](https://github.com/simplifiedmachine/system-diff/issues/17) (#17)
 
 **Then**
-- [ ] Other coding agents: Cursor, Codex CLI, Gemini CLI, Aider, through the same engine.
-- [ ] Guardrails from objectives: "the UI never talks to the database" checked on every change, like a test.
-- [ ] Export to C4, Structurizr and Mermaid; import a hand-drawn architecture as the target to compare against.
-- [ ] Team mode: share objectives, checkpoints and history with your team (opt-in, committed).
+- [ ] [Other coding agents: Cursor, Codex CLI, Gemini CLI, Aider](https://github.com/simplifiedmachine/system-diff/issues/18) (#18)
+- [ ] [Guardrails from objectives](https://github.com/simplifiedmachine/system-diff/issues/19) (#19)
+- [ ] [Export to C4/Mermaid, and import a target architecture](https://github.com/simplifiedmachine/system-diff/issues/20) (#20)
+- [ ] [Team mode: share objectives, checkpoints and history](https://github.com/simplifiedmachine/system-diff/issues/21) (#21)
 
 **Later**
-- [ ] Replay a session: watch a system being built, request by request.
-- [ ] Design reviews in pull requests with the system diff, its history and what it does to the objectives.
-- [ ] Monorepos and systems that span repositories.
+- [ ] [Replay a session](https://github.com/simplifiedmachine/system-diff/issues/22) (#22)
+- [ ] [Design reviews in pull requests](https://github.com/simplifiedmachine/system-diff/issues/23) (#23)
+- [ ] [Monorepos and multi-repo systems](https://github.com/simplifiedmachine/system-diff/issues/24) (#24)
 
 ## Contributing
 

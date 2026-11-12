@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/simplifiedmachine/system-diff/discussions
+    about: Ask a question, share an idea, or say what you are building with system-diff.
