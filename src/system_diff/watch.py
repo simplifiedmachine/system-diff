@@ -891,6 +891,8 @@ def _whoami(port: int, ident: str, timeout: float = 1.0) -> Optional[bool]:
     """Whether the server on `port` is the one web.json names: True when its GET /whoami gives web.json's id; False
     when nothing listens there or what does is something else (another program, an older system-diff); None when it
     did not answer in time (a server busy reading a large repository is still ours, so not to be replaced)."""
+    if _free(port):   # nothing listens there: say so at once (Windows retries a refused connection for seconds,
+        return False  # which a short timeout would take for a busy server, and keep a dead one's file for ever)
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)   # no proxy: this machine only
     try:
         conn.request("GET", "/whoami", headers={"Accept": "application/json"})
