@@ -129,7 +129,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 111,
+   "lines": 127,
    "hub": false,
    "quiet": false
   },
@@ -225,7 +225,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 121,
+   "lines": 123,
    "hub": false,
    "quiet": false
   },
@@ -237,7 +237,7 @@
    "container": "",
    "declared": false,
    "files": 1,
-   "lines": 72,
+   "lines": 74,
    "hub": false,
    "quiet": false
   },
@@ -261,7 +261,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 439,
+   "lines": 440,
    "hub": false,
    "quiet": false
   },
@@ -273,7 +273,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 95,
+   "lines": 105,
    "hub": false,
    "quiet": false
   },
@@ -321,7 +321,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1091,
+   "lines": 1092,
    "hub": false,
    "quiet": false
   }
@@ -386,7 +386,7 @@
   "doctor>compare": 1,
   "doctor>extract": 1,
   "doctor>panel": 1,
-  "doctor>sources": 1,
+  "doctor>sources": 2,
   "doctor>src/system_diff": 1,
   "doctor>watch": 1,
   "extract>config": 1,
@@ -426,6 +426,7 @@
   "panel>src/system_diff": 1,
   "panel>textmap": 1,
   "panel>watch": 1,
+  "png>sources": 1,
   "readme>pictures": 1,
   "regroup>config": 1,
   "regroup>design": 1,
@@ -433,7 +434,7 @@
   "regroup>graph": 1,
   "regroup>narrate": 1,
   "regroup>sources": 1,
-  "src/system_diff>sources": 1,
+  "src/system_diff>sources": 2,
   "statusline>activity": 1,
   "statusline>config": 1,
   "statusline>extract": 1,
@@ -505,7 +506,8 @@
    "one_line"
   ],
   "agent>sources": [
-   "git"
+   "git",
+   "run_hidden"
   ],
   "agent>watch": [
    "watch"
@@ -661,7 +663,8 @@
   "compare>sources": [
    "GitSource",
    "git",
-   "git_dir"
+   "git_dir",
+   "run_hidden"
   ],
   "compare>src/system_diff": [
    "stage"
@@ -693,7 +696,8 @@
    "main"
   ],
   "doctor>sources": [
-   "git_dir"
+   "git_dir",
+   "run_hidden"
   ],
   "doctor>src/system_diff": [
    "stage"
@@ -881,6 +885,9 @@
   "panel>watch": [
    "watch"
   ],
+  "png>sources": [
+   "run_hidden"
+  ],
   "readme>pictures": [
    "write_if_changed"
   ],
@@ -909,7 +916,8 @@
    "git_dir"
   ],
   "src/system_diff>sources": [
-   "git_dir"
+   "git_dir",
+   "run_hidden"
   ],
   "statusline>activity": [
    "now",

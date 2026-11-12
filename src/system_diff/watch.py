@@ -1001,7 +1001,8 @@ def start_detached(root: Path, port: int = 8765, wait: float = 3.0) -> Optional[
         kw: Dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
                               "cwd": str(root), "close_fds": True}
         if os.name == "nt":
-            kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+            # a hidden console, not none: what it runs (git) inherits it, instead of opening a window each time
+            kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000  # CREATE_NO_WINDOW
         else:
             kw["start_new_session"] = True
         try:

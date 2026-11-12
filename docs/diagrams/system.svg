@@ -93,12 +93,12 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,548 C544,548 544,308 484,308" marker-end="url(#ar-call-same)"><title>design → graph</title></path>
 <path class="be k-call s-same" d="M478,248 C514,248 514,188 484,188" marker-end="url(#ar-call-same)"><title>diff → extract</title></path>
 <path class="be k-call s-same" d="M478,248 C507,248 507,52 536,52" marker-end="url(#ar-call-same)"><title>diff → sources</title></path>
+<path class="be k-call s-same" d="M214,428 C246,428 246,219 278,219 L478,219 C507,219 507,52 536,52" marker-end="url(#ar-call-same)"><title>doctor → sources</title></path>
 <path class="be k-call s-same" d="M214,428 C246,428 246,279 278,279 L478,279 C507,279 507,112 536,112" marker-end="url(#ar-call-same)"><title>doctor → activity</title></path>
 <path class="be k-call s-same" d="M214,428 C280,428 280,52 220,52" marker-end="url(#ar-call-same)"><title>doctor → cli</title></path>
 <path class="be k-call s-same" d="M214,428 C243,428 243,52 272,52" marker-end="url(#ar-call-same)"><title>doctor → compare</title></path>
 <path class="be k-call s-same" d="M214,428 C243,428 243,188 272,188" marker-end="url(#ar-call-same)"><title>doctor → extract</title></path>
 <path class="be k-call s-same" d="M214,428 C260,428 260,308 220,308" marker-end="url(#ar-call-same)"><title>doctor → panel</title></path>
-<path class="be k-call s-same" d="M214,428 C246,428 246,219 278,219 L478,219 C507,219 507,52 536,52" marker-end="url(#ar-call-same)"><title>doctor → sources</title></path>
 <path class="be k-call s-same" d="M214,428 C243,428 243,1028 272,1028" marker-end="url(#ar-call-same)"><title>doctor → src/system_diff</title></path>
 <path class="be k-call s-same" d="M214,428 C270,428 270,248 220,248" marker-end="url(#ar-call-same)"><title>doctor → watch</title></path>
 <path class="be k-call s-same" d="M478,188 C514,188 514,128 484,128" marker-end="url(#ar-call-same)"><title>extract → config</title></path>
@@ -130,6 +130,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,308 C243,308 243,308 272,308" marker-end="url(#ar-call-same)"><title>panel → graph</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,488 272,488" marker-end="url(#ar-call-same)"><title>panel → agents</title></path>
 <path class="be k-call s-same" d="M214,308 C243,308 243,608 272,608" marker-end="url(#ar-call-same)"><title>panel → canvas</title></path>
+<path class="be k-call s-same" d="M478,968 C507,968 507,52 536,52" marker-end="url(#ar-call-same)"><title>png → sources</title></path>
 <path class="be k-call s-same" d="M478,788 C544,788 544,128 484,128" marker-end="url(#ar-call-same)"><title>regroup → config</title></path>
 <path class="be k-call s-same" d="M478,788 C544,788 544,548 484,548" marker-end="url(#ar-call-same)"><title>regroup → design</title></path>
 <path class="be k-call s-same" d="M478,788 C544,788 544,188 484,188" marker-end="url(#ar-call-same)"><title>regroup → extract</title></path>

@@ -26,7 +26,7 @@ from .diff import diff, numstat
 from . import extract as extraction
 from .extract import EXTRACT_VERSION, Code, extract
 from . import progress
-from .sources import GitSource, git, git_dir
+from .sources import GitSource, git, git_dir, run_hidden
 
 CHECKPOINT_REF = "refs/worktree/system-diff/checkpoint"
 OLD_CHECKPOINT_REF = "refs/system-diff/checkpoint"  # before 0.2, shared by every worktree: still read, never written
@@ -37,7 +37,7 @@ _IDENTITY = {"GIT_AUTHOR_NAME": "system-diff", "GIT_AUTHOR_EMAIL": "system-diff@
 
 
 def _git_env(root: Path, env: Dict[str, str], *args: str) -> str:
-    return subprocess.run(["git", *args], cwd=root, env=env, check=True, capture_output=True, text=True,
+    return run_hidden(["git", *args], cwd=root, env=env, check=True, capture_output=True, text=True,
                           encoding="utf-8", errors="replace").stdout.strip()
 
 

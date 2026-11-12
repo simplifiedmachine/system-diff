@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from . import activity, agents, config, design, learn
 from .compare import compare_worktree, mark_turn, turn_sha
 from .extract import Code
-from .sources import git
+from .sources import git, run_hidden
 
 NAME = "system-diff"
 SKILL_MARK = "<!-- written by system-diff setup claude -->"
@@ -383,7 +383,7 @@ def _save(path: Path, data: Dict[str, Any]) -> None:
 
 
 def _claude(args: List[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(["claude", *args], capture_output=True, text=True)
+    return run_hidden(["claude", *args], capture_output=True, text=True)
 
 
 def setup_claude(root: Path, scope: str = "user", undo: bool = False, out: Callable[[str], None] = print,

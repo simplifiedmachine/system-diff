@@ -58,8 +58,10 @@ def end() -> None:
 def line(root: Path) -> str:
     """The progress as one line ("Reading the code: 340 of 1,234 files - 12s"), or "" when nothing is under way."""
     import subprocess
+
+    from .sources import run_hidden
     try:
-        out = subprocess.run(["git", "rev-parse", "--absolute-git-dir"], cwd=root, capture_output=True, text=True,
+        out = run_hidden(["git", "rev-parse", "--absolute-git-dir"], cwd=root, capture_output=True, text=True,
                              encoding="utf-8", errors="replace", check=True).stdout.strip()
         data = json.loads((Path(out) / "system-diff" / FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError, subprocess.CalledProcessError):

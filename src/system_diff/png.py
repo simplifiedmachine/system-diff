@@ -11,6 +11,8 @@ import io
 import os
 import shutil
 import subprocess
+
+from .sources import run_hidden
 import sys
 import tarfile
 import tempfile
@@ -43,7 +45,7 @@ IN_CONTAINER = "cd /data && HOME=/tmp node shot.js"
 def _docker_here() -> bool:
     if not shutil.which("docker"):
         return False
-    return subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+    return run_hidden(["docker", "info"], capture_output=True).returncode == 0
 
 
 def _playwright(stage: Path, names: List[str]) -> bool:
@@ -75,7 +77,7 @@ def _over_ssh(stage: Path, host: str) -> None:
     remote = ("set -e; d=$(mktemp -d $HOME/.system-diff-render.XXXXXX); trap 'rm -rf $d' EXIT; tar -x -C $d; "
               f"chmod 777 $d; docker run --rm -v $d:/data --entrypoint sh {IMAGE} -c '{IN_CONTAINER}' >&2; "
               "cd $d && tar -cf - *.png")
-    got = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", host, remote],
+    got = run_hidden(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", host, remote],
                          input=buf.getvalue(), capture_output=True)
     if got.returncode != 0:
         raise RuntimeError(f"drawing on {host} failed: {got.stderr.decode(errors='replace')[-800:]}")
@@ -100,7 +102,7 @@ def render(svgs: List[Path], host: Optional[str] = None) -> List[Path]:
         (stage / "shot.js").write_text(SHOT_JS, encoding="utf-8", newline="\n")
         if _docker_here():
             user = ["-u", f"{os.getuid()}:{os.getgid()}"] if sys.platform.startswith("linux") else []
-            done = subprocess.run(["docker", "run", "--rm", *user, "-v", f"{stage}:/data", "--entrypoint", "sh", IMAGE,
+            done = run_hidden(["docker", "run", "--rm", *user, "-v", f"{stage}:/data", "--entrypoint", "sh", IMAGE,
                                    "-c", IN_CONTAINER])
             if done.returncode != 0:
                 raise RuntimeError("Chromium could not draw the pictures (output above)")

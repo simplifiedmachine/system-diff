@@ -8,8 +8,18 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 
+
+def run_hidden(*args, **kw):
+    """subprocess.run, with no console window on Windows. A process without a visible console (the web page's server,
+    a background job, a pane run by Claude Code) would otherwise open a new window for each git it runs: a flood of
+    windows taking the focus, and slow."""
+    if os.name == "nt":
+        kw["creationflags"] = kw.get("creationflags", 0) | 0x08000000   # CREATE_NO_WINDOW
+    return subprocess.run(*args, **kw)
+
+
 def git(*args: str, cwd: Path) -> str:
-    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True,
+    return run_hidden(["git", *args], cwd=cwd, check=True, capture_output=True, text=True,
                           encoding="utf-8", errors="replace").stdout
 
 
@@ -54,7 +64,7 @@ class GitSource:
         paths = list(paths)
         want = [p for p in paths if p not in self._cache]
         if want:
-            out = subprocess.run(["git", "cat-file", "--batch"], cwd=self.root, check=True, capture_output=True,
+            out = run_hidden(["git", "cat-file", "--batch"], cwd=self.root, check=True, capture_output=True,
                                  input="".join(f"{self.ref}:{p}\n" for p in want).encode()).stdout
             i = 0
             for p in want:
