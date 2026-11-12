@@ -44,7 +44,7 @@ your working tree.
 ## How the code is laid out
 
 system-diff draws its own architecture: run `python -m system_diff panel --protocol 2 --width 120 --view now`, open
-the web page (`python -m system_diff watch`), or look at the map at the bottom of the README. In short:
+the web page (`python -m system_diff watch`), or open `docs/diagrams/system.svg`. In short:
 
 | Area | Where |
 |---|---|
@@ -67,7 +67,6 @@ Python and TypeScript are done, and add a fixture repository in `tests/`.
    python -m pytest -q
    claude plugin test mods/system-diff               # if you touched the plugin
    system-diff map --dir . --out docs/diagrams         # the system map, if the structure changed
-   system-diff readme --json docs/diagrams/system.json
    ```
    CI runs the tests on Linux and Windows (Python 3.11 to 3.13) and checks that the system map is current.
 4. Write the PR description as the template asks: what and why, how you tested it, and what it changes in the
