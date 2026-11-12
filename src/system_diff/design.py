@@ -81,11 +81,14 @@ def fan_in(adj: Dict[str, Set[str]]) -> Dict[str, int]:
 
 
 def name_of(nid: str, *bps: dict) -> str:
+    """What a part, outside system or container is called: a part by its config label, else by names.py (its own
+    description, else its folder said as a role)."""
+    from . import names   # here: names reads the graph, which the picture modules import from here
     for bp in bps:
         if nid.startswith("x:") and nid[2:] in bp["externals"]:
             return bp["externals"][nid[2:]]["label"]
         if nid in bp["components"]:
-            return bp["components"][nid]["label"]
+            return names.label(bp, nid)
         if nid in bp.get("container_labels", {}):
             return bp["container_labels"][nid]
     return nid
@@ -118,8 +121,15 @@ class Reading:
         self.heading = {k: h.lower() for k, h in self.cfg["picture"]["columns"]}
         self.entries = sorted(c for c in self.b["components"] if self.kind.get(c) in ("ui", "interface"))
         self.configured = set(self.b.get("configured", ()))
+        self.overlay = getattr(cmp, "regroup", None)   # the LLM's labels (regroup.py), under the config's
 
     def name(self, nid: str) -> str:
+        ov = self.overlay
+        if isinstance(ov, dict) and isinstance(ov.get("parts"), dict) and isinstance(ov["parts"].get(nid), dict):
+            said = ov["parts"][nid].get("label")
+            c = self.b["components"].get(nid) or self.a["components"].get(nid) or {}
+            if said and isinstance(said, str) and not (c.get("declared") and c.get("label") not in (None, nid)):
+                return said
         return name_of(nid, self.b, self.a)
 
     def layer(self, nid: str) -> str:

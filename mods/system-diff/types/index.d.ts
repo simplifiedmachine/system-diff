@@ -2,7 +2,9 @@
 // pick, and what each block lights and shows when picked.
 export type Run = [string, string] | [string, string, string] // text, style words, ids (space-separated)
 export type Row = Run[]
-export type Act = { zoom?: string; learn?: string; view?: string; clear_objective?: string }
+// history: the History view of that block ('' the whole system); entry: one entry of the History shown, on the diagram
+export type Act = { zoom?: string; learn?: string; view?: string; clear_objective?: string; history?: string;
+                    entry?: string }
 export type PageBlock = {
   id: string
   x: number

@@ -12,6 +12,7 @@
     system-diff tui [--view now|review|agents|topics]               -> the pane's views in a terminal of their own
     system-diff setup claude [--scope user|project|local] [--undo]  -> the hooks, status line, a skill, the MCP server
     system-diff objectives [clear ID | restore ID | learn]          -> what you keep asking for, learned from your requests
+    system-diff history [--part ID] [--json]                        -> how the system evolved: what you asked, what it got
     system-diff mcp                                                 -> the MCP server (stdio)
 
 Deterministic: everything is read from git objects (no checkout) or a directory, with the standard library only.
@@ -252,6 +253,11 @@ def parser() -> argparse.ArgumentParser:
                     help="list (default); clear or restore one by id; learn them now, in the foreground")
     ob.add_argument("id", nargs="?", default="", help="the objective's id, for clear and restore")
     ob.add_argument("--json", action="store_true", help="the whole store, as JSON")
+    hi = sub.add_parser("history", help="how the system evolved: each structural change, what was asked for and "
+                                        "what the system got, newest first")
+    hi.add_argument("--part", default="", help="only what changed this block (a part's or container's id)")
+    hi.add_argument("--json", action="store_true", help="the entries, as JSON")
+    hi.add_argument("--width", type=int, default=0, help="columns to fit (default: the terminal's)")
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
@@ -260,7 +266,8 @@ def parser() -> argparse.ArgumentParser:
     pg.add_argument("--wait", type=float, default=0, help="seconds to wait first (the pane's pace)")
     pn = sub.add_parser("panel", help="what a pane beside the agent shows, as JSON (for the Claude Code mod)")
     pn.add_argument("--width", type=int, default=80)
-    pn.add_argument("--view", default="now", choices=["now", "review", "map", "changes", "topics", "agents"])
+    pn.add_argument("--view", default="now", choices=["now", "review", "map", "changes", "topics", "agents",
+                                                      "history"])
     pn.add_argument("--part", default="", help="the part to zoom in on (default: the one the agent works on)")
     pn.add_argument("--zoom", type=int, default=-1, help="diagrams 0 full, 1 compact, 2 tiny; -1 by the width")
     pn.add_argument("--protocol", type=int, default=1, help="2: a page of runs and pickable blocks (the mod's painter)")
@@ -292,6 +299,21 @@ def _utf8() -> None:
             pass
 
 
+def _history(args, root: Path) -> int:
+    """The timeline of the system's structural changes; read from the commits now when nothing is recorded yet."""
+    from . import history
+    if not history.load(root):
+        history.backfill(root)
+    if args.json:
+        entries = history.load(root)
+        if args.part:
+            entries = history.for_part(entries, {args.part})
+        print(json.dumps(entries, ensure_ascii=False, indent=1))
+        return 0
+    print(history.text(root, args.part, args.width or shutil.get_terminal_size((100, 24)).columns), end="")
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     _utf8()
     args = parser().parse_args(argv)
@@ -314,6 +336,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 1
     if args.cmd == "objectives":
         return _objectives(args, root)
+    if args.cmd == "history":
+        return _history(args, root)
     if args.cmd == "watch":
         from . import watch
         watch.serve(root, args.base, args.port, args.config, args.interval)

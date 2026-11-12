@@ -442,7 +442,7 @@ def fast(argv: Sequence[str]) -> Optional[int]:
         width, zoom, protocol = int(opts["--width"]), int(opts["--zoom"]), int(opts["--protocol"])
     except ValueError:
         return None
-    if opts["--view"] not in ("now", "review", "map", "changes", "topics", "agents"):
+    if opts["--view"] not in ("now", "review", "map", "changes", "topics", "agents", "history"):
         return None
     for stream in (sys.stdout, sys.stderr):   # UTF-8 whatever the code page (the diagrams' box-drawing characters)
         try:

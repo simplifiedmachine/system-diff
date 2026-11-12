@@ -180,12 +180,18 @@ def decisions(c, events: Optional[List[dict]] = None, code=None, reading: Option
     notes = {(n["change"]["entity"], n["change"]["id"], n["change"]["op"]): n for n in r.notes() if n.get("change")}
     edits = edits_by_part(events or [], code) if code is not None else {}
     out = []
+    cycles: set = set()
     for ch in c.diff["changes"]:
         note = notes.get((ch["entity"], ch["id"], ch["op"]))
         said = _describe(r, ch, note)
         if not said:
             continue
         tier, title, why = said
+        if "depend on each other" in title:   # a cycle is one change, though the diff has both of its directions
+            pair = frozenset(ch["id"].split(">")[:2])
+            if pair in cycles:
+                continue
+            cycles.add(pair)
         parts = _parts(r, ch, note)
         weight = int((note or {}).get("weight", 0))
         sign = {"add": "+", "remove": "−"}.get(ch["op"], "~")

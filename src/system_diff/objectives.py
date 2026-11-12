@@ -122,7 +122,7 @@ def enabled() -> bool:
 
 
 def _gateway(root: Path, settings: Iterable[str] = ()) -> bool:
-    return bool(narrate.claude_llm(root, list(settings)) or narrate.shell_llm())
+    return narrate.configured(root, list(settings))   # Claude Code's gateway, one set in the shell, or `claude -p`
 
 
 # ---------------------------------------------------------------------------------------------------- time

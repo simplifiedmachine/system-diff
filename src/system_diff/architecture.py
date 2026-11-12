@@ -14,6 +14,11 @@ system's `used_by` and `via` where no setting names it. Inferred where it does n
 callers, an MCP server's AI agents, a command line's developer, from the technology each entry point imports; the
 parts of a crowded column held in one container named for it.
 
+Named for what each part is (names.py): a part the config does not label by its own description, else its folder
+said as a role ("libs/llm" -> "LLM client"); parts under docs/, examples/, scripts/, tools/ that connect to nothing in
+one "Docs and tools" container; a crowded column held in containers named for the folders its parts share ("libs/" ->
+"Shared libraries"), else in one named for the column.
+
 Reorganised where an LLM has proposed it (regroup.py): an overlay, given to `system`/`container` as `overlay` or set on
 the comparison as `cmp.regroup`, names containers for parts, gives parts short labels and columns, and folds away the
 parts that are not the running system. What the config declares always wins over it; parts it does not know are drawn
@@ -24,13 +29,13 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from . import graph
+from . import graph, names
 from .design import kinds
 
 COLUMNS_FIRST = [("actors", "Who uses it")]
 SYSTEM_COLUMN = {"logic": "core", "data": "core", "store": "outside", "external": "outside"}  # four, at the top level
 MAIN_FLOWS = 4       # flows drawn from each box at the system level, strongest first
-FOLD_TITLE = "Docs and tools"   # the container of folded-away parts that changed
+FOLD_TITLE = names.FOLD_TITLE  # the container of the parts that are not the running system (docs, tools)
 CROWDED = 7          # more parts than this in a column, none grouped: they go in one container
 PROTOCOL = (("postgres", "SQL"), ("mysql", "SQL"), ("maria", "SQL"), ("sqlite", "SQL"), ("database", "SQL"),
             ("redis", "Redis"), ("valkey", "Redis"), ("mongo", "MongoDB"), ("smtp", "SMTP"), ("mail", "SMTP"),
@@ -73,6 +78,18 @@ def _proposed(ov: Optional[dict], cid: str, field: str, cfg: Dict[str, Any]) -> 
     return p.get(field) if isinstance(p, dict) else None
 
 
+def titles(cmp, overlay: Optional[dict] = None) -> Dict[str, str]:
+    """What each part is called, before and after: the config's label, else the overlay's, else names.py's (its own
+    description, else its folder said as a role)."""
+    ov = _overlay(cmp, overlay)
+    out: Dict[str, str] = {}
+    for bp in (cmp.before, cmp.after):
+        human = names.of(bp)
+        for cid in bp["components"]:
+            out[cid] = _proposed(ov, cid, "label", cmp.cfg) or human.get(cid) or bp["components"][cid]["label"]
+    return out
+
+
 def folded(bp: dict, cfg: Dict[str, Any], ov: Optional[dict]) -> Set[str]:
     """The parts the overlay says are not the running system (docs, tools): never a declared one or one with routes."""
     if not ov:
@@ -101,6 +118,11 @@ def groups_of(bp: dict, cfg: Dict[str, Any], kind: Dict[str, str], overlay: Opti
     meta = _meta(cfg)
     out = {cid: "g:" + meta[cid]["group"] for cid in bp["components"] if meta.get(cid, {}).get("group")}
     gone = folded(bp, cfg, overlay)
+    # docs, examples, scripts and tools nothing connects to: one box, unless the config or the overlay places them
+    loose = [cid for cid in sorted(names.folded(bp, cfg)) if cid not in out and cid not in gone
+             and not _proposed(overlay, cid, "group", cfg) and not bp["components"][cid].get("quiet")]
+    if len(loose) >= 2:
+        out.update({cid: "g:" + FOLD_TITLE for cid in loose})
     if overlay:
         proposed: Dict[str, List[str]] = defaultdict(list)
         for cid in bp["components"]:
@@ -116,8 +138,21 @@ def groups_of(bp: dict, cfg: Dict[str, Any], kind: Dict[str, str], overlay: Opti
         if cid not in out and cid not in gone and not bp["components"][cid].get("quiet"):
             by_col[kind.get(cid, "logic")].append(cid)
     heading = dict(cfg["picture"]["columns"])
+    taken = set(out.values())
     for col, parts in by_col.items():
-        if col in ("logic", "data") and len(parts) > CROWDED and not any(kind.get(p) == col for p in out):
+        if col in ("logic", "data") and len(parts) > CROWDED and not any(kind.get(p) == col and out[p] !=
+                                                                        "g:" + FOLD_TITLE for p in out):
+            # by the folder they share (libs/, services/), where that makes two or more containers; the rest in one
+            by_top = names.by_folder(parts)
+            if len(by_top) >= 2:
+                for title, held in by_top.items():
+                    gid = "g:" + title
+                    if gid in taken:
+                        gid = f"g:{title} ({heading.get(col, col).lower()})"
+                    out.update({p: gid for p in held})
+                parts = [p for p in parts if p not in out]
+                if len(parts) <= CROWDED:
+                    continue
             for p in parts:
                 out[p] = "g:" + heading.get(col, col)
     return out
@@ -214,6 +249,13 @@ def system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
     """The system level: {"columns", "nodes", "edges"}, ready for canvas.layered. A container's node lists its
     components as `items`; a flow names the boxes it joins and, where one end is a component in a container, that
     component (`from_item`, `to_item`), so a picked component lights its own flows."""
+    return _system(cmp, marks, agent, stack, overlay)
+
+
+def _system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
+            stack: Optional[Dict[str, Dict[str, int]]] = None, overlay: Optional[dict] = None,
+            every_flow: bool = False) -> Dict[str, Any]:
+    """system(); with `every_flow`, every flow between two boxes, not only each box's main few."""
     bp, before, cfg = cmp.after, cmp.before, cmp.cfg
     marks = marks or graph.change_marks(cmp.diff, before, bp)
     ov = _overlay(cmp, overlay)
@@ -224,6 +266,7 @@ def system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
     meta = _meta(cfg)
     comps = {**before["components"], **bp["components"]}
     gone = set(before["components"]) - set(bp["components"])
+    title = titles(cmp, ov)
 
     nodes: Dict[str, dict] = {}
     box_of: Dict[str, str] = {}
@@ -233,7 +276,7 @@ def system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
             continue
         st = "removed" if cid in gone else _status(marks, cid)
         col = kind.get(cid, "logic")
-        label = _proposed(ov, cid, "label", cfg) or c["label"]
+        label = title.get(cid) or c["label"]
         if cid in fold:                      # not the running system: drawn only while it changes or is worked on
             if st == "same" and cid != agent:
                 continue
@@ -245,11 +288,11 @@ def system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
             if isinstance(about, dict) and about.get(gid[2:]):
                 box["about"] = about[gid[2:]]
             box["items"].append({"id": cid, "title": label, "status": st, "agent": cid == agent,
-                                 "hub": bool(c.get("hub"))})
+                                 "hub": bool(c.get("hub")), "path": cid})
             box_of[cid] = gid
         else:
             nodes[cid] = {"id": cid, "col": col, "type": "component", "title": label, "status": st,
-                          "agent": cid == agent, "sub": (_entry_sub(bp, cid, cfg) if cid in bp["components"]
+                          "agent": cid == agent, "path": cid, "sub": (_entry_sub(bp, cid, cfg) if cid in bp["components"]
                                                           and col in ("interface", "ui") else
                                                           meta.get(cid, {}).get("about", "")
                                                           or graph.files_word(c["files"]))}
@@ -304,6 +347,11 @@ def system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
     heading = dict(cfg["picture"]["columns"])
     for n in nodes.values():
         n["col"] = SYSTEM_COLUMN.get(n["col"], n["col"])
+    columns = COLUMNS_FIRST + [("ui", heading.get("ui", "What people use")),
+                               ("interface", heading.get("interface", "Entry points")),
+                               ("core", "Inside the system"), ("outside", "Data and outside")]
+    if every_flow:
+        return {"columns": columns, "nodes": list(nodes.values()), "edges": list(edges.values())}
     # the main flows: not one entry point starting another (one program's wiring), and from each box its strongest
     # few; every flow that changed stays. The rest show in a box's own view.
     kept: Dict[str, List[dict]] = defaultdict(list)
@@ -312,61 +360,76 @@ def system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
         if e["status"] != "same" or (not same_col and len(kept[e["from"]]) < MAIN_FLOWS):
             kept[e["from"]].append(e)
     edges = {(e["from"], e["to"]): e for es in kept.values() for e in es}
-    columns = COLUMNS_FIRST + [("ui", heading.get("ui", "What people use")),
-                               ("interface", heading.get("interface", "Entry points")),
-                               ("core", "Inside the system"), ("outside", "Data and outside")]
     return {"columns": columns, "nodes": list(nodes.values()), "edges": list(edges.values())}
+
+
+LEVELS = 4    # columns a zoomed-in container's parts are laid out in at most (a part before the parts it uses)
 
 
 def container(cmp, box: str, marks: Optional[dict] = None, agent: Optional[str] = None,
               stack: Optional[Dict[str, Dict[str, int]]] = None, overlay: Optional[dict] = None
               ) -> Optional[Dict[str, Any]]:
-    """One box zoomed in on: a container's components (or a lone part) as boxes, with the connections between them
-    and every box outside it that they connect to, each flow as at the system level."""
+    """One box zoomed in on: a container's components (or a lone part, an actor, an outside system) as boxes, laid out
+    a part before the parts it uses, with the connections between them; and every box outside it they connect to, in
+    or out (all of them, not only the system level's main flows), met at the component inside a container at the
+    other end. Columns: who uses it, what uses it, the box's own parts, what it uses, data and outside."""
     ov = _overlay(cmp, overlay)
-    whole = system(cmp, marks, agent, stack, ov)
+    bp, before, cfg = cmp.after, cmp.before, cmp.cfg
+    marks = marks or graph.change_marks(cmp.diff, before, bp)
+    whole = _system(cmp, marks, agent, stack, ov, every_flow=True)
     nodes = {n["id"]: n for n in whole["nodes"]}
     if box not in nodes:
-        holder = next((n["id"] for n in whole["nodes"] if any(i["id"] == box for i in n.get("items", []))), None)
+        holder = next((n["id"] for n in whole["nodes"] if any(i["id"] == box for i in n.get("items") or [])), None)
         if holder is None:
             return None
         box = holder
     me = nodes[box]
-    inside = [i["id"] for i in me.get("items", [])] or [box]
-    item = {i["id"]: i for i in me.get("items", [])}
-    bp, before, cfg = cmp.after, cmp.before, cmp.cfg
-    marks = marks or graph.change_marks(cmp.diff, before, bp)
-    kind = {**kinds_with(before, cfg, ov), **kinds_with(bp, cfg, ov)}
+    item = {i["id"]: i for i in me.get("items") or []}
+    inside = list(item) or [box]
     comps = {**before["components"], **bp["components"]}
+    holder_of = {i["id"]: n for n in whole["nodes"] for i in n.get("items") or []}
+
+    def sub_of(cid: str) -> str:
+        return _meta(cfg).get(cid, {}).get("about", "") or (graph.files_word(comps[cid]["files"]) if cid in comps
+                                                             else "")
+
     out_nodes: Dict[str, dict] = {}
     for cid in inside:
         if cid in item:
             i = item[cid]
-            out_nodes[cid] = {"id": cid, "col": kind.get(cid, me["col"]), "type": "component", "title": i["title"],
-                              "status": i["status"], "agent": i["agent"],
-                              "sub": _meta(cfg).get(cid, {}).get("about", "") or graph.files_word(comps[cid]["files"])}
+            out_nodes[cid] = {"id": cid, "type": "component", "title": i["title"], "status": i["status"],
+                              "agent": i["agent"], "sub": sub_of(cid), "path": cid}
         else:
-            out_nodes[cid] = dict(me)
+            out_nodes[cid] = {k: v for k, v in me.items() if k != "items"}
+        out_nodes[cid]["focus"] = len(inside) == 1
     edges = []
-    # inside: component to component
     now = graph.connections(bp)
-    for (s, t), (k, _n) in sorted(now.items()):
+    for (s, t), (k, _n) in sorted(now.items()):          # inside: component to component
         if s in inside and t in inside and s != t and k == "call":
-            edges.append({"from": s, "to": t, "kind": "call", "label": "",
+            edges.append({"from": s, "to": t, "kind": "call", "label": "HTTP" if f"{s}>{t}" in bp["api"] else "",
                           "status": marks["edges"].get((s, t), (k, "same"))[1]})
-    # out of and into the box: the system level's flows, met at their components
+    for (s, t), (k, st) in marks["edges"].items():
+        if st == "removed" and s in inside and t in inside and (s, t) not in now:
+            edges.append({"from": s, "to": t, "kind": k, "label": "", "status": "removed"})
+    # out of and into the box: every flow of the system level, met at the component at each end
     for e in whole["edges"]:
         if box not in (e["from"], e["to"]):
             continue
         other = e["to"] if e["from"] == box else e["from"]
         on = nodes[other]
-        out_nodes.setdefault(other, {**on, "items": None, "type": "component" if on["type"] == "group" else on["type"]}
-                             if on["type"] == "group" else dict(on))
-        if on["type"] == "group":
-            out_nodes[other]["sub"] = f"{len(on['items'])} components"
         for s, t in e["pairs"]:
-            a = s if s in inside else other
-            b = t if t in inside else other
+            far = t if s in inside else s
+            if on["type"] == "group" and far in holder_of and holder_of[far]["id"] == other:
+                i = next(x for x in on["items"] if x["id"] == far)
+                oid = far
+                out_nodes.setdefault(far, {"id": far, "type": "component", "title": i["title"], "status": i["status"],
+                                           "agent": i["agent"], "path": far,
+                                           "sub": f"in {on['title']}"})
+            else:
+                oid = other
+                out_nodes.setdefault(other, {k: v for k, v in on.items() if k != "items"})
+            a = s if s in inside else oid
+            b = t if t in inside else oid
             if a != b:
                 edges.append({"from": a, "to": b, "kind": e["kind"], "label": e["label"],
                               "status": marks["edges"].get((s, t), (e["kind"], e["status"]))[1]
@@ -376,14 +439,36 @@ def container(cmp, box: str, marks: Optional[dict] = None, agent: Optional[str] 
         if (e["from"], e["to"]) not in seen:
             seen.add((e["from"], e["to"]))
             uniq.append(e)
-    for n in out_nodes.values():
-        if n["id"] in comps and n["id"] in kind:
-            n["col"] = kind[n["id"]]
-        elif n["id"].startswith("x:"):
-            n["col"] = "store" if n.get("type") == "store" else "external"
-        elif n["id"].startswith("g:"):
-            first = next((i["id"] for i in nodes[n["id"]].get("items", [])), "")
-            n["col"] = kind.get(first, "logic")
-    columns = COLUMNS_FIRST + [tuple(c) for c in cfg["picture"]["columns"]]
+    # the box's own parts in levels: a part before the parts it uses
+    uses: Dict[str, Set[str]] = defaultdict(set)
+    for e in uniq:
+        if e["from"] in inside and e["to"] in inside:
+            uses[e["to"]].add(e["from"])
+    level: Dict[str, int] = {}
+
+    def depth(cid: str, seen_: Tuple[str, ...] = ()) -> int:
+        if cid in level:
+            return level[cid]
+        users = [u for u in uses[cid] if u not in seen_ and u != cid]
+        d = 0 if not users else 1 + max(depth(u, seen_ + (cid,)) for u in users)
+        level[cid] = min(d, LEVELS - 1)
+        return level[cid]
+
+    for cid in inside:
+        out_nodes[cid]["col"] = f"in{depth(cid)}"
+    into = {e["from"] for e in uniq if e["to"] in inside} - set(inside)
+    outof = {e["to"] for e in uniq if e["from"] in inside} - set(inside)
+    for nid, n in out_nodes.items():
+        if nid in inside:
+            continue
+        if n.get("type") == "actor":
+            n["col"] = "actors"
+        elif nid.startswith("x:"):
+            n["col"] = "outside"
+        else:
+            n["col"] = "callers" if nid in into and nid not in outof else "deps"
+    columns = COLUMNS_FIRST + [("callers", "Uses it")] + [(f"in{i}", me["title"] if i == 0 else "")
+                                                          for i in range(LEVELS)] + [
+        ("deps", "It uses"), ("outside", "Data and outside")]
     return {"columns": columns, "nodes": list(out_nodes.values()), "edges": uniq, "box": box,
             "title": me["title"]}

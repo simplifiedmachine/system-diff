@@ -176,3 +176,4 @@ def test_the_web_page_gets_a_hover_card_for_what_it_renders(repo, files):
     team = pane.web_view(repo, "agents")["hover"]
     api = team["ag:api"]["lines"]
     assert any(x.startswith("Edited API") for x in api) and any("refund endpoint added" in x for x in api)
+

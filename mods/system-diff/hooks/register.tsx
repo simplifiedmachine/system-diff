@@ -6,7 +6,8 @@ import type { Act, Page, Row } from '../types'
 // System diff, in a pane beside the chat: the system as a system designer draws it (who uses it, its entry points,
 // its containers and their components, its data and the systems outside it, joined by named flows) with Claude's
 // component lit and this turn's changes coloured; what needs your attention; what the turn did to the design; how
-// the part is designed; what just happened. Tabs: Now, Map, Changes, Topics. The page (page.tsx) takes the keys once
+// the part is designed; what just happened. Tabs: Now, Review, Agents, Topics, History (how the system evolved: what
+// you asked and what it got; h on a picked box shows that box's own). The page (page.tsx) takes the keys once
 // clicked: ← ↑ ↓ → pick a block and light its flows, Enter zooms in, b back, f follows Claude. Content: `system-diff
 // panel --protocol 2`, laid out for the pane's own width.
 //
@@ -14,10 +15,11 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.7.1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.8.0' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
-const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't']] as const
+const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't'],
+               ['history', 'History', 'h']] as const
 
 const page = atom({ plugin: 'system-diff', key: 'page' } as const, null as Page | null, { shape: 'page-2' })
 const view = atom({ plugin: 'system-diff', key: 'view' } as const, 'now', { shape: 'view-1' })
@@ -364,7 +366,23 @@ function soon($: EngineInterface): void {
 }
 
 async function choose($: EngineInterface, next: string): Promise<void> {
+  const from = await read($, view)
+  // the History tab starts on the whole system; leaving it, its block (or entry) is not a part to zoom in on
+  if ((next === 'history') !== (from === 'history')) await update($, part, () => '')
   await update($, view, () => next)
+  await refresh($)
+}
+
+// The History view of a block (a part or container; '' the whole system), or one entry of the History shown (on the
+// diagram), remembering where the person was so b goes back there: a back step is "<view>\t<part>".
+async function history($: EngineInterface, block: string, entry?: string): Promise<void> {
+  const fromView = await read($, view)
+  const fromPart = await read($, part)
+  const next = entry === undefined ? block : `${fromView === 'history' ? fromPart.split('#')[0] : ''}#${entry}`
+  if (fromView === 'history' && fromPart === next) return
+  await update($, back, list => [...list, `${fromView}\t${fromPart}`].slice(-20))
+  await update($, part, () => next)
+  await update($, view, () => 'history')
   await refresh($)
 }
 
@@ -380,7 +398,10 @@ async function goBack($: EngineInterface): Promise<void> {
   const list = await read($, back)
   if (list.length === 0) return
   await update($, back, () => list.slice(0, -1))
-  await update($, part, () => list[list.length - 1] ?? '')
+  const step = list[list.length - 1] ?? ''
+  const tab = step.indexOf('\t')
+  if (tab >= 0) await update($, view, () => step.slice(0, tab)) // a step back out of History: its view too
+  await update($, part, () => (tab >= 0 ? step.slice(tab + 1) : step))
   await refresh($)
 }
 
@@ -564,6 +585,8 @@ export const register: Register = on => {
     else if (typeof data.zoom === 'string') await zoom($, data.zoom)
     else if (typeof data.learn === 'string') await learn($, data.learn)
     else if (typeof data.clear_objective === 'string') await clearObjective($, data.clear_objective)
+    else if (typeof data.history === 'string') await history($, data.history)
+    else if (typeof data.entry === 'string') await history($, '', data.entry)
     else if (data.back) await goBack($)
     else if (data.follow) await follow($)
     else if (typeof data.zoomBy === 'number') await zoomBy($, data.zoomBy)
@@ -641,6 +664,16 @@ export const register: Register = on => {
             {drawn.blocks.filter(b => b.enter?.zoom).slice(0, 40).map(b => (
               <Button key={`block-${b.id}`} plain onPress={() => void zoom($, b.enter?.zoom ?? '')}>
                 {b.id.replace(/^b:(g:)?/, '')}
+              </Button>
+            ))}
+            {drawn.blocks.filter(b => b.enter?.history !== undefined).slice(0, 40).map(b => (
+              <Button key={`block-${b.id}`} plain onPress={() => void history($, b.enter?.history ?? '')}>
+                {`${b.id.replace(/^b:(g:)?/, '')} history`}
+              </Button>
+            ))}
+            {drawn.blocks.filter(b => b.enter?.entry !== undefined).slice(0, 20).map((b, i) => (
+              <Button key={`block-${b.id}`} plain onPress={() => void history($, '', b.enter?.entry ?? '')}>
+                {`change ${i + 1}`}
               </Button>
             ))}
           </Box>

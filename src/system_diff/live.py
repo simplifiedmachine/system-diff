@@ -33,7 +33,12 @@ How changes arrive:
   read again in Python; when an ignore or attributes rule changes, the start's listing runs again. On the start, a
   file whose size and time are those the index has (and not racily so) is taken as the index's blob without reading.
 - the repository's other state the views show (the checkpoint and the turn, the activity log, the agents' bus, the
-  LLM's regrouping, the person's learning profile) is watched by file time; a change bumps the version too.
+  LLM's regrouping, the person's learning profile, the history) is watched by file time; a change bumps the version
+  too.
+
+History: the engine's Recorder (history.py, its own thread) records each structural change of the model as it
+happens, under the person's request, and reads the commits HEAD gains (backfill) in the background; never in a
+look's path.
 
 A cold start reads the code in the background in slices (extract's reading order: config and entry points first,
 every part in turn), publishing a partial blueprint ("partial": {"done", "total"}) after each, until all is read.
@@ -129,8 +134,18 @@ def save_page(root: Path, key: tuple, page: Dict[str, Any]) -> None:
         pass
 
 
+def _same_part(f: Path, key: tuple) -> bool:
+    """Whether the page kept in `f` was drawn for the part `key` asks for (its stored key's last item)."""
+    try:
+        kept = json.loads(f.read_text(encoding="utf-8")).get("key") or []
+        return len(kept) >= 5 and kept[4] == str(key[4] or "")
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def saved_page(root: Path, key: tuple, progress: str = "") -> Optional[Dict[str, Any]]:
-    """The page last kept for `key` (for a pane page, else the newest of the same view at another width), marked as
+    """The page last kept for `key` (for a pane page, else the newest of the same view and part at another width or
+    zoom), marked as
     the last one seen while the system is read again; None when there is none."""
     try:
         g = _git_dir(root)
@@ -139,8 +154,10 @@ def saved_page(root: Path, key: tuple, progress: str = "") -> Optional[Dict[str,
         d = g / "system-diff" / PAGES
         f = d / f"{_page_name(key)}.json"
         if not f.exists() and key[0] == "pane":
-            alike = sorted(d.glob(f"pane-{key[1]}-*.json"), key=lambda x: x.stat().st_mtime)
-            f = alike[-1] if alike else f
+            # another width or zoom of the same view AND the same part (a zoomed-in block, a History filter or
+            # entry): never another part's page, which would look as if the zoom did nothing
+            f = next((x for x in sorted(d.glob(f"pane-{key[1]}-*.json"), key=lambda x: x.stat().st_mtime,
+                                        reverse=True) if _same_part(x, key)), f)
         data = json.loads(f.read_text(encoding="utf-8"))
         page, at = data["page"], float(data.get("at") or 0)
     except Exception:  # noqa: BLE001
@@ -466,6 +483,7 @@ class Engine:
         self._filemode = self._symlinks = True
         self._autocrlf = "false"
         self._live_ids: List[str] = []
+        self.recorder: Optional[Any] = None      # history.Recorder: the structural changes, as they happen
 
     # git: the few calls the engine makes, each noted
     def _git(self, *args: str, input: Optional[bytes] = None, check: bool = True) -> bytes:
@@ -501,6 +519,12 @@ class Engine:
         compare.COMMIT[compare.live_key(self.root)] = self.materialize
         self._thread = threading.Thread(target=self._run, name="system-diff engine", daemon=True)
         self._thread.start()
+        try:   # how the system evolves: each structural change recorded as it happens (history.py), in its own thread
+            from . import history
+            if history.enabled():
+                self.recorder = history.Recorder(self).start()
+        except Exception:  # noqa: BLE001 - only a record: the engine runs without it
+            self.recorder = None
         return self
 
     def stop(self) -> None:
@@ -647,6 +671,7 @@ class Engine:
                  st(g / "refs" / "worktree" / "system-diff" / "checkpoint"),
                  st(g / "refs" / "worktree" / "system-diff" / "turn"), st(c / "refs" / "system-diff" / "checkpoint"),
                  st(self._sd / "activity.jsonl"), st(self._sd / "agents.json"), st(self._sd / "bus.jsonl"),
+                 st(self._sd / "history.jsonl"),
                  listing(self._sd / "regroup"), listing(self._sd / "parts"), prof)
         rules = (st(c / "info" / "exclude"), st(c / "info" / "attributes"), st(g / "index"))
         return git_state, views, rules

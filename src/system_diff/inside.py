@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import graph
-from .architecture import COLUMNS_FIRST, actors, outside_nodes, protocol
+from .architecture import COLUMNS_FIRST, actors, outside_nodes, protocol, titles
 from .design import kinds
 from .diff import numstat
 from .extract import (ENV_PY, ENV_TS, JS_ROUTE, PREFIX_ARG, PY_ROUTE, ROUTER, Code, import_paths, matches,
@@ -158,9 +158,11 @@ def internals(c, root: Path, part: str, agent_path: str = "", marks: Optional[di
     comps = bp["components"]
     kind = kinds(bp, cfg)
     around: Dict[str, dict] = {}
+    named = titles(c)
 
     def part_node(pid: str, col: str) -> dict:
-        return around.setdefault(pid, {"id": pid, "col": col, "type": "component", "title": comps[pid]["label"],
+        return around.setdefault(pid, {"id": pid, "col": col, "type": "component",
+                                       "title": named.get(pid) or comps[pid]["label"], "path": pid,
                                        "sub": graph.files_word(comps[pid]["files"]),
                                        "status": marks["status"].get(pid, "same")})
 
@@ -201,7 +203,7 @@ def internals(c, root: Path, part: str, agent_path: str = "", marks: Optional[di
         edges.append({"from": "f:" + target, "to": x, "kind": fl["kind"], "label": fl["label"] or
                       protocol(by_id[x]["title"]), "status": marks["edges"].get((part, x), (fl["kind"], "same"))[1]})
 
-    title = comps[part]["label"]
+    title = named.get(part) or comps[part]["label"]
     columns = COLUMNS_FIRST + [("callers", "Uses it")] + [(f"in{i}", f"Inside {title}" if i == 0 else "")
                                                           for i in range(LEVELS)] + [
         ("deps", "It uses"), ("outside", "Data and outside")]

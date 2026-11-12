@@ -371,3 +371,42 @@ test('a page that only says the system is being read never blanks a drawn diagra
   expect(await ui.find({ type: 'Text', text: /3 of 430 files/ })).toBeDefined()               // the progress shows
   await ui.unmount()
 })
+
+test('the History tab shows how the system evolved; Enter on an entry shows it, b goes back', async ($, on) => {
+  const asked: string[][] = []
+  const entry = { id: 'hy:t1', x: 0, y: 6, w: 60, h: 2, enter: { entry: 't1' }, slot: [9, 5] }
+  answer(on, asked, 0, '', [], { blocks: [...page('', 110).blocks, entry] })
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const last = () => (asked[asked.length - 1] ?? []).join(' ')
+  expect(await ui.find({ key: 'view-history' })).toBeDefined()
+  await ui.press({ key: 'view-history' })
+  expect(last()).toContain('--view history --part ')
+  expect(last().endsWith('--part ')).toBe(true)                  // the whole system's
+  await ui.post({ entry: 't1' }, { in: 'page' })                // ↵ on an entry: that change, on the diagram
+  expect(last()).toContain('--view history --part #t1')
+  await ui.key({ key: 'b', in: 'page' })                        // back to the timeline
+  expect(last()).toContain('--view history')
+  expect(last()).not.toContain('#t1')
+  await ui.unmount()
+})
+
+test('h on a picked box opens that box\'s own history; b goes back to where it was', async ($, on) => {
+  const asked: string[][] = []
+  answer(on, asked)
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const last = () => (asked[asked.length - 1] ?? []).join(' ')
+  expect(await ui.find({ type: 'Text', text: /h its history/, in: 'page' })).toBeDefined()
+  await ui.key({ key: 'right', in: 'page' })                    // the API, then Core
+  await ui.key({ key: 'h', in: 'page' })
+  expect(last()).toContain('--view history --part core')
+  await ui.key({ key: 'b', in: 'page' })
+  expect(last()).toContain('--view now')
+  expect(last()).not.toContain('--part core')
+  await ui.post({ history: 'api' }, { in: 'page' })            // ↵ on a box of an entry's diagram: its history
+  expect(last()).toContain('--view history --part api')
+  await ui.press({ key: 'view-now' })                           // leaving History: no block carried into Now
+  expect(last().endsWith('--view now --part ')).toBe(true)
+  await ui.unmount()
+})

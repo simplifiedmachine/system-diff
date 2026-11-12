@@ -2,22 +2,31 @@
 
 Which LLM: the one your Claude Code uses (its settings files' `env` blocks, layered as Claude Code layers them, with
 ANTHROPIC_* in the environment over all of them); else an OpenAI-compatible gateway exported in your own shell
-(SYSTEM_DIFF_LLM_BASE_URL / _API_KEY / _MODEL, or LLM_*). Only the headline, the exact plan and the commit messages are
-sent: never the code. Nothing answers, no summary.
+(SYSTEM_DIFF_LLM_BASE_URL / _API_KEY / _MODEL, or LLM_*); else your Claude Code itself, run non-interactively
+(`claude -p`, a small fast model, no tools, no session kept), which reaches whatever it is set up for: Amazon Bedrock,
+Google Vertex, a subscription. Only for work in the background (regroup.py's and objectives.py's jobs, or a command the
+person runs): never from a hook or a look. Only the headline, the exact plan and the commit messages are sent: never
+the code. Nothing answers, no summary. SYSTEM_DIFF_LLM=off: no LLM at all; SYSTEM_DIFF_CLAUDE_MODEL: the model the
+`claude` CLI is asked for (default haiku).
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import shutil
 import socket
 import ssl
+import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
+
+from .sources import run_hidden
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
 
@@ -77,6 +86,71 @@ def shell_llm() -> Optional[Dict[str, Any]]:
     return None
 
 
+CLI_MODEL = "haiku"     # the model the `claude` CLI is asked for: small and fast (an alias every provider maps)
+CLI_SYSTEM = "You answer one request in text only. You have no tools and no files: everything you need is in the request."
+
+
+def off() -> bool:
+    return os.environ.get("SYSTEM_DIFF_LLM", "").strip().lower() in ("off", "0", "false", "no", "none")
+
+
+def claude_cli() -> Optional[Dict[str, Any]]:
+    """The person's own Claude Code, run non-interactively: {"kind": "cli", "path", "model"}; None when it is not on
+    the PATH. Not under a test unless the test asks for it (SYSTEM_DIFF_LLM=cli): a test never runs the real one."""
+    if off():
+        return None
+    if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("SYSTEM_DIFF_LLM", "").strip().lower() != "cli":
+        return None
+    path = shutil.which("claude")
+    if not path:
+        return None
+    return {"kind": "cli", "path": path, "model": os.environ.get("SYSTEM_DIFF_CLAUDE_MODEL") or CLI_MODEL}
+
+
+def configured(root: Path, extra: List[str] = ()) -> bool:
+    """Whether any LLM can be asked from here (nothing is asked): what the background jobs check before starting."""
+    if off():
+        return False
+    return bool(claude_llm(root, list(extra)) or shell_llm() or claude_cli())
+
+
+def cli_command(s: Dict[str, Any]) -> List[str]:
+    """`claude -p` asked once: JSON out, the prompt on stdin (never on the command line: Windows' .cmd wrappers mangle
+    quotes and new lines), no tools, no MCP servers, no slash commands, no session kept on disk (so no transcript
+    lands among the person's own, where the objectives would read it as their request)."""
+    return [s["path"], "-p", "--output-format", "json", "--model", s["model"], "--tools", "",
+            "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence",
+            "--system-prompt", CLI_SYSTEM]
+
+
+def _cli_env() -> Dict[str, str]:
+    """The environment `claude -p` runs in: the person's, with system-diff's own hooks in it told to do nothing that
+    asks an LLM again or starts anything (it is a session of its own, and its hooks run)."""
+    env = dict(os.environ)
+    env.update({"SYSTEM_DIFF_LLM": "off", "SYSTEM_DIFF_REGROUP": "0", "SYSTEM_DIFF_OBJECTIVES": "0",
+                "SYSTEM_DIFF_WEB_START": "0"})
+    env.pop("CLAUDECODE", None)   # started from inside a session (a hook's job): still a session of its own
+    return env
+
+
+def ask_cli(s: Dict[str, Any], user: str, timeout: int, system: str = SYSTEM) -> Tuple[str, str]:
+    """One answer from the `claude` CLI: (text, model). Raises OSError, subprocess errors or ValueError."""
+    where = Path(tempfile.gettempdir()) / "system-diff-llm"     # not the project: its hooks and settings stay out
+    where.mkdir(parents=True, exist_ok=True)
+    prompt = f"<instructions>\n{system}\n</instructions>\n\n{user}"
+    done = run_hidden(cli_command(s), input=prompt, capture_output=True, text=True, encoding="utf-8",
+                      errors="replace", timeout=timeout, cwd=str(where), env=_cli_env())
+    data = json.loads(done.stdout or "null")
+    if not isinstance(data, dict):
+        raise ValueError(f"exit {done.returncode}: no JSON")
+    if data.get("is_error") or done.returncode:
+        raise ValueError(f"exit {done.returncode}: {str(data.get('result') or data.get('subtype') or '')[:120]}")
+    used = data.get("modelUsage") if isinstance(data.get("modelUsage"), dict) else {}
+    model = next(iter(used), "") or s["model"]
+    text = data.get("result") if isinstance(data.get("result"), str) else ""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip(), model
+
+
 def ask(s: Dict[str, Any], user: str, max_tokens: int, timeout: int, system: str = SYSTEM) -> str:
     """One tool-less completion, OpenAI-compatible or Anthropic Messages."""
     if s.get("kind") == "openai":
@@ -116,7 +190,10 @@ def narrate(d: dict, commits: str, root: Path, cfg: Dict[str, Any], timeout: int
 
 def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: int = 120,
              limit: int = 1500) -> Optional[Tuple[str, str]]:
-    """The first answer an LLM gives from here, and who gave it: (text, "model (where it is set)"); else None."""
+    """The first answer an LLM gives from here, and who gave it: (text, "model (where it is set)"); else None.
+    Asks Claude Code's gateway, else one set in the shell, else the `claude` CLI; none with SYSTEM_DIFF_LLM=off."""
+    if off():
+        return None
     claude = claude_llm(root, cfg.get("narrate", {}).get("settings", []))
     if claude:
         # With a thinking budget first (some gateways' reasoning models need one); without it if refused.
@@ -145,4 +222,16 @@ def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: i
                 break
             if text:
                 return text[:limit], f"{shell['model']} (an LLM set in this shell)"
+    if claude or shell:
+        return None          # a gateway is set: its failure is said above, and the CLI is not asked instead
+    cli = claude_cli()
+    if cli:
+        try:
+            text, model = ask_cli(cli, user, timeout, system)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            print(f"system-diff: claude -p --model {cli['model']}: {type(exc).__name__}: {str(exc)[:160]}",
+                  file=sys.stderr)
+            return None
+        if text:
+            return text[:limit], f"{model} (your Claude Code)"
     return None

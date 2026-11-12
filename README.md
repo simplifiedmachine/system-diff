@@ -138,11 +138,22 @@ One meaning per colour, so your eye goes where it should:
 
 `n` `r` `a` `t` switch views.
 
+### History: how the system got here
+
+`h: History` lists how the system changed, newest first, each step said as what you asked and what it got: "2 days
+ago · You asked: “add document uploads to flows” → it got: a call to Amazon S3, 3 endpoints under /flows/documents".
+Pick one for every change and why it matters; ↵ shows it on the diagram. `h` on any box shows that box's own history.
+It is recorded as Claude works (your requests come from the hooks, or from Claude Code's own session history) and
+read back from the last 50 commits; kept in `.git/system-diff/history.jsonl`. `system-diff history [--part id]` prints
+it.
+
 ### What you are optimising for: objectives
 
 While you iterate with Claude you keep asking for the same things ("fast on large repositories", "must work on
 Windows"). system-diff learns these from your requests, in the background with the LLM your Claude Code uses (only
 your requests are read, never code), and keeps them as objectives:
+(The LLM is the gateway your Claude Code uses, or the `claude` command itself, so Bedrock, Vertex and
+subscriptions work; `SYSTEM_DIFF_LLM=off` turns every LLM use off.)
 
 - shown in the pane, the web page and the terminal view, each with how often you asked and its evidence on hover;
 - given to Claude with every request, and to every agent of a team in its brief, so later iterations keep them;

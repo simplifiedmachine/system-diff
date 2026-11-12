@@ -75,7 +75,7 @@ paths = ["src/system_diff/live.py"]
 
 [[components]]
 id = "gitfs"
-label = "Git, read directly"
+label = "Git reader"
 kind = "data"
 about = "refs, objects and the index read in Python, so few git processes start"
 group = "Engine"
@@ -184,6 +184,21 @@ label = "Worth a look"
 kind = "logic"
 group = "Explaining"
 paths = ["src/system_diff/human.py"]
+
+[[components]]
+id = "history"
+label = "History"
+kind = "logic"
+about = "how the system changed, request by request"
+group = "Explaining"
+paths = ["src/system_diff/history.py"]
+
+[[components]]
+id = "names"
+label = "Readable names"
+kind = "logic"
+group = "Explaining"
+paths = ["src/system_diff/names.py"]
 
 [[components]]
 id = "objectives"

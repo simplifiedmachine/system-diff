@@ -5,8 +5,8 @@ import type { Page, PageBlock, Row, Run } from '../types'
 // The page `system-diff panel` lays out, painted cell for cell, in its own region of the pane so it gets the keys and
 // the clicks: ← ↑ ↓ → pick a block (a box of the system diagram, a component in a container, a technology), Enter
 // or a second click zooms in on it, space marks a technology new to you, [ and ] scroll a picture wider than the
-// pane, shift ↑ ↓ and Page Up/Down scroll a tall one (as the wheel does), b goes back, f follows Claude, n m c t
-// switch tabs, Esc hands the keys back. Shift ← → are left to the terminal.
+// pane, shift ↑ ↓ and Page Up/Down scroll a tall one (as the wheel does), b goes back, f follows Claude, n m c t h
+// switch tabs (h on a picked box: that box's own history), Esc hands the keys back. Shift ← → are left to the terminal.
 //
 // A picked block is blue; what it connects to (its lines, in and out, and the blocks at their other ends) is lit;
 // the rest keeps its colours: yellow what changed, green what is new, red what went, gray the background.
@@ -150,6 +150,8 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
       surface.post({ back: true })
     } else if (e.key === 'f') {
       surface.post({ follow: true })
+    } else if (e.key === 'h') { // History: of the picked box (a part, a container), else of the whole system
+      surface.post({ history: sel.startsWith('b:') ? sel.slice(2) : '' })
     } else if (['n', 'r', 'm', 'c', 'a', 't'].includes(e.key)) { // m and c: what Map and Changes were
       surface.post({ view: { n: 'now', r: 'review', m: 'review', c: 'review', a: 'agents', t: 'topics' }[e.key] ?? 'now' })
     }
@@ -209,7 +211,9 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
         )
       })}
       <Text dimColor wrap="truncate-end">
-        {'click here, then ← ↑ ↓ → pick · ↵ zoom in' + keysOf(picked) + ' · [ ] shift+↑ ↓ scroll' +
+        {'click here, then ← ↑ ↓ → pick · ↵ ' + (picked?.enter?.entry !== undefined ? 'show it' :
+          picked?.enter?.history !== undefined ? 'its history' : 'zoom in') + keysOf(picked) +
+          (sel.startsWith('b:') ? ' · h its history' : ' · h history') + ' · [ ] shift+↑ ↓ scroll' +
           (canGoBack ? ' · b back' : '') + ' · f follow · Esc leaves'}
       </Text>
     </Box>

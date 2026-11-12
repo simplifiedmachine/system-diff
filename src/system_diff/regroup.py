@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import graph, narrate
+from . import graph, names, narrate
 from .sources import git, git_dir
 
 VERSION = 1
@@ -332,14 +332,21 @@ def _unlock(d: Path) -> None:
 
 
 def _gateway(root: Path, cfg: Dict[str, Any]) -> bool:
-    return bool(narrate.claude_llm(root, cfg.get("narrate", {}).get("settings", [])) or narrate.shell_llm())
+    """An LLM to ask: Claude Code's gateway, one set in the shell, or the `claude` CLI itself (Bedrock, Vertex or a
+    subscription: whatever the person's Claude Code uses). Cheap: no LLM is asked here."""
+    return narrate.configured(root, cfg.get("narrate", {}).get("settings", []))
 
 
 # ---------------------------------------------------------------------------------------------------- the job
 
 def ensure(root: Path, bp: dict, cfg: Dict[str, Any]) -> Optional[dict]:
     """The overlay to draw with (see the top of this module); starts the background job when it is missing or stale.
-    Never waits for the LLM and never raises."""
+    Never waits for the LLM and never raises. Also reads what each part says about itself (names.learn), for the
+    names drawn without any LLM."""
+    try:
+        names.learn(Path(root), bp)
+    except Exception:  # noqa: BLE001 - only names
+        pass
     try:
         if not enabled(cfg):
             return None

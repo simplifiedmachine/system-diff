@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 419,
+   "lines": 443,
    "hub": false,
    "quiet": false
   },
@@ -17,7 +17,7 @@
    "label": "Agent activity",
    "layer": "",
    "kind": "data",
-   "order": 29,
+   "order": 31,
    "container": "",
    "declared": true,
    "files": 1,
@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 598,
+   "lines": 685,
    "hub": false,
    "quiet": false
   },
@@ -65,7 +65,7 @@
    "label": "Pane pictures",
    "layer": "",
    "kind": "logic",
-   "order": 21,
+   "order": 23,
    "container": "",
    "declared": true,
    "files": 1,
@@ -105,7 +105,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 486,
+   "lines": 496,
    "hub": false,
    "quiet": false
   },
@@ -146,7 +146,7 @@
    "quiet": false
   },
   "gitfs": {
-   "label": "Git, read directly",
+   "label": "Git reader",
    "layer": "",
    "kind": "data",
    "order": 5,
@@ -169,6 +169,18 @@
    "hub": false,
    "quiet": false
   },
+  "history": {
+   "label": "History",
+   "layer": "",
+   "kind": "logic",
+   "order": 20,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 776,
+   "hub": false,
+   "quiet": false
+  },
   "human": {
    "label": "Worth a look",
    "layer": "",
@@ -177,7 +189,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 332,
+   "lines": 338,
    "hub": false,
    "quiet": false
   },
@@ -185,7 +197,7 @@
    "label": "Lessons and topics",
    "layer": "",
    "kind": "logic",
-   "order": 25,
+   "order": 27,
    "container": "",
    "declared": true,
    "files": 3,
@@ -201,7 +213,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1311,
+   "lines": 1336,
    "hub": false,
    "quiet": false
   },
@@ -217,15 +229,27 @@
    "hub": false,
    "quiet": false
   },
+  "names": {
+   "label": "Readable names",
+   "layer": "",
+   "kind": "logic",
+   "order": 21,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 397,
+   "hub": false,
+   "quiet": false
+  },
   "narrate": {
    "label": "LLM summary",
    "layer": "",
    "kind": "logic",
-   "order": 23,
+   "order": 25,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 148,
+   "lines": 237,
    "hub": false,
    "quiet": false
   },
@@ -233,7 +257,7 @@
    "label": "Objectives",
    "layer": "",
    "kind": "logic",
-   "order": 20,
+   "order": 22,
    "container": "",
    "declared": true,
    "files": 1,
@@ -249,7 +273,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2062,
+   "lines": 2335,
    "hub": false,
    "quiet": false
   },
@@ -269,7 +293,7 @@
    "label": "PNG rendering",
    "layer": "",
    "kind": "logic",
-   "order": 27,
+   "order": 29,
    "container": "",
    "declared": true,
    "files": 1,
@@ -281,7 +305,7 @@
    "label": "src/system_diff",
    "layer": "undeclared",
    "kind": "",
-   "order": 30,
+   "order": 32,
    "container": "",
    "declared": false,
    "files": 1,
@@ -293,7 +317,7 @@
    "label": "README section",
    "layer": "",
    "kind": "logic",
-   "order": 22,
+   "order": 24,
    "container": "",
    "declared": true,
    "files": 1,
@@ -305,11 +329,11 @@
    "label": "LLM regrouping",
    "layer": "",
    "kind": "logic",
-   "order": 24,
+   "order": 26,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 440,
+   "lines": 447,
    "hub": false,
    "quiet": false
   },
@@ -317,7 +341,7 @@
    "label": "Git and folder sources",
    "layer": "",
    "kind": "data",
-   "order": 28,
+   "order": 30,
    "container": "",
    "declared": true,
    "files": 1,
@@ -341,7 +365,7 @@
    "label": "Terminal pictures",
    "layer": "",
    "kind": "logic",
-   "order": 26,
+   "order": 28,
    "container": "",
    "declared": true,
    "files": 1,
@@ -369,7 +393,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1434,
+   "lines": 1471,
    "hub": false,
    "quiet": false
   }
@@ -401,6 +425,7 @@
   "architecture>diff": 1,
   "architecture>extract": 1,
   "architecture>graph": 2,
+  "architecture>names": 1,
   "architecture>sources": 1,
   "canvas>pictures": 1,
   "cli>activity": 1,
@@ -411,6 +436,7 @@
   "cli>doctor": 1,
   "cli>extract": 2,
   "cli>graph": 2,
+  "cli>history": 1,
   "cli>learn": 2,
   "cli>mcp": 1,
   "cli>narrate": 1,
@@ -433,6 +459,7 @@
   "compare>sources": 1,
   "compare>src/system_diff": 1,
   "design>graph": 1,
+  "design>names": 1,
   "diff>extract": 1,
   "diff>sources": 2,
   "doctor>activity": 1,
@@ -450,6 +477,17 @@
   "gitfs>sources": 2,
   "graph>diff": 1,
   "graph>pictures": 1,
+  "history>activity": 3,
+  "history>canvas": 1,
+  "history>compare": 1,
+  "history>config": 1,
+  "history>design": 1,
+  "history>diff": 1,
+  "history>extract": 3,
+  "history>gitfs": 2,
+  "history>human": 1,
+  "history>objectives": 1,
+  "history>sources": 3,
   "human>activity": 1,
   "human>design": 1,
   "human>objectives": 1,
@@ -464,6 +502,7 @@
   "live>config": 1,
   "live>extract": 1,
   "live>gitfs": 7,
+  "live>history": 1,
   "live>learn": 1,
   "live>sources": 5,
   "mcp>activity": 1,
@@ -477,6 +516,8 @@
   "mcp>pictures": 1,
   "mcp>sources": 1,
   "mcp>textmap": 1,
+  "names>graph": 1,
+  "narrate>sources": 1,
   "objectives>activity": 1,
   "objectives>agents": 1,
   "objectives>compare": 1,
@@ -493,6 +534,7 @@
   "panel>extract": 4,
   "panel>gitfs": 1,
   "panel>graph": 3,
+  "panel>history": 4,
   "panel>human": 1,
   "panel>learn": 5,
   "panel>live": 3,
@@ -509,6 +551,7 @@
   "regroup>design": 1,
   "regroup>extract": 1,
   "regroup>graph": 1,
+  "regroup>names": 1,
   "regroup>narrate": 1,
   "regroup>sources": 1,
   "sources>gitfs": 3,
@@ -651,6 +694,13 @@
    "part_order",
    "PART_KINDS"
   ],
+  "architecture>names": [
+   "py",
+   "FOLD_TITLE",
+   "by_folder",
+   "folded",
+   "of"
+  ],
   "architecture>sources": [
    "GitSource"
   ],
@@ -687,6 +737,12 @@
    "diff_svg",
    "neighbourhood",
    "overview"
+  ],
+  "cli>history": [
+   "load",
+   "backfill",
+   "for_part",
+   "text"
   ],
   "cli>learn": [
    "find_part",
@@ -785,6 +841,10 @@
    "connections",
    "part_kind"
   ],
+  "design>names": [
+   "label",
+   "py"
+  ],
   "diff>extract": [
    "Code",
    "matches"
@@ -848,6 +908,48 @@
   "graph>pictures": [
    "map_svg",
    "MAP_LEGEND"
+  ],
+  "history>activity": [
+   "PROMPT",
+   "events",
+   "LOG",
+   "STOP",
+   "is_system"
+  ],
+  "history>canvas": [
+   "cut"
+  ],
+  "history>compare": [
+   "Comparison"
+  ],
+  "history>config": [
+   "lenient"
+  ],
+  "history>design": [
+   "and_list"
+  ],
+  "history>diff": [
+   "diff"
+  ],
+  "history>extract": [
+   "extract",
+   "Code",
+   "EXTRACT_VERSION"
+  ],
+  "history>gitfs": [
+   "commit",
+   "Fallback",
+   "head"
+  ],
+  "history>human": [
+   "decisions"
+  ],
+  "history>objectives": [
+   "requests"
+  ],
+  "history>sources": [
+   "GitSource",
+   "git_dir"
   ],
   "human>activity": [
    "PROMPT",
@@ -915,6 +1017,12 @@
    "has_loose",
    "read_index",
    "read_object"
+  ],
+  "live>history": [
+   "Recorder",
+   "py",
+   "enabled",
+   "jsonl"
   ],
   "live>learn": [
    "path"
@@ -985,6 +1093,12 @@
    "render_map",
    "render_zoom"
   ],
+  "names>graph": [
+   "connections"
+  ],
+  "narrate>sources": [
+   "run_hidden"
+  ],
   "objectives>activity": [
    "PROMPT",
    "events",
@@ -1000,10 +1114,9 @@
    "load"
   ],
   "objectives>narrate": [
-   "claude_llm",
    "complete",
-   "py",
-   "shell_llm"
+   "configured",
+   "py"
   ],
   "objectives>sources": [
    "git_dir"
@@ -1071,6 +1184,14 @@
    "overview",
    "connections",
    "files_word"
+  ],
+  "panel>history": [
+   "asked_line",
+   "when",
+   "for_part",
+   "members",
+   "entry_comparison",
+   "find"
   ],
   "panel>human": [
    "decisions",
@@ -1143,11 +1264,13 @@
    "PART_KINDS",
    "connections"
   ],
+  "regroup>names": [
+   "learn"
+  ],
   "regroup>narrate": [
-   "claude_llm",
    "complete",
-   "py",
-   "shell_llm"
+   "configured",
+   "py"
   ],
   "regroup>sources": [
    "git",
@@ -1291,11 +1414,19 @@
   "cli": [
    "NO_COLOR"
   ],
+  "history": [
+   "SYSTEM_DIFF_HISTORY"
+  ],
   "learn": [
    "XDG_CONFIG_HOME"
   ],
   "live": [
    "XDG_CONFIG_HOME"
+  ],
+  "narrate": [
+   "PYTEST_CURRENT_TEST",
+   "SYSTEM_DIFF_CLAUDE_MODEL",
+   "SYSTEM_DIFF_LLM"
   ],
   "objectives": [
    "CLAUDE_CONFIG_DIR",
@@ -1439,6 +1570,17 @@
    "collections": 1,
    "typing": 1
   },
+  "history": {
+   "collections": 1,
+   "hashlib": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1
+  },
   "human": {
    "hashlib": 1,
    "re": 1,
@@ -1474,14 +1616,26 @@
    "pydantic": 1,
    "typing": 1
   },
+  "names": {
+   "hashlib": 1,
+   "json": 1,
+   "pathlib": 1,
+   "re": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1
+  },
   "narrate": {
    "json": 1,
    "os": 1,
    "pathlib": 1,
    "re": 1,
+   "shutil": 1,
    "socket": 1,
    "ssl": 1,
+   "subprocess": 1,
    "sys": 1,
+   "tempfile": 1,
    "typing": 1,
    "urllib": 1
   },
@@ -1730,6 +1884,17 @@
    "collections": 1,
    "typing": 1
   },
+  "history": {
+   "collections": 1,
+   "hashlib": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1
+  },
   "human": {
    "hashlib": 1,
    "re": 1,
@@ -1766,14 +1931,26 @@
    "pydantic": 1,
    "typing": 1
   },
+  "names": {
+   "hashlib": 1,
+   "json": 1,
+   "pathlib": 1,
+   "re": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1
+  },
   "narrate": {
    "json": 1,
    "os": 1,
    "pathlib": 1,
    "re": 1,
+   "shutil": 1,
    "socket": 1,
    "ssl": 1,
+   "subprocess": 1,
    "sys": 1,
+   "tempfile": 1,
    "typing": 1,
    "urllib.error": 1,
    "urllib.parse": 1,
@@ -1913,9 +2090,11 @@
   "tests/test_design_and_pane.py": 1,
   "tests/test_doctor.py": 1,
   "tests/test_git_calls.py": 1,
+  "tests/test_history.py": 1,
   "tests/test_human.py": 1,
   "tests/test_incremental.py": 1,
   "tests/test_live.py": 1,
+  "tests/test_names.py": 1,
   "tests/test_objectives.py": 1,
   "tests/test_objectives_ui.py": 1,
   "tests/test_regroup.py": 1,

@@ -86,6 +86,8 @@ def _explain(c, model: Dict[str, Any]) -> Tuple[Dict[str, dict], Dict[str, Tuple
                 words.append("uses " + design.and_list(outs, 4))
             if ins:
                 words.append("used by " + design.and_list(ins, 4))
+            if nid in c.after["components"] and nid != title and not c.after["components"][nid].get("declared"):
+                words.insert(0, nid)        # a part named for what it is: its folder in the detail
             said[bid] = (f"{title}  ", " · ".join(words) or "connects to nothing in the system")
     return on, said
 
@@ -250,11 +252,16 @@ def _steps(page: canvas.Page, events: List[dict], code: Code, cfg: Dict[str, Any
 
 
 def _now_model(c, root: Path, part: str, now: Dict[str, Any], marks) -> Tuple[Dict[str, Any], str, str]:
-    """The diagram Now draws: the part zoomed in on (a component's modules, a container's components), else the
-    system; with its heading and aside."""
+    """The diagram Now draws: the part zoomed in on (a component's modules; a container's components; an actor's or
+    an outside system's connections), else the system; with its heading and aside. A zoom that cannot be drawn (its
+    code no longer held, say) falls back a level, never to an error: an error here left the pane on the last page
+    it had, which read as Enter doing nothing."""
     agent = now["part"]
     if part and part in c.after["components"]:          # a component: its modules, and what is around them
-        model = inside.internals(c, root, part, now.get("path", "") if agent == part else "", marks)
+        try:
+            model = inside.internals(c, root, part, now.get("path", "") if agent == part else "", marks)
+        except Exception:  # noqa: BLE001 - its parts and flows instead (below)
+            model = None
         if model:
             ov = getattr(c, "regroup", None)
             holder = architecture.groups_of(c.after, c.cfg, architecture.kinds_with(c.after, c.cfg, ov),
@@ -262,14 +269,27 @@ def _now_model(c, root: Path, part: str, now: Dict[str, Any], marks) -> Tuple[Di
             where = (f" · in {holder[2:]}" + (" (a grouping an LLM proposed)" if holder in _llm_groups(c) else "")
                      if holder else "")
             more = f", {model['more']} more not drawn" if model["more"] else ""
-            return model, f"Inside {model['title']}", (f"{model['files']} modules{more}{where} · b back · f follow "
-                                                        "Claude · ↵ zoom in")
+            path = "" if c.after["components"][part].get("declared") or model["title"] == part else f"{part} · "
+            return model, f"Inside {model['title']}", (f"{path}{model['files']} modules{more}{where} · b back · "
+                                                        "f follow Claude · ↵ zoom in")
     if part:
-        model = architecture.container(c, part, marks, agent)
+        try:
+            model = architecture.container(c, part, marks, agent, getattr(c, "stack", None))
+        except Exception:  # noqa: BLE001 - the system instead, said so below
+            model = None
         if model:
-            llm = "a grouping an LLM proposed · " if part in _llm_groups(c) else ""
-            return model, f"Zoomed in on {model['title']}", (f"{llm}its components · b back · f follow Claude · ↵ "
-                                                             "a component's insides")
+            box = model.get("box", part)
+            llm = "a grouping an LLM proposed · " if box in _llm_groups(c) else ""
+            if box.startswith("g:"):
+                n = sum(1 for x in model["nodes"] if str(x.get("col", "")).startswith("in"))
+                what = f"its {n} components and their flows in and out · ↵ a component's insides"
+            elif box.startswith(("a:", "x:")):
+                what = "what it connects to · ↵ zoom in"
+            else:
+                what = f"{box} · its flows in and out · ↵ zoom in"
+            return model, f"Zoomed in on {model['title']}", f"{llm}{what} · b back · f follow Claude"
+        return (architecture.system(c, marks, agent), "System",
+                f"{part} is not in the system now · b back · f follow Claude")
     return (architecture.system(c, marks, agent), "System",
             "● Claude · + new · ~ changed · − gone · click, then ← ↑ ↓ → and ↵" + _llm_aside(c))
 
@@ -1109,6 +1129,8 @@ def _show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = 
         return view_review(root, width)
     if view == "topics":
         return view_topics(root, width)
+    if view == "history":
+        return view_history(root, width, part or "")
     return view_now(root, width, part or "")
 
 
@@ -1579,6 +1601,8 @@ def web_view(root: Path, view: str = "now", part: str = "", zoom: int = 0) -> Di
         out = _web_review(root, zoom)
     elif view == "topics":
         out = _web_topics(root, zoom)
+    elif view == "history":
+        out = _web_history(root, part or "", zoom)
     else:
         out = _web_now(root, part or "", zoom)
     out["hover"] = _rendered(out)
@@ -1607,3 +1631,252 @@ def _rendered(out: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         elif k in shown:
             keep[k] = v
     return keep
+
+
+# ── history: how the system evolved, as what was asked and what the system got (history.py) ──
+
+HISTORY_MOST = 20   # entries the pane lists; the web page and `system-diff history` have them all
+
+
+def _history_now(root: Path):
+    """The system as it is (since the checkpoint), and its diagram's model: what a block stands for."""
+    c = compare(root, "checkpoint", ".")
+    return c, architecture.system(c, None, None)
+
+
+def _block_name(block: str, c, model: Dict[str, Any]) -> str:
+    for n in model["nodes"]:
+        for box in [n] + list(n.get("items") or []):
+            if box["id"] == block:
+                return str(box.get("title", block)).split("  @")[0]
+    return _name(block, c.after, c.before)
+
+
+def _history_decs(changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """An entry's changes as decisions the Review machinery draws (no request or edit time of their own)."""
+    return [{"more": "", "request": "", "at": 0, "when": "", "touches": [], "objectives": [], "look": True, **d}
+            for d in changes]
+
+
+def _history_entry_grid(e: Dict[str, Any], width: int) -> List[list]:
+    """A picked entry's detail: its changes with why each matters, then where it is from."""
+    rows: List[list] = []
+    for d in e["changes"][:2]:
+        rows.append([[f" {d['sign']} ", NOTE_STYLE.get(d["status"], "")], [canvas.cut(d["title"], width - 4), ""]])
+        rows.append([[canvas.cut("   " + d["why"], width), "muted"]])
+    tail = []
+    if len(e["changes"]) > 2:
+        tail.append(f"and {len(e['changes']) - 2} more")
+    if e.get("commit"):
+        tail.append(f"commit {e['commit'][:7]}")
+    if e.get("files") is not None:
+        tail.append(f"{e['files']} file{'' if e['files'] == 1 else 's'}")
+    tail.append("↵ shows it on the diagram")
+    rows.append([[canvas.cut("   " + " · ".join(tail), width), "muted"]])
+    return rows
+
+
+def view_history(root: Path, width: int, part: str = "") -> Dict[str, Any]:
+    """How the system evolved, newest first: each entry what was asked (or the commit) and what the system got, a
+    block to pick (its changes, with why each matters) and to open (↵: that change on the diagram). With a block
+    (`part`), only the entries that changed it, and only their changes to it; "<block>#<entry>" opens one."""
+    from . import history
+    block, eid = history.split_part(part)
+    if eid:
+        return _history_entry_page(root, width, block, eid, part)
+    entries = history.load(root)
+    page = canvas.Page(width)
+    narrow = width < 70
+    if block:
+        c, model = _history_now(root)
+        entries = history.for_part(entries, history.members(block, model))
+        name = _block_name(block, c, model)
+        page.heading(f"History of {name}", canvas.cut("only what changed it, newest first · ↵ one · b back"
+                                                      if narrow else "only what changed it, newest first · "
+                                                      "↵ shows one on the diagram · b back", max(8, width - 14 - len(name))))
+    else:
+        page.heading("History", canvas.cut("newest first · ↵ shows one" if narrow else
+                                           "how the system changed, newest first · ↵ shows one on the diagram · "
+                                           "h on a box: its own history", max(8, width - 10)))
+    if not entries:
+        page.add(["   nothing recorded yet" + (" for this block" if block else "") + ": each change to the "
+                  "structure is kept as it happens, and the commits are read in the background", "muted"])
+        return page.json(view="history", part=part)
+    g = canvas.Grid()
+    shown = entries[:HISTORY_MOST]
+    for i, e in enumerate(shown):
+        y, bid = 2 * i, "hy:" + e["id"]
+        lead = f" {history.when(e['at'])} · "
+        g.put(0, y, lead, "muted", [bid])
+        asked = history.asked_line(e)
+        style = "bold" if e.get("request") else ""
+        if asked.startswith("You asked: "):
+            g.put(len(lead), y, "You asked: ", "muted", [bid])
+            g.put(len(lead) + 11, y, canvas.cut(asked[11:], max(8, width - len(lead) - 12)), style, [bid])
+        else:
+            g.put(len(lead), y, canvas.cut(asked, max(8, width - len(lead) - 1)), "muted" if not e.get("commit")
+                  else "", [bid])
+        arrow = "   → " if narrow else "   → it got: "
+        g.put(0, y + 1, arrow, "muted", [bid])
+        g.put(len(arrow), y + 1, canvas.cut(e["got"], max(8, width - len(arrow) - 1)),
+              "attention" if any(d["status"] == "warn" for d in e["changes"]) else "changed", [bid])
+        g.blocks.append({"id": bid, "x": 0, "y": y, "w": width - 1, "h": 2})
+        g.details[bid] = _history_entry_grid(e, width)
+    page.grid(g, slot=5, on={"hy:" + e["id"]: {"enter": {"entry": e["id"]}} for e in shown})
+    if len(entries) > len(shown):
+        page.rows.insert(len(page.rows) - 5, [[f"   and {len(entries) - len(shown)} older: on the web page, or "
+                                               "`system-diff history`", "muted"]])
+        for b in page.blocks:
+            b["slot"] = [b["slot"][0] + 1, b["slot"][1]]
+    page.pick = "hy:" + shown[0]["id"]
+    return page.json(view="history", part=part)
+
+
+def _history_entry_page(root: Path, width: int, block: str, eid: str, part: str) -> Dict[str, Any]:
+    """One entry: what was asked and what the system got, the system diagram after it with what it changed
+    coloured (its base state against its head state, drawn as Review draws), and each change with why it matters."""
+    from . import history
+    page = canvas.Page(width)
+    e = history.find(root, eid)
+    if e is None:
+        page.add(["This change is no longer in the history. b goes back.", "muted"])
+        return page.json(view="history", part=part)
+    cfg = config.lenient(root)
+    c = history.entry_comparison(root, e, cfg)
+    model = architecture.system(c, None, None) if c is not None else None
+    name = ""
+    if block:
+        mine = history.members(block, model) | ({block} if model is None else set())
+        e = next(iter(history.for_part([e], mine)), {**e, "changes": []})
+        name = _block_name(block, c, model) if c is not None and model is not None else block
+    page.heading("Change" + (f" to {name}" if name else ""), canvas.cut(
+        history.when(e["at"]) + " · b back", max(8, width - 12 - len(name))))
+    page.para(history.asked_line(e), "bold")
+    page.para("→ it got: " + (e.get("got") or history.got_line(e["changes"])), "changed", indent=0)
+    tail = []
+    if e.get("commit"):
+        tail.append(f"commit {e['commit'][:7]}" + (f": {e['message']}" if e.get("message") and e.get("request")
+                                                    else ""))
+    if e.get("files") is not None:
+        tail.append(f"{e['files']} file{'' if e['files'] == 1 else 's'} changed")
+    if tail:
+        page.add([canvas.cut(" · ".join(tail), width), "muted"])
+    decs = _history_decs(e["changes"])
+    if c is not None and model is not None:
+        page.heading("The system after it", canvas.cut("what it changed is coloured · ↵ on a box: its history",
+                                                       max(8, width - 22)))
+        g = _diagram(page, c, model, width)
+        ids = {b["id"] for b in g.blocks}
+        for b in page.blocks:
+            if b["id"] in ids and (b.get("enter") or {}).get("zoom"):
+                b["enter"] = {"history": b["enter"]["zoom"]}
+    else:
+        page.add(["   the diagram at that point is no longer kept: what it changed is below", "muted"])
+    if decs:
+        page.heading("What it changed", canvas.cut(f"{len(decs)}, the most consequential first · pick one",
+                                                   max(8, width - 18)))
+        g = canvas.Grid()
+        for y, d in enumerate(decs):
+            bid = "w:" + d["id"]
+            g.put(0, y, f" {d['sign']} ", NOTE_STYLE.get(d["status"], ""), [bid])
+            title = canvas.cut(d["title"], max(8, width - 4))
+            g.put(3, y, title, "", [bid])
+            g.blocks.append({"id": bid, "x": 0, "y": y, "w": 3 + len(title), "h": 1})
+            g.details[bid] = _decision_detail(d, width)
+        page.grid(g, slot=2)
+        if model is not None:
+            for bid, lit in _decision_lights(decs, model, page.lights).items():
+                page.lights[bid] = lit
+        page.pick = "w:" + decs[0]["id"]
+    return page.json(view="history", part=part)
+
+
+def _history_lights(changes: List[Dict[str, Any]], model: Dict[str, Any], lights: Dict[str, List[str]]
+                    ) -> List[str]:
+    lit: set = set()
+    for v in _decision_lights(_history_decs(changes), model, lights).values():
+        lit |= set(v)
+    return sorted(lit)
+
+
+def _history_hover(e: Dict[str, Any]) -> Dict[str, Any]:
+    """An entry's hover card: the whole request, every change with why it matters, the commit, the files."""
+    from . import history
+    title = (f"You asked: “{e['request_full']}”" if e.get("request_full") else history.asked_line(e))
+    lines = ["It got: " + (e.get("got") or history.got_line(e["changes"]))]
+    lines += [f"{d['sign']} {d['title']}: {d['why']}" for d in e["changes"]]
+    if e.get("commit"):
+        lines.append(f"Commit {e['commit'][:7]}" + (f": {e['message']}" if e.get("message") else ""))
+    if e.get("files") is not None:
+        lines.append(f"{e['files']} file{'' if e['files'] == 1 else 's'} changed")
+    span = time.strftime("%d %b %Y %H:%M", time.localtime(e["at"]))
+    lines.append(f"{span} ({history.when(e['at'])})")
+    return {"title": title, "lines": lines}
+
+
+def _web_history(root: Path, part: str, zoom: int) -> Dict[str, Any]:
+    """The History view for the web page: the timeline (section kind "history": {id, when, at, asked, request, got,
+    source, commit, files, changes [{sign, status, text, why}], parts}) over the system diagram as it is now (an
+    entry lights the boxes it changed; a click on a box shows that box's history); with "<block>#<entry>", that
+    entry: the system after it, what it changed coloured, and each change."""
+    from . import history
+    block, eid = history.split_part(part)
+    if eid:
+        e = history.find(root, eid)
+        if e is None:
+            return {"view": "history", "part": part, "title": "History",
+                    "headline": "This change is no longer in the history", "diagram": {}, "sections": [], "hover": {}}
+        cfg = config.lenient(root)
+        c = history.entry_comparison(root, e, cfg)
+        model = architecture.system(c, None, None) if c is not None else None
+        if block:
+            e = next(iter(history.for_part([e], history.members(block, model) | {block})), {**e, "changes": []})
+        decs = _history_decs(e["changes"])
+        diagram: Dict[str, Any] = {}
+        hover: Dict[str, Any] = {}
+        if c is not None and model is not None:
+            diagram = _web_diagram(c, model, "The system after it", "what it changed is coloured · click a box: "
+                                   "its history", zoom, [])
+            diagram["lights"].update(_decision_lights(decs, model, diagram["lights"]))
+            hover = _box_hover(c, model, decs, {}, "in this change")
+        hover.update({"w:" + d["id"]: _decision_hover(d) for d in decs})
+        about = [{"text": history.asked_line({**e, "request": e.get("request_full") or e.get("request")}),
+                  "style": ""}, {"text": "→ it got: " + e["got"], "style": "changed"}]
+        if e.get("commit"):
+            about.append({"text": f"commit {e['commit'][:7]}" + (f": {e['message']}" if e.get("message") else ""),
+                          "style": "muted"})
+        if e.get("files") is not None:
+            about.append({"text": f"{e['files']} file{'' if e['files'] == 1 else 's'} changed", "style": "muted"})
+        sections = [_web_section("This change", "lines", about, history.when(e["at"])),
+                    _web_section("What it changed", "notes", [_web_decision(d) for d in decs],
+                                 f"{len(decs)}, the most consequential first")]
+        return {"view": "history", "part": part, "title": "History", "headline": history.plain(e),
+                "diagram": diagram, "sections": sections, "hover": hover}
+    c, model = _history_now(root)
+    entries = history.load(root)
+    name = ""
+    if block:
+        entries = history.for_part(entries, history.members(block, model))
+        name = _block_name(block, c, model)
+    diagram = _web_diagram(c, model, "The system now", "hover an entry to light what it changed · click a box: "
+                           "its history", zoom, ["b:" + block] if block else [])
+    items, hover = [], {}
+    for e in entries:
+        hid = "hy:" + e["id"]
+        lit = _history_lights(e["changes"], model, diagram["lights"])
+        diagram["lights"][hid] = lit
+        items.append({"id": hid, "when": history.when(e["at"]), "at": e["at"], "asked": history.asked_line(e),
+                      "request": e.get("request") or "", "got": e["got"], "source": e.get("source", ""),
+                      "commit": (e.get("commit") or "")[:7], "files": e.get("files"), "parts": lit,
+                      "changes": [{"sign": d["sign"], "status": d["status"], "text": d["title"], "why": d["why"]}
+                                  for d in e["changes"]]})
+        hover[hid] = _history_hover(e)
+    decs = [d for e in entries for d in _history_decs(e["changes"])]
+    hover.update(_box_hover(c, model, decs, {}, "in its history"))
+    title = f"History of {name}" if name else "History"
+    aside = (f"{len(entries)} change{'' if len(entries) == 1 else 's'}, newest first · click one to see it on the "
+             "diagram" if entries else "nothing recorded yet: each change is kept as it happens, and the commits "
+             "are read in the background")
+    return {"view": "history", "part": part, "title": "History",
+            "headline": (f"How {name} evolved" if name else "How the system evolved"),
+            "diagram": diagram, "sections": [_web_section(title, "history", items, aside)], "hover": hover}

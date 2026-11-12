@@ -175,6 +175,16 @@ pre.lines .s-attention { color:var(--attn); font-weight:600; } pre.lines .s-acce
 #chipinfo { margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--bg); font-size:13.5px; display:grid; gap:4px; }
 #chipinfo:empty { display:none; }
 .empty-note { color:var(--muted); font-size:13px; }
+.hist { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+.hist li { display:grid; gap:2px; padding:9px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card);
+           cursor:pointer; }
+.hist li:hover, .hist li:focus-visible { border-color:var(--work); }
+.hist .when { color:var(--muted); font-size:12.5px; }
+.hist .asked { color:var(--ink); font-weight:600; overflow-wrap:anywhere; }
+.hist .asked.plain { font-weight:400; color:var(--ink2); }
+.hist .got { color:var(--warn); overflow-wrap:anywhere; }
+.hist .got b { color:var(--muted); font-weight:400; }
+.hist .chg { color:var(--muted); font-size:12.5px; }
 form.send { position:sticky; bottom:0; z-index:5; display:flex; gap:10px; align-items:flex-end; padding:10px 20px;
             background:var(--card); border-top:1px solid var(--line); }
 form.send label { font-weight:600; font-size:13px; align-self:center; white-space:nowrap; }
@@ -197,6 +207,7 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
     <button role="tab" data-view="review">Review<kbd>r</kbd></button>
     <button role="tab" data-view="agents">Agents<kbd>a</kbd></button>
     <button role="tab" data-view="topics">Topics<kbd>t</kbd></button>
+    <button role="tab" data-view="history">History<kbd>h</kbd></button>
   </div>
   <button id="follow" type="button" title="Go to what Claude is working on (f)">Follow Claude</button>
   <button id="back" type="button" title="Back (b)">Back</button>
@@ -214,14 +225,14 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
     <div class="diawrap" id="diawrap"><div id="dia" role="img"></div><div id="detail" aria-live="polite"></div></div></section>
   <div id="after" style="display:grid;gap:16px"></div>
 </main>
-<div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> views · <kbd>f</kbd> follow Claude · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
+<div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · <kbd>f</kbd> follow Claude · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
 <form class="send" id="send"><label for="say">Send to Claude</label>
   <textarea id="say" placeholder="Ask or tell Claude something about this change (Ctrl+Enter sends)"></textarea>
   <span id="sendnote" aria-live="polite"></span><button id="sendbtn" class="primary" type="submit">Send</button></form>
 <script>
 const TOKEN = "__TOKEN__";
 const $ = id => document.getElementById(id);
-const VIEWS = ["now", "review", "agents", "topics"];
+const VIEWS = ["now", "review", "agents", "topics", "history"];
 const ui = { view:"now", part:"", zoom:-1, history:[], data:null, last:{}, pick:"", mine:false, hover:null, seq:0 };
 (function fromHash() {
   const h = new URLSearchParams(location.hash.slice(1));
@@ -363,7 +374,32 @@ function lines(s) {
   c.append(pre);
   return c;
 }
-const RENDER = { notes, steps, lanes, chips, lines };
+// The History view: each entry what was asked (or the commit) and what the system got; hovering one lights the boxes
+// it changed, a click shows that change on the diagram.
+function historyList(s) {
+  const c = card(s.title, s.aside), ul = el("ul", null, "hist"), block = (ui.part || "").split("#")[0];
+  for (const h of s.items || []) {
+    const li = el("li"), head = el("div");
+    li.dataset.hid = h.id; li.tabIndex = 0;
+    head.append(el("span", h.when + " · ", "when"));
+    li.append(head, el("div", h.asked, "asked" + (h.request ? "" : " plain")));
+    const got = el("div", null, "got"); got.append(el("b", "→ it got: "), h.got); li.append(got);
+    const first = (h.changes || [])[0];
+    if (first) li.append(el("div", first.sign + " " + first.text + ((h.changes || []).length > 1 ? " · and " +
+                                (h.changes.length - 1) + " more" : ""), "chg"));
+    const on = () => { ui.hover = { ids:lightsOf(h.id, h.parts), from:li }; applyPick(); };
+    const off = () => { ui.hover = null; applyPick(); };
+    li.addEventListener("mouseenter", on); li.addEventListener("focus", on);
+    li.addEventListener("mouseleave", off); li.addEventListener("blur", off);
+    const open = () => go("history", block + "#" + h.id.slice(3));
+    li.addEventListener("click", open);
+    li.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); open(); } });
+    ul.append(li);
+  }
+  if (!(s.items || []).length) c.append(el("div", "Nothing recorded yet.", "empty-note")); else c.append(ul);
+  return c;
+}
+const RENDER = { notes, steps, lanes, chips, lines, history:historyList };
 
 // ---- hover cards: the whole story of a box, an item or an agent (the view's "hover", by the id the page shows) ----
 function hoverOf(id) {
@@ -405,7 +441,7 @@ document.addEventListener("focusin", e => { const n = tipTarget(e.target); if (n
 document.addEventListener("focusout", () => hideTip());
 addEventListener("scroll", () => hideTip(), { passive:true });
 function section(s) { return (RENDER[s.kind] || notes)(s); }
-function goesBefore(s) { return s.kind === "lanes" || s.kind === "chips" || isAttention(s); }
+function goesBefore(s) { return s.kind === "lanes" || s.kind === "chips" || s.kind === "history" || isAttention(s); }
 
 // ---- the diagram: hover picks, lights and dims; a click zooms in ----
 function lightsOf(pid, own) {
@@ -474,7 +510,7 @@ $("dia").addEventListener("focusin", e => {
 $("dia").addEventListener("focusout", () => { ui.over = false; applyPick(); });
 $("dia").addEventListener("click", e => {
   const d = pickAt(e.target), g = (ui.data && ui.data.diagram) || {}, t = d && keyed(g.enter, d);
-  if (t) go("now", t);
+  if (t) go(ui.view === "history" ? "history" : "now", t);
 });
 function drawDiagram(g) {
   const box = $("dia");
@@ -637,6 +673,7 @@ document.addEventListener("keydown", e => {
   if (t && (t.isContentEditable || /^(TEXTAREA|INPUT|SELECT)$/.test(t.tagName))) return;   // typing, not a shortcut
   const tab = { n:"now", r:"review", a:"agents", t:"topics" }[e.key];
   if (tab) go(tab, "");
+  else if (e.key === "h") go("history", ui.mine && ui.pick && ui.pick.startsWith("b:") ? rawId(ui.pick) : "");
   else if (e.key === "b" || e.key === "Backspace") back();
   else if (e.key === "f") go("now", "");
   else if (e.key === "-") zoomBy(1);
@@ -1064,7 +1101,7 @@ def handler(w: Watcher):
     return Handler
 
 
-VIEWS = ("now", "review", "agents", "topics")
+VIEWS = ("now", "review", "agents", "topics", "history")
 PANE_LOCK = threading.Lock()
 
 
