@@ -210,6 +210,7 @@ start are labelled [`good first issue`](https://github.com/simplifiedmachine/sys
 - [ ] [Java/Kotlin (Spring) support](https://github.com/simplifiedmachine/system-diff/issues/3) (#3)
 - [ ] [Add your language: a guide and a plug-in point for new languages](https://github.com/simplifiedmachine/system-diff/issues/4) (#4)
 - [ ] [Better diagrams for large systems](https://github.com/simplifiedmachine/system-diff/issues/5) (#5)
+- [ ] [Record how each connection was found, with a confidence](https://github.com/simplifiedmachine/system-diff/issues/26) (#26)
 
 **Next: run well everywhere**
 - [ ] [Hooks on Windows without sh](https://github.com/simplifiedmachine/system-diff/issues/6) (#6)
@@ -226,6 +227,7 @@ start are labelled [`good first issue`](https://github.com/simplifiedmachine/sys
 - [ ] [One background-job runner](https://github.com/simplifiedmachine/system-diff/issues/15) (#15)
 - [ ] [One state store for .git/system-diff/](https://github.com/simplifiedmachine/system-diff/issues/16) (#16)
 - [ ] [One schema for the page format](https://github.com/simplifiedmachine/system-diff/issues/17) (#17)
+- [ ] [Graph tools for agents over MCP: find, neighbours, path, impact](https://github.com/simplifiedmachine/system-diff/issues/27) (#27)
 
 **Then**
 - [ ] [Other coding agents: Cursor, Codex CLI, Gemini CLI, Aider](https://github.com/simplifiedmachine/system-diff/issues/18) (#18)
