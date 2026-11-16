@@ -7,15 +7,15 @@ import type { Act, Page, Row } from '../types'
 // its containers and their components, its data and the systems outside it, joined by named flows) with Claude's
 // component lit and this turn's changes coloured; what needs your attention; what the turn did to the design; how
 // the part is designed; what just happened. Tabs: Now, Review, Agents, Topics, History (how the system evolved: what
-// you asked and what it got; h on a picked box shows that box's own). The page (page.tsx) takes the keys once
-// clicked: ← ↑ ↓ → pick a block and light its flows, Enter zooms in, b back, f follows Claude. Content: `system-diff
-// panel --protocol 2`, laid out for the pane's own width.
+// you asked and what it got; h on a picked box shows that box's own; c on two changes compares them). The page
+// (page.tsx) takes the keys once clicked: ← ↑ ↓ → pick a block and light its flows, Enter zooms in, b back, f follows
+// Claude. Content: `system-diff panel --protocol 2`, laid out for the pane's own width.
 //
 // One meaning per colour: blue is where Claude is and what you picked, yellow what changed and what needs you,
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.9.0.dev1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.9.0.dev2' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't'],
@@ -373,14 +373,40 @@ async function choose($: EngineInterface, next: string): Promise<void> {
   await refresh($)
 }
 
+// The block a History part is about: "<block>", "<block>#<entry>", "[<block>#]compare:<A>[..<B>]" ('' the whole system).
+function blockOf(p: string): string {
+  const hash = p.indexOf('#')
+  return hash >= 0 ? p.slice(0, hash) : p.startsWith('compare:') ? '' : p
+}
+
 // The History view of a block (a part or container; '' the whole system), or one entry of the History shown (on the
 // diagram), remembering where the person was so b goes back there: a back step is "<view>\t<part>".
 async function history($: EngineInterface, block: string, entry?: string): Promise<void> {
   const fromView = await read($, view)
   const fromPart = await read($, part)
-  const next = entry === undefined ? block : `${fromView === 'history' ? fromPart.split('#')[0] : ''}#${entry}`
+  const next = entry === undefined ? block : `${fromView === 'history' ? blockOf(fromPart) : ''}#${entry}`
   if (fromView === 'history' && fromPart === next) return
   await update($, back, list => [...list, `${fromView}\t${fromPart}`].slice(-20))
+  await update($, part, () => next)
+  await update($, view, () => 'history')
+  await refresh($)
+}
+
+// c on an entry of the History: the first marks it as where to compare from (the list shows "◆ from"), c on another
+// (or on "now") shows the two compared (b goes back to the list), c on the marked one unmarks it.
+async function compare($: EngineInterface, id: string): Promise<void> {
+  if (!/^[A-Za-z0-9]+$/.test(id)) return
+  const fromView = await read($, view)
+  const fromPart = fromView === 'history' ? await read($, part) : ''
+  const block = blockOf(fromPart)
+  const pre = block ? `${block}#` : ''
+  const marked = /^compare:([A-Za-z0-9]+)$/.exec(fromPart.slice(pre.length))?.[1]
+  let next: string
+  if (marked === id) next = block // c again on the marked one: unmarked
+  else if (marked) next = `${pre}compare:${marked}..${id}`
+  else if (id === 'now') return // nothing marked yet: now alone compares with nothing
+  else next = `${pre}compare:${id}`
+  if (marked && marked !== id) await update($, back, list => [...list, `${fromView}\t${fromPart}`].slice(-20))
   await update($, part, () => next)
   await update($, view, () => 'history')
   await refresh($)
@@ -607,6 +633,7 @@ export const register: Register = (on, options) => {
     else if (typeof data.clear_objective === 'string') await clearObjective($, data.clear_objective)
     else if (typeof data.history === 'string') await history($, data.history)
     else if (typeof data.entry === 'string') await history($, '', data.entry)
+    else if (typeof data.compare === 'string') await compare($, data.compare)
     else if (data.back) await goBack($)
     else if (data.follow) await follow($)
     else if (typeof data.zoomBy === 'number') await zoomBy($, data.zoomBy)

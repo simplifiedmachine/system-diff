@@ -391,6 +391,33 @@ test('the History tab shows how the system evolved; Enter on an entry shows it, 
   await ui.unmount()
 })
 
+test('c on two changes in the History compares them; b goes back; c again unmarks', async ($, on) => {
+  const asked: string[][] = []
+  const t1 = { id: 'hy:t1', x: 0, y: 6, w: 60, h: 2, enter: { entry: 't1' }, on: { c: { compare: 't1' } }, slot: [9, 5] }
+  const t2 = { id: 'hy:t2', x: 0, y: 8, w: 60, h: 2, enter: { entry: 't2' }, on: { c: { compare: 't2' } }, slot: [9, 5] }
+  answer(on, asked, 0, '', [], { blocks: [...page('', 110).blocks, t1, t2], pick: 'hy:t1' })
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const last = () => (asked[asked.length - 1] ?? []).join(' ')
+  await ui.press({ key: 'view-history' })
+  expect(await ui.find({ type: 'Text', text: /c compare/, in: 'page' })).toBeDefined()   // the picked entry's own key
+  await ui.key({ key: 'c', in: 'page' })                          // c on an entry: where to compare from
+  expect(last()).toContain('--view history --part compare:t1')
+  expect(last()).not.toContain('..')
+  await ui.post({ compare: 't2' }, { in: 'page' })               // c on another: the two compared
+  expect(last()).toContain('--view history --part compare:t1..t2')
+  await ui.key({ key: 'b', in: 'page' })                          // back to the list, the first still marked
+  expect(last()).toMatch(/--part compare:t1( |$)/)
+  await ui.post({ compare: 'now' }, { in: 'page' })              // c on "now": compared with the system as it is
+  expect(last()).toContain('--part compare:t1..now')
+  await ui.key({ key: 'b', in: 'page' })
+  await ui.key({ key: 'c', in: 'page' })                          // c again on the marked one: unmarked
+  expect(last().endsWith('--view history --part ')).toBe(true)
+  await ui.post({ entry: 't2' }, { in: 'page' })                 // ↵ on an entry still opens it
+  expect(last()).toContain('--view history --part #t2')
+  await ui.unmount()
+})
+
 test('h on a picked box opens that box\'s own history; b goes back to where it was', async ($, on) => {
   const asked: string[][] = []
   answer(on, asked)

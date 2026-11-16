@@ -674,3 +674,224 @@ def block_details(c, model: Dict[str, Any], decs: Optional[List[Dict[str, Any]]]
 def cfg_about(cfg: Dict[str, Any], cid: str) -> str:
     """What the config says a part does (`about`), if it says."""
     return next((c.get("about", "") for c in cfg.get("components", []) if c.get("id") == cid), "")
+
+
+# ── a change in one sentence: what the system gained or lost, by part, as capabilities (history.py) ──────────────
+# "Control now sends email through Mail server and keeps data in SQLite and Redis; 6 smaller changes". Built only from
+# the ranked changes (their entity, op, names and labels); never from code.
+
+OUTSIDE_KINDS = (   # what an outside system is for, by the words in its id or name (before its shape: S3 is a "db")
+    ("storage", ("s3", "minio", "gcs", "blob", "storage", "bucket")),
+    ("search", ("elasticsearch", "opensearch", "algolia", "meilisearch", "typesense", "solr", "search")),
+    ("mail", ("mail", "smtp", "sendgrid", "resend", "postmark", "ses", "mailgun", "email")),
+    ("queue", ("rabbitmq", "kafka", "nats", "sqs", "sns", "pubsub", "kinesis", "eventbridge", "queue", "broker",
+               "amqp", "celery")),
+)
+OUTSIDE_VERB = {"db": "keeps data in", "mail": "sends email through", "queue": "sends messages through",
+                "storage": "stores files in", "search": "searches with", "": "talks to"}
+OUTSIDE_MANY = {"db": "{n} stores", "mail": "{n} mail services", "queue": "{n} message brokers",
+                "storage": "{n} file stores", "search": "{n} search services", "": "{n} outside systems"}
+SENTENCE_MAX = 120
+
+
+def outside_kind(xid: str, label: str = "", shape: str = "") -> str:
+    """What an outside system is for: "db", "mail", "queue", "storage", "search", or "" (something to talk to)."""
+    if shape in ("mail", "queue", "storage", "search"):
+        return shape
+    words = set(re.findall(r"[a-z0-9]+", f"{xid} {label}".lower()))
+    for kind, names in OUTSIDE_KINDS:
+        if words & set(names):
+            return kind
+    return "db" if shape == "db" else ""
+
+
+def change_outside_kind(c: Dict[str, Any]) -> str:
+    """The kind of the outside system a ranked change (an entity "external" one) reaches."""
+    if c.get("outside") is not None:
+        return str(c["outside"])
+    ext = str(c.get("subject") or "").split(">")[-1]
+    names = c.get("names") or []
+    db = "read and write" in (c.get("title") or "")
+    return outside_kind(ext, names[1] if len(names) > 1 else "", "db" if db else "")
+
+
+def _route_segments(label: str) -> List[str]:
+    return [s for s in label.split(" ", 1)[-1].split("/") if s]
+
+
+def _endpoints(labels: List[str], gone: bool = False) -> str:
+    """"GET /api/orders/health", "GET /a and POST /b", "3 new endpoints under /api/orders"."""
+    if len(labels) <= 2:
+        return " and ".join(labels)
+    common: List[str] = []
+    for segs in zip(*[_route_segments(x) for x in labels]):
+        if len(set(segs)) != 1 or segs[0].startswith(("{", ":", "<")):
+            break
+        common.append(segs[0])
+    return f"{len(labels)} {'' if gone else 'new '}endpoints" + (f" under /{'/'.join(common)}" if common else "")
+
+
+def _objects(verb: str, objs: List[str], gone: bool = False) -> str:
+    """A verb's objects: two named, more counted ("uses 5 other parts")."""
+    objs = list(dict.fromkeys(objs))
+    if verb == "serves":
+        return _endpoints(objs, gone)
+    if verb == "reads":
+        if len(objs) <= 2:
+            return " and ".join(objs) + (" (a new setting)" if len(objs) == 1 else " (new settings)")
+        return f"{len(objs)} new settings"
+    if len(objs) <= 2:
+        return " and ".join(objs)
+    n = len(objs)
+    if verb in OUTSIDE_VERB.values():
+        return OUTSIDE_MANY[next(k for k, v in OUTSIDE_VERB.items() if v == verb)].format(n=n)
+    return f"{n} containers" if verb == "reaches" else f"{n} other parts"
+
+
+def _pred_list(preds: "Dict[str, List[str]]", gone: bool = False) -> str:
+    said = [f"{verb} {_objects(verb, objs, gone)}" for verb, objs in preds.items()]
+    return said[0] if len(said) == 1 else ", ".join(said[:-1]) + " and " + said[-1]
+
+
+OWN_WORDS = ("a ", "new ", "the ", "code ", "changes ", "no ")
+BOTH_WAYS = "depends both ways on"   # a cycle: "Core now depends both ways on Store" (alone: "Core and Store now …")
+
+
+def _upper(text: str) -> str:
+    return text[0].upper() + text[1:] if text.startswith(OWN_WORDS) else text
+
+
+def change_sentence(changes: List[Dict[str, Any]], most: int = SENTENCE_MAX) -> str:
+    """The ranked changes (as history keeps them) in one plain sentence of about `most` characters at most: what each
+    part gained or lost, merged per part ("Control now sends email through Mail server and keeps data in SQLite and
+    Redis"), new parts first ("New parts Control and Gen Compose; Control keeps data in SQLite"), the rest counted
+    ("; 6 smaller changes")."""
+    if not changes:
+        return "no change to the system's structure"
+    # per part: {"name", "pos": {verb: [objects]}, "neg": {...}, "impact", "ids"}; and phrases of their own
+    parts: "Dict[str, Dict[str, Any]]" = {}
+    loose: List[Tuple[int, str, Set[str]]] = []
+    new: List[Tuple[str, str]] = []                  # (name, change id)
+    tables = any(c.get("entity") == "table" for c in changes)
+    quiet: Set[str] = set()                          # said by another phrase (a migration with its table)
+
+    def put(name: str, verb: str, obj: str, c: Dict[str, Any], gone: bool = False) -> None:
+        p = parts.setdefault(name, {"name": name, "pos": {}, "neg": {}, "impact": 0, "ids": set(), "vids": {}})
+        p["neg" if gone else "pos"].setdefault(verb, []).append(obj)
+        p["vids"].setdefault((gone, verb), set()).add(c["id"])
+        p["impact"] = max(p["impact"], int(c.get("impact") or 0))
+        p["ids"].add(c["id"])
+
+    for c in changes:
+        entity, op, cid = c.get("entity"), c.get("op"), c["id"]
+        names = c.get("names") or []
+        gone = op == "remove"
+        label = c.get("label") or c.get("subject") or ""
+        first = names[0] if names else label
+        second = names[1] if len(names) > 1 else str(c.get("subject") or "").split(">")[-1]
+        impact = int(c.get("impact") or 0)
+        if entity == "external":
+            put(first, OUTSIDE_VERB[change_outside_kind(c)], second, c, gone)
+        elif entity == "flow":
+            if "depend on each other" in (c.get("title") or "") and not gone:
+                put(first, BOTH_WAYS, second, c)
+            elif "container" in (c.get("title") or ""):
+                put(first, "reaches", f"the {second} container", c, gone)
+            else:
+                put(first, "uses", second, c, gone)
+        elif entity == "route":
+            put(first if names else "the system", "serves", label, c, gone)
+        elif entity == "settings":
+            got = [x.strip() for x in ((c.get("detail") or [""])[0] or "").split(",") if x.strip()]
+            for s in got or ["new settings"]:
+                put(first, "reads", s, c, gone)
+        elif entity == "component":
+            if op == "add":
+                new.append((first, cid))
+            elif gone:
+                loose.append((impact, f"the part {first} removed", {cid}))
+        elif entity == "table":
+            cols = [x.replace("+ column ", "") for x in c.get("detail") or [] if x.startswith("+ column ")]
+            text = (f"a new table {label}" if op == "add" else f"the table {label} dropped" if gone
+                    else f"the table {label} gains {'the column ' if len(cols) == 1 else 'the columns '}"
+                         f"{' and '.join(cols)}" if cols and len(cols) <= 2
+                    else f"the table {label} gains {len(cols)} columns" if cols else f"the table {label} changed")
+            loose.append((impact, text, {cid}))
+        elif entity == "migration":
+            if tables:
+                quiet.add(cid)
+            else:
+                loose.append((impact, f"a new migration {label}" if op == "add" else f"the migration {label} changed",
+                              {cid}))
+        elif entity == "container":
+            loose.append((impact, f"a new container {label}" if op == "add" else f"the container {label} removed"
+                          if gone else f"the container {label} changed", {cid}))
+        elif entity == "deploy":
+            loose.append((impact, f"changes to {label}", {cid}))
+
+    newnames = {n for n, _ in new}
+    weight = {c["id"]: int(c.get("impact") or 0) for c in changes}
+    # (first?, text, ids, a shorter form or None): new parts first, then by consequence
+    clauses: List[Tuple[bool, str, Set[str], Optional[Tuple[str, Set[str]]]]] = []
+    if new:
+        names_ = list(dict.fromkeys(n for n, _ in new))
+        ids = {i for _, i in new}
+        only = parts.get(names_[0]) if len(names_) == 1 else None
+        if only is not None and not only["neg"]:     # "a new part, Control, that keeps data in SQLite"
+            clauses.append((True, f"a new part, {names_[0]}, that {_pred_list(only['pos'])}", ids | only["ids"],
+                            (f"a new part, {names_[0]}", ids)))
+            parts.pop(names_[0])
+        elif len(names_) == 1:
+            clauses.append((True, f"a new part, {names_[0]}", ids, None))
+        else:
+            clauses.append((True, "new parts " + design.and_list(names_, 3), ids, None))
+    rest: List[Tuple[int, Tuple[bool, str, Set[str], Optional[Tuple[str, Set[str]]]]]] = []
+    for name, p in parts.items():
+        pos, neg = p["pos"], p["neg"]
+        if name in newnames:
+            text = f"{name} {_pred_list(pos)}" if pos else ""
+            if neg:
+                text += (" and " if text else f"{name} ") + "no longer " + _pred_list(neg, True)
+        elif list(pos) == [BOTH_WAYS] and len(pos[BOTH_WAYS]) == 1 and not neg:
+            text = f"{name} and {pos[BOTH_WAYS][0]} now depend on each other"
+        elif pos:
+            text = f"{name} now {_pred_list(pos)}" + (f" and no longer {_pred_list(neg, True)}" if neg else "")
+        else:
+            text = f"{name} no longer {_pred_list(neg, True)}"
+        short = None
+        if len(pos) + len(neg) > 1:     # too long: its first (most consequential) predicate alone
+            gone, verb = next(iter(p["vids"]))
+            one = {verb: (neg if gone else pos)[verb]}
+            short = (f"{name} {'no longer' if gone else '' if name in newnames else 'now'} {_pred_list(one, gone)}"
+                     .replace("  ", " "), p["vids"][(gone, verb)])
+        rest.append((p["impact"], (False, text, p["ids"], short)))
+    rest += [(impact, (False, text, ids, None)) for impact, text, ids in loose]
+    rest.sort(key=lambda t: -t[0])
+    clauses += [c for _, c in rest]
+    total = {c["id"] for c in changes} - quiet
+
+    def tail(left: Set[str], shown: Set[str]) -> str:
+        if not left:
+            return ""
+        n = len(left)
+        least = min((weight[i] // 50 for i in shown), default=0)     # by tier (50 or more apart; weights add ≤ 10)
+        smaller = all(weight.get(i, 0) // 50 < least for i in left)
+        return f"; {n} {'smaller' if smaller else 'more'} change{'' if n == 1 else 's'}"
+
+    said: List[str] = []
+    covered: Set[str] = set()
+    for _first, text, ids, short in clauses:
+        for t, i in ((text, ids),) + ((short,) if short else ()):
+            fits = len("; ".join(said + [t]) + tail(total - covered - i, covered | i)) <= most
+            if fits or (not said and (t, i) == (short or (text, ids))):
+                said.append(t)
+                covered |= i
+                break
+    if not said:      # only code inside parts
+        inside = list(dict.fromkeys((c.get("names") or [c.get("label") or ""])[0] for c in changes))
+        return _upper(f"code changed inside {design.and_list(inside, 3)}")
+    out = _upper("; ".join(said))
+    end = tail(total - covered, covered)
+    if len(out) + len(end) > most:
+        out = out[:max(20, most - len(end) - 1)].rstrip(" ,;") + "…"
+    return out + end

@@ -214,11 +214,13 @@ def _older(version: str) -> bool:
     """An engine older than this system-diff (its code loaded before an upgrade): not to be asked for pages."""
     from . import __version__
 
-    def key(v: str) -> tuple:
-        try:
-            return tuple(int(x) for x in v.split(".")[:3])
-        except ValueError:
+    import re
+
+    def key(v: str) -> tuple:   # "0.9.0.dev2" -> (0, 9, 0, 2); a release above all its dev versions
+        m = re.match(r"(\d+)\.(\d+)\.(\d+)(?:\.dev(\d+))?", v or "")
+        if not m:
             return ()
+        return (int(m[1]), int(m[2]), int(m[3]), int(m[4]) if m[4] is not None else float("inf"))
     return key(version) < key(__version__)
 
 

@@ -189,6 +189,25 @@ pre.lines .s-attention { color:var(--attn); font-weight:600; } pre.lines .s-acce
 .hist .got { color:var(--warn); overflow-wrap:anywhere; }
 .hist .got b { color:var(--muted); font-weight:400; }
 .hist .chg { color:var(--muted); font-size:12.5px; }
+.hist .got .llm { color:var(--muted); margin-left:4px; cursor:help; }
+.hist li.marked { border-color:var(--work); box-shadow:inset 3px 0 0 var(--work); }
+.hist .row { display:flex; gap:8px; align-items:baseline; }
+.hist .row .when { flex:1; }
+.hist .pickc { display:inline-flex; gap:4px; align-items:center; color:var(--muted); font-size:12.5px; cursor:pointer; }
+.hist .pickc input { margin:0; cursor:pointer; }
+.hist .withnow { font:inherit; font-size:12px; padding:1px 8px; border-radius:999px; border:1px solid var(--line);
+                 background:var(--bg); color:var(--muted); cursor:pointer; }
+.hist .withnow:hover, .hist .withnow:focus-visible { color:var(--ink); border-color:var(--work); }
+.cmpbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; color:var(--muted); font-size:13px; margin:-2px 0 10px; }
+.cmpbar button { font:inherit; font-size:12.5px; }
+.cmp { display:grid; grid-template-columns:auto 1fr; gap:6px 12px; align-items:baseline; }
+.cmp .k { color:var(--muted); font-size:12.5px; text-transform:uppercase; letter-spacing:.04em; }
+.cmp .v { overflow-wrap:anywhere; }
+.cmp .v .when { color:var(--muted); }
+.cmp .v .said { display:block; color:var(--muted); font-size:13px; }
+.cmp .sum { grid-column:1 / -1; color:var(--warn); font-weight:600; margin-top:4px; overflow-wrap:anywhere; }
+.cmp .note { grid-column:1 / -1; color:var(--muted); font-size:13px; }
+.cmp .acts { grid-column:1 / -1; display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
 form.send { position:sticky; bottom:0; z-index:5; display:flex; gap:10px; align-items:flex-end; padding:10px 20px;
             background:var(--card); border-top:1px solid var(--line); }
 form.send label { font-weight:600; font-size:13px; align-self:center; white-space:nowrap; }
@@ -242,7 +261,7 @@ nav.projects a.all { margin-left:auto; font-size:12.5px; padding:5px 4px 6px 12p
     <div class="diawrap" id="diawrap"><div id="dia" role="img"></div><div id="detail" aria-live="polite"></div></div></section>
   <div id="after" style="display:grid;gap:16px"></div>
 </main>
-<div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · <kbd>f</kbd> follow Claude · <kbd>[</kbd> <kbd>]</kbd> projects · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
+<div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · tick two changes in History to compare them · <kbd>f</kbd> follow Claude · <kbd>[</kbd> <kbd>]</kbd> projects · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
 <form class="send" id="send"><label for="say">Send to Claude</label>
   <textarea id="say" placeholder="Ask or tell Claude something about this change (Ctrl+Enter sends)"></textarea>
   <span id="sendnote" aria-live="polite"></span><button id="sendbtn" class="primary" type="submit">Send</button></form>
@@ -250,7 +269,7 @@ nav.projects a.all { margin-left:auto; font-size:12.5px; padding:5px 4px 6px 12p
 const TOKEN = "__TOKEN__";
 const $ = id => document.getElementById(id);
 const VIEWS = ["now", "review", "agents", "topics", "history"];
-const ui = { view:"now", part:"", zoom:-1, history:[], data:null, last:{}, pick:"", mine:false, hover:null, seq:0 };
+const ui = { view:"now", part:"", zoom:-1, history:[], data:null, last:{}, pick:"", mine:false, hover:null, seq:0, cmp:[] };
 const projects = { list:[] };   // every running project of this user (GET /projects), this one "current"
 (function fromHash() {
   const h = new URLSearchParams(location.hash.slice(1));
@@ -392,16 +411,57 @@ function lines(s) {
   c.append(pre);
   return c;
 }
-// The History view: each entry what was asked (or the commit) and what the system got; hovering one lights the boxes
-// it changed, a click shows that change on the diagram.
+// The History view: each entry what was asked (or the commit) and, in one sentence, what the system gained or lost;
+// hovering one lights the boxes it changed, a click shows that change on the diagram. In the list ("pick"), a tick on
+// two entries (or one, then Compare with now) shows what changed between them: the part "[<block>#]compare:<A>..<B>".
+function blockOf(part) {
+  const p = part || "", i = p.indexOf("#");
+  return i >= 0 ? p.slice(0, i) : p.startsWith("compare:") ? "" : p;
+}
+function compareKey(block, a, b) { return (block ? block + "#" : "") + "compare:" + a + (b ? ".." + b : ""); }
 function historyList(s) {
-  const c = card(s.title, s.aside), ul = el("ul", null, "hist"), block = (ui.part || "").split("#")[0];
+  const c = card(s.title, s.aside), ul = el("ul", null, "hist"), block = blockOf(ui.part);
+  const picking = !!s.pick;
+  if (picking) {
+    const marked = (s.items || []).find(h => h.marked);
+    if (marked && !ui.cmp.length) ui.cmp = [marked.eid];
+    ui.cmp = ui.cmp.filter(id => (s.items || []).some(h => h.eid === id));
+    const bar = el("div", null, "cmpbar");
+    if (ui.cmp.length) {
+      const first = (s.items || []).find(h => h.eid === ui.cmp[0]);
+      bar.append(el("span", "◆ from " + (first ? first.when : "") + ": tick another change to compare, or"));
+      const now = el("button", "compare with now"); now.type = "button";
+      now.onclick = () => go("history", compareKey(block, ui.cmp[0], "now"));
+      const clear = el("button", "clear"); clear.type = "button";
+      clear.onclick = () => { ui.cmp = []; ui.last.before = ""; render(ui.data); };
+      bar.append(now, clear);
+    } else bar.append(el("span", "Tick two changes to see what changed in the system between them, or use Compare with now."));
+    c.append(bar);
+  }
   for (const h of s.items || []) {
-    const li = el("li"), head = el("div");
+    const li = el("li"), head = el("div", null, "row");
     li.dataset.hid = h.id; li.tabIndex = 0;
-    head.append(el("span", h.when + " · ", "when"));
+    const ticked = picking && ui.cmp.includes(h.eid);
+    if (ticked) li.classList.add("marked");
+    head.append(el("span", h.when + (ticked ? " · ◆ from" : ""), "when"));
+    if (picking) {
+      const lab = el("label", null, "pickc"), box = el("input");
+      box.type = "checkbox"; box.checked = ticked; box.setAttribute("aria-label", "compare " + h.when);
+      lab.append(box, "compare");
+      lab.addEventListener("click", e => e.stopPropagation());
+      box.addEventListener("change", () => {
+        if (box.checked) ui.cmp = [...ui.cmp.filter(x => x !== h.eid), h.eid]; else ui.cmp = ui.cmp.filter(x => x !== h.eid);
+        if (ui.cmp.length >= 2) { const [a, b] = ui.cmp.slice(-2); ui.cmp = []; go("history", compareKey(block, a, b)); }
+        else { ui.last.before = ""; render(ui.data); }
+      });
+      const now = el("button", "Compare with now", "withnow"); now.type = "button";
+      now.addEventListener("click", e => { e.stopPropagation(); ui.cmp = []; go("history", compareKey(block, h.eid, "now")); });
+      head.append(lab, now);
+    }
     li.append(head, el("div", h.asked, "asked" + (h.request ? "" : " plain")));
-    const got = el("div", null, "got"); got.append(el("b", "→ it got: "), h.got); li.append(got);
+    const got = el("div", null, "got"); got.append(el("b", "→ "), h.said || h.got);
+    if (h.by) { const m = el("span", "✦", "llm"); m.title = "a summary written by " + h.by + " from the changes (hover for them)"; got.append(m); }
+    li.append(got);
     const first = (h.changes || [])[0];
     if (first) li.append(el("div", first.sign + " " + first.text + ((h.changes || []).length > 1 ? " · and " +
                                 (h.changes.length - 1) + " more" : ""), "chg"));
@@ -409,7 +469,7 @@ function historyList(s) {
     const off = () => { ui.hover = null; applyPick(); };
     li.addEventListener("mouseenter", on); li.addEventListener("focus", on);
     li.addEventListener("mouseleave", off); li.addEventListener("blur", off);
-    const open = () => go("history", block + "#" + h.id.slice(3));
+    const open = () => go("history", block + "#" + (h.eid || h.id.slice(3)));
     li.addEventListener("click", open);
     li.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); open(); } });
     ul.append(li);
@@ -417,7 +477,33 @@ function historyList(s) {
   if (!(s.items || []).length) c.append(el("div", "Nothing recorded yet.", "empty-note")); else c.append(ul);
   return c;
 }
-const RENDER = { notes, steps, lanes, chips, lines, history:historyList };
+// Two points of the history compared: from, to, the sentence, and the way back.
+function compareHead(s) {
+  const c = card(s.title, s.aside), h = (s.items || [])[0] || {}, box = el("div", null, "cmp");
+  const side = (k, p) => {
+    const v = el("div", null, "v");
+    if (!p || p.now) v.append(el("b", "now"), el("span", " · the system as it is", "when"));
+    else { v.append(el("span", "just after " + p.when + " · ", "when"), p.asked); if (p.said) v.append(el("span", "→ " + p.said, "said")); }
+    if (p && p.id) { v.dataset.hid = p.id; }
+    box.append(el("span", k, "k"), v);
+  };
+  side("From", h.from); side("To", h.to);
+  if (h.sentence) box.append(el("div", "→ " + h.sentence, "sum"));
+  if (h.reading) box.append(el("div", "Reading the system at that point… this fills in when it is read.", "note"));
+  else if (h.gone) box.append(el("div", "The system at that point is no longer kept: the requests made in between are below.", "note"));
+  const acts = el("div", null, "acts"), back = el("button", "← Back to the history"); back.type = "button";
+  back.onclick = () => go("history", h.block || "");
+  acts.append(back);
+  if (h.to && !h.to.now && h.from) {
+    const now = el("button", "Compare “from” with now"); now.type = "button";
+    now.onclick = () => go("history", compareKey(h.block || "", h.from.eid, "now"));
+    acts.append(now);
+  }
+  box.append(acts);
+  c.append(box);
+  return c;
+}
+const RENDER = { notes, steps, lanes, chips, lines, history:historyList, compare:compareHead };
 
 // ---- hover cards: the whole story of a box, an item or an agent (the view's "hover", by the id the page shows) ----
 function hoverOf(id) {
@@ -459,7 +545,9 @@ document.addEventListener("focusin", e => { const n = tipTarget(e.target); if (n
 document.addEventListener("focusout", () => hideTip());
 addEventListener("scroll", () => hideTip(), { passive:true });
 function section(s) { return (RENDER[s.kind] || notes)(s); }
-function goesBefore(s) { return s.kind === "lanes" || s.kind === "chips" || s.kind === "history" || isAttention(s); }
+function goesBefore(s) {
+  return s.kind === "lanes" || s.kind === "chips" || s.kind === "compare" || (s.kind === "history" && !!s.pick) || isAttention(s);
+}
 
 // ---- the diagram: hover picks, lights and dims; a click zooms in ----
 function lightsOf(pid, own) {
@@ -1341,10 +1429,12 @@ def _whoami(port: int, ident: str, timeout: float = 1.0) -> Optional[bool]:
 
 
 def _version_key(v: str) -> tuple:
-    try:
-        return tuple(int(x) for x in v.split(".")[:3])
-    except ValueError:
+    """"0.9.0.dev2" -> (0, 9, 0, 2); a release counts above all its dev versions: (0, 9, 0, inf)."""
+    import re
+    m = re.match(r"(\d+)\.(\d+)\.(\d+)(?:\.dev(\d+))?", v or "")
+    if not m:
         return ()
+    return (int(m[1]), int(m[2]), int(m[3]), int(m[4]) if m[4] is not None else float("inf"))
 
 
 def older(version: str) -> bool:

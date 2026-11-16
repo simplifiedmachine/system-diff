@@ -1,5 +1,6 @@
 """How the system evolved: a timeline of its structural changes, each told as what the person asked for and what the
-system got ("You asked: add document uploads → it got: a call to Amazon S3, 3 endpoints under /flows/documents").
+system got, in one sentence ("You asked: add document uploads → Flows now stores files in Amazon S3 and serves 3
+endpoints under /flows/documents"), and any two points of it compared (compare()).
 
 An ENTRY: {"id", "at" (its latest change), "since" (its first), "request" (the person's request it came under, cut to
 REQUEST_MAX, or None), "request_full", "source" ("turn": while Claude worked on a request; "commit": a commit's own
@@ -20,6 +21,16 @@ Where entries come from:
   A commit whose changes were already recorded as they happened only gets its id added to those entries. Read
   through gitfs (loose objects, the one cat-file process), never one git process per file; blueprints are kept by
   tree, so a tree read once is never read again.
+
+Each entry's sentence (sentence()) is human.change_sentence's, from its changes, until an LLM has written a better one
+(words(), in a background job, start_words(): structure only, never code; up to WORDS_BATCH entries a question; kept
+as a {"id", "words": {"text", "by", "for"}} line in the log; off with SYSTEM_DIFF_LLM=off). One written by an LLM is
+marked as such (✦) wherever it is shown.
+
+Comparing two points (compare(), the History views' "compare:<A>..<B>"): from the state right after entry A to the
+state right after entry B (or now), drawn from the blueprints kept under history/ (kept_blueprint: no git, no code
+read on a look's path); a commit's not kept yet is read once in a background job (read_later), the views saying
+"reading…" until it is.
 
 Kept in <git dir>/system-diff/history.jsonl (one entry a line; a later line with the same id replaces an earlier one,
 {"id", "gone": true} removes it; compacted when large), the blueprints of the states it names under history/, and
@@ -88,7 +99,32 @@ def load(root: Path) -> List[Dict[str, Any]]:
             found.pop(e["id"], None)
         elif isinstance(e.get("at"), (int, float)) and isinstance(e.get("changes"), list):
             found[e["id"]] = e
-    return sorted(found.values(), key=lambda e: (-float(e["at"]), e["id"]))
+        elif isinstance(e.get("words"), dict) and e["id"] in found:   # an LLM's sentence for it (words())
+            found[e["id"]] = {**found[e["id"]], "words": e["words"]}
+    return sorted((_readable(e) for e in found.values()), key=lambda e: (-float(e["at"]), e["id"]))
+
+
+def _said(text: Any) -> Optional[str]:
+    """A request as the person typed it: what they pasted or attached shown as "[pasted text]", never the markup."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    try:
+        from .objectives import clean
+        pasted = "<pasted_content" in text
+        said = clean(text)
+        if said and pasted:
+            said = f"{said} [pasted text]"
+        return said or ("[pasted text]" if pasted else None)
+    except Exception:  # noqa: BLE001 - only wording
+        return text
+
+
+def _readable(e: Dict[str, Any]) -> Dict[str, Any]:
+    """An entry as shown: its request cleaned (entries kept before cleaning was done carry the raw text)."""
+    if e.get("request") or e.get("request_full"):
+        full = _said(e.get("request_full") or e.get("request"))
+        e = {**e, "request": _cut(full, REQUEST_MAX), "request_full": _cut(full, FULL_MAX)}
+    return e
 
 
 def _write(root: Path, items: Iterable[Dict[str, Any]]) -> None:
@@ -212,6 +248,8 @@ def commit_blueprint(root: Path, sha: Optional[str], cfg: Dict[str, Any]) -> Dic
         return bp
     info = gitfs.commit(root, sha)
     tree = (info or {}).get("tree") or sha
+    if info is not None:
+        _note_tree(root, sha, tree)
     ck = _cfg_key(cfg)
     key = (str(root), tree, ck)
     got = _BPS.get(key)
@@ -247,6 +285,162 @@ def state_blueprint(root: Path, ref: str, cfg: Dict[str, Any]) -> Optional[Dict[
         return None
 
 
+_TREES: Dict[str, Tuple[tuple, Dict[str, str]]] = {}
+
+
+def _trees_file(root: Path) -> Path:
+    return _states(root) / "commits.json"
+
+
+def _trees(root: Path) -> Dict[str, str]:
+    """Commit -> tree, for the commits whose blueprints are kept: so a look finds one without asking git."""
+    f = _trees_file(root)
+    try:
+        st = f.stat()
+        mark: tuple = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return {}
+    got = _TREES.get(str(root))
+    if got is not None and got[0] == mark:
+        return got[1]
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        data = data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        data = {}
+    _TREES[str(root)] = (mark, data)
+    return data
+
+
+def _note_tree(root: Path, sha: str, tree: str) -> None:
+    with _LOCK:
+        known = dict(_trees(root))
+        if known.get(sha) == tree:
+            return
+        known[sha] = tree
+        if len(known) > STATES_KEEP * 2:
+            known = dict(list(known.items())[-STATES_KEEP * 2:])
+        f = _trees_file(root)
+        tmp = f.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            tmp.write_text(json.dumps(known), encoding="utf-8")
+            os.replace(tmp, f)
+        except OSError:
+            pass
+
+
+def kept_blueprint(root: Path, ref: str, cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The blueprint a state names, only if it is kept (in memory or under history/): never asks git, never reads
+    code, so a look can call it. None when it is not kept (for a commit: read_later() reads it)."""
+    if not ref:
+        return None
+    if ref == "empty":
+        return commit_blueprint(root, None, cfg)
+    if ref.startswith("state:"):
+        return state_blueprint(root, ref, cfg)
+    tree = _trees(root).get(ref)
+    if not tree:
+        return None
+    ck = _cfg_key(cfg)
+    key = (str(root), tree, ck)
+    got = _BPS.get(key)
+    if got is None:
+        try:
+            got = json.loads((_states(root) / f"t-{tree}-{ck}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        _BPS[key] = got
+        while len(_BPS) > 16:
+            _BPS.popitem(last=False)
+    bp = dict(got)
+    bp["ref"] = ref[:7]
+    return bp
+
+
+READ_STALE = 600   # a reading job older than this died
+
+
+def _job_lock(path: Path, stale: float) -> bool:
+    for _ in range(2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                if time.time() - path.stat().st_mtime < stale:
+                    return False
+                path.unlink()
+            except OSError:
+                return False
+        except OSError:
+            return False
+    return False
+
+
+def _in_test() -> bool:
+    """Under pytest, no job is started in the background unless the test asks (SYSTEM_DIFF_HISTORY_JOBS=1)."""
+    return bool(os.environ.get("PYTEST_CURRENT_TEST")) and os.environ.get("SYSTEM_DIFF_HISTORY_JOBS") != "1"
+
+
+def _spawn(root: Path, *args: str) -> None:
+    import subprocess
+    import sys
+    kw: Dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
+                          "cwd": str(root), "close_fds": True}
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000  # CREATE_NO_WINDOW
+    else:
+        kw["start_new_session"] = True
+    subprocess.Popen([sys.executable, "-m", "system_diff.history", *args, str(root)], **kw)
+
+
+def read_later(root: Path, sha: str) -> bool:
+    """Read a commit's blueprint in the background, once (a job of its own: `python -m system_diff.history read`);
+    when it is kept the log is touched, so the views draw again. True if a job was started."""
+    if not re.fullmatch(r"[0-9a-f]{7,64}", sha or "") or _in_test():
+        return False
+    lock = _states(root) / f"reading-{sha[:16]}.lock"
+    if not _job_lock(lock, READ_STALE):
+        return False
+    try:
+        _spawn(root, "read", sha)
+        return True
+    except Exception:  # noqa: BLE001
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+        return False
+
+
+def _touch(root: Path) -> None:
+    """Move the log's time: the engine watches it, so the pages are drawn again."""
+    try:
+        path = _log(root)
+        if not path.exists():
+            path.write_text("", encoding="utf-8")
+        os.utime(path)
+    except OSError:
+        pass
+
+
+def read_now(root: Path, sha: str) -> bool:
+    """The job read_later() starts: the commit's blueprint read and kept; the lock freed."""
+    try:
+        commit_blueprint(root, sha, _cfg(root))
+        _touch(root)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+    finally:
+        try:
+            (_states(root) / f"reading-{sha[:16]}.lock").unlink()
+        except OSError:
+            pass
+
+
 # ── what changed, in plain words ──────────────────────────────────────────────
 
 def comparison(a: Dict[str, Any], b: Dict[str, Any], cfg: Dict[str, Any], base: str = "before", head: str = "after"):
@@ -267,10 +461,15 @@ def ranked(c) -> List[Dict[str, Any]]:
     out = []
     for d in human.decisions(c):
         ch = labels.get((d["entity"], d["op"], d["subject"])) or {}
-        out.append({"id": d["id"], "title": d["title"], "why": d["why"], "kind": d["kind"], "parts": d["parts"],
-                    "names": d["names"], "sign": d["sign"], "status": d["status"], "entity": d["entity"],
-                    "op": d["op"], "subject": d["subject"], "label": ch.get("label", d["subject"]),
-                    "detail": list(ch.get("detail") or []), "impact": d["impact"], "look": d["look"]})
+        one = {"id": d["id"], "title": d["title"], "why": d["why"], "kind": d["kind"], "parts": d["parts"],
+               "names": d["names"], "sign": d["sign"], "status": d["status"], "entity": d["entity"],
+               "op": d["op"], "subject": d["subject"], "label": ch.get("label", d["subject"]),
+               "detail": list(ch.get("detail") or []), "impact": d["impact"], "look": d["look"]}
+        if d["entity"] == "external":     # what the outside system is for: the sentence's verb ("sends email through")
+            ext = d["subject"].split(">")[-1]
+            x = (c.after.get("externals") or {}).get(ext) or (c.before.get("externals") or {}).get(ext) or {}
+            one["outside"] = human.outside_kind(ext, x.get("label", ""), x.get("shape", ""))
+        out.append(one)
     return out
 
 
@@ -379,13 +578,340 @@ def asked_line(e: Dict[str, Any]) -> str:
 
 
 def plain(e: Dict[str, Any], clock: Optional[float] = None) -> str:
-    """"2 days ago · You asked: “…” → it got: …"."""
-    return f"{when(e['at'], clock)} · {asked_line(e)} → it got: {e.get('got') or got_line(e['changes'])}"
+    """"2 days ago · You asked: “…” → Control now keeps data in SQLite"."""
+    return f"{when(e['at'], clock)} · {asked_line(e)} → {sentence(e)[0]}"
+
+
+# ── each entry in one sentence: deterministic (human.change_sentence), better words from an LLM later ─────────────
+
+WORDS_STATE = "history-words.json"
+WORDS_BATCH = 20          # entries per question
+WORDS_GAP = 120.0         # seconds between two jobs
+WORDS_RETRY = 24 * 3600   # an entry is asked about once a day at most
+WORDS_STALE = 900         # a job older than this died
+WORDS_TIMEOUT = 180
+WORDS_MAX = 140           # an answer longer than this is cut
+WORDS_SYSTEM = (
+    "You summarise changes to a software system's structure for the person who directs the work. For each entry you "
+    "get its exact, machine-extracted structural changes and a draft sentence. Write one plain sentence of at most "
+    "120 characters saying what the system gained or lost, grouped by part and phrased as what each part can now do "
+    "(\"Control now sends email and keeps data in SQLite and Redis; 6 smaller changes\"), the most consequential "
+    "first. Name only parts, outside systems, endpoints, tables and settings that appear in its changes. No code, no "
+    "jargon, no mention of Claude. Answer with JSON only: {\"<entry id>\": \"<sentence>\", ...}."
+)
+
+
+def changes_key(changes: List[Dict[str, Any]]) -> str:
+    """Which changes a sentence was written for: an entry that grew (a burst) needs a new one."""
+    return hashlib.sha1("|".join(sorted(str(c.get("id")) for c in changes)).encode()).hexdigest()[:12]
+
+
+def sentence(e: Dict[str, Any], most: int = 0) -> Tuple[str, str]:
+    """The entry in one plain sentence (of about `most` characters at most; 0: human.SENTENCE_MAX), and who wrote it:
+    ("Control now keeps data in SQLite", "") from the changes themselves, or an LLM's (its name as the second) once it
+    has written one for exactly these changes."""
+    from . import human
+    most = most or human.SENTENCE_MAX
+    w = e.get("words")
+    if (isinstance(w, dict) and w.get("for") == changes_key(e.get("changes") or []) and isinstance(w.get("text"), str)
+            and w["text"].strip()):
+        return _cut(w["text"], most) or "", str(w.get("by") or "an LLM")
+    return human.change_sentence(e.get("changes") or [], most), ""
+
+
+def _words_state(root: Path) -> Dict[str, Any]:
+    try:
+        got = json.loads((git_dir(root) / WORDS_STATE).read_text(encoding="utf-8"))
+        return got if isinstance(got, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_words_state(root: Path, st: Dict[str, Any]) -> None:
+    path = git_dir(root) / WORDS_STATE
+    tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(json.dumps(st), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def words_wanted(root: Path, entries: Optional[List[Dict[str, Any]]] = None,
+                 now: Optional[float] = None) -> List[Dict[str, Any]]:
+    """The entries with no LLM sentence for their changes, not asked about lately, newest first."""
+    now = time.time() if now is None else now
+    asked = _words_state(root).get("asked") or {}
+    out = []
+    for e in (entries if entries is not None else load(root)):
+        if not e.get("changes") or sentence(e)[1]:
+            continue
+        if now - float(asked.get(f"{e['id']}:{changes_key(e['changes'])}", 0)) < WORDS_RETRY:
+            continue
+        out.append(e)
+    return out
+
+
+def words_prompt(batch: List[Dict[str, Any]]) -> str:
+    """What the LLM is sent: per entry, its structural changes (titles) and the draft. Never code, never a request."""
+    from . import human
+    items = []
+    for e in batch:
+        titles = [c["title"] for c in e["changes"][:25]]
+        if len(e["changes"]) > 25:
+            titles.append(f"and {len(e['changes']) - 25} smaller changes")
+        items.append({"id": e["id"], "changes": titles, "draft": human.change_sentence(e["changes"])})
+    return "Entries:\n" + json.dumps(items, ensure_ascii=False, indent=1)
+
+
+def _answer(text: str) -> Dict[str, Any]:
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    try:
+        got = json.loads(text[start:end + 1])
+    except ValueError:
+        return {}
+    return got if isinstance(got, dict) else {}
+
+
+def words(root: Path, ask: Optional[Callable[[str], Optional[Tuple[str, str]]]] = None,
+          cfg: Optional[Dict[str, Any]] = None, most: int = WORDS_BATCH, now: Optional[float] = None) -> int:
+    """Ask an LLM (narrate.complete: the person's own Claude Code, or a gateway) for better sentences for up to
+    `most` entries, in one question; keep each answer beside its entry (a "words" line in the log). The sentences
+    written. Only in the background (the job start_words() starts, or a command): never on a look's path."""
+    from . import narrate
+    root = Path(root)
+    if narrate.off():
+        return 0
+    now = time.time() if now is None else now
+    batch = words_wanted(root, now=now)[:most]
+    if not batch:
+        return 0
+    with _LOCK:
+        st = _words_state(root)
+        asked = {k: t for k, t in (st.get("asked") or {}).items() if now - float(t) < WORDS_RETRY}
+        for e in batch:
+            asked[f"{e['id']}:{changes_key(e['changes'])}"] = now
+        st.update({"asked": asked, "last": now})
+        _save_words_state(root, st)
+    if ask is None:
+        cfg = cfg if cfg is not None else _cfg(root)
+        ask = lambda user: narrate.complete(user, WORDS_SYSTEM, root, cfg, WORDS_TIMEOUT, limit=20000)  # noqa: E731
+    try:
+        got = ask(words_prompt(batch))
+    except Exception:  # noqa: BLE001 - no answer: the deterministic sentences stay
+        got = None
+    if not got:
+        return 0
+    text, by = got
+    answer = _answer(text or "")
+    lines = []
+    for e in batch:
+        said = answer.get(e["id"])
+        if not isinstance(said, str):
+            continue
+        said = " ".join(said.split()).strip()
+        if not said:
+            continue
+        if len(said) > WORDS_MAX:
+            said = said[:WORDS_MAX - 1].rstrip() + "…"
+        lines.append({"id": e["id"], "words": {"text": said, "by": by, "for": changes_key(e["changes"]),
+                                               "at": round(now, 3)}})
+    _write(root, lines)
+    return len(lines)
+
+
+_WORDS_SEEN: Dict[str, Tuple[int, float]] = {}
+
+
+def start_words(root: Path, cfg: Optional[Dict[str, Any]] = None) -> bool:
+    """Start the background job that asks for better sentences (`python -m system_diff.history words`), when some
+    entry has none, no job ran in the last WORDS_GAP seconds and an LLM is configured. Never waits; never raises.
+    Off with SYSTEM_DIFF_LLM=off."""
+    try:
+        from . import narrate
+        root = Path(root)
+        if narrate.off() or not enabled() or _in_test():
+            return False
+        now = time.time()
+        if now - float(_words_state(root).get("last", 0)) < WORDS_GAP:
+            return False
+        try:
+            mark = _log(root).stat().st_mtime_ns
+        except OSError:
+            return False
+        seen = _WORDS_SEEN.get(str(root))
+        if seen is not None and seen[0] == mark and now - seen[1] < WORDS_GAP:
+            return False                               # the log has not moved since nothing was wanted
+        _WORDS_SEEN[str(root)] = (mark, now)
+        if not words_wanted(root):
+            return False
+        cfg = cfg if cfg is not None else _cfg(root)
+        if not narrate.configured(root, cfg.get("narrate", {}).get("settings", [])):
+            return False
+        lock = git_dir(root) / "history-words.lock"
+        if not _job_lock(lock, WORDS_STALE):
+            return False
+        try:
+            _spawn(root, "words")
+            return True
+        except Exception:  # noqa: BLE001
+            lock.unlink()
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def words_now(root: Path) -> int:
+    """The job start_words() starts: a batch or two; the lock freed."""
+    try:
+        n = words(root)
+        if n:
+            n += words(root)
+        return n
+    finally:
+        try:
+            (git_dir(root) / "history-words.lock").unlink()
+        except OSError:
+            pass
+
+
+# ── comparing two points in the history ───────────────────────────────────────
+
+NOW = "now"
+
+
+def compare_part(part: str) -> Optional[Tuple[str, str, str]]:
+    """A History page's part that compares: "compare:<A>" (the list, A marked as where to compare from),
+    "compare:<A>..<B>" (from A to B; B may be "now"), each optionally after "<block>#". (block, A, B or "")."""
+    block, sep, rest = (part or "").partition("#")
+    if not sep:
+        block, rest = "", part or ""
+    if not rest.startswith("compare:"):
+        return None
+    a, _, b = rest[len("compare:"):].partition("..")
+    clean = lambda x: re.sub(r"[^A-Za-z0-9]", "", x)  # noqa: E731
+    return block, clean(a), clean(b)
+
+
+def compare_key(block: str, a: str, b: str = "") -> str:
+    """The part that shows a comparison (or, without `b`, the list with `a` marked)."""
+    rest = f"compare:{a}" + (f"..{b}" if b else "")
+    return f"{block}#{rest}" if block else rest
+
+
+def _order(e: Dict[str, Any]) -> tuple:
+    return (float(e["at"]), e["id"])
+
+
+def point_line(e: Optional[Dict[str, Any]], most: int = 80) -> str:
+    """A point of the history in a few words: "now", or when and what was asked (or the commit)."""
+    if e is None:
+        return "now"
+    if e.get("request"):
+        return f"{when(e['at'])} · “{_cut(e['request'], most)}”"
+    if e.get("source") == "commit":
+        return f"{when(e['at'])} · commit {str(e.get('commit') or '')[:7]}" + (
+            f": {_cut(e['message'], most)}" if e.get("message") else "")
+    return f"{when(e['at'])} · an edit outside a request"
+
+
+def compare(root: Path, a: str, b: str, cfg: Optional[Dict[str, Any]] = None,
+            now: Optional[Dict[str, Any]] = None, wait: bool = False) -> Dict[str, Any]:
+    """From the state right after entry `a` to the state right after entry `b` ("now": the system as it is, whose
+    blueprint is `now`), whichever order they are given in: {"a", "b" (None: now), "between" (the entries after a up
+    to b, oldest first), "comparison" (None until both states are at hand), "changes" (ranked), "reading" (a state is
+    being read in the background), "gone" (a state no longer kept), "missing" (ids not in the history)}.
+    Only kept blueprints are used (no git, no reading of code) unless `wait`; a commit's not yet kept is read in the
+    background (read_later) and "reading" says so."""
+    root = Path(root)
+    cfg = cfg if cfg is not None else _cfg(root)
+    entries = load(root)
+    by = {e["id"]: e for e in entries}
+    out: Dict[str, Any] = {"a": None, "b": None, "between": [], "comparison": None, "changes": [], "reading": False,
+                           "gone": False, "missing": [x for x in (a, b) if x != NOW and x not in by]}
+    if out["missing"] or not a or not b:
+        return out
+    A, B = (None if a == NOW else by[a]), (None if b == NOW else by[b])
+    if A is None:
+        A, B = B, None
+    if A is None:
+        return out                                   # now against now
+    if B is not None and _order(A) > _order(B):
+        A, B = B, A
+    out["a"], out["b"] = A, B
+    out["between"] = [e for e in sorted(entries, key=_order)
+                      if _order(e) > _order(A) and (B is None or _order(e) <= _order(B))]
+    if B is not None and B["id"] == A["id"]:
+        return out
+    later = sorted((e for e in entries if _order(e) > _order(A)), key=_order)
+
+    def state(ref_first: Optional[str], ref_next: Optional[str]) -> Optional[Dict[str, Any]]:
+        """A state's blueprint: the entry's head, else the base of the entry right after it (the same state)."""
+        for ref in (ref_first, ref_next):
+            if not ref:
+                continue
+            bp = state_blueprint(root, ref, cfg) if wait else kept_blueprint(root, ref, cfg)
+            if bp is not None:
+                return bp
+        for ref in (ref_first, ref_next):
+            if ref and not ref.startswith("state:") and ref != "empty":
+                out["reading"] = read_later(root, ref) or (_states(root) / f"reading-{ref[:16]}.lock").exists()
+                if out["reading"]:
+                    return None
+        out["gone"] = True
+        return None
+
+    start = state(A.get("head"), later[0].get("base") if later else None)
+    if B is None:
+        end = now
+    else:
+        after_b = [e for e in later if _order(e) > _order(B)]
+        end = state(B.get("head"), after_b[0].get("base") if after_b else None)
+    if start is None or end is None:
+        if end is None and B is None and not out["reading"]:
+            out["gone"] = True
+        return out
+    c = comparison(start, end, cfg, "after " + when(A["at"]), "now" if B is None else "after " + when(B["at"]))
+    out["comparison"] = c
+    out["changes"] = ranked(c)
+    return out
+
+
+def compare_text(root: Path, a: str, b: str, width: int = 100, now: Optional[Dict[str, Any]] = None) -> str:
+    """A comparison as text (`system-diff history --compare A B`): from, to, the ranked changes, the requests between."""
+    from . import canvas
+    got = compare(root, a, b, now=now, wait=True)
+    if got["missing"]:
+        return f"Not in the history: {', '.join(got['missing'])}. `system-diff history --json` lists the ids.\n"
+    if got["a"] is None:
+        return "Nothing to compare: pick a change from the history (and another, or now).\n"
+    out = [canvas.cut(f"From just after: {point_line(got['a'], width)}", width),
+           canvas.cut(f"To {'now' if got['b'] is None else 'just after: ' + point_line(got['b'], width)}", width), ""]
+    if got["comparison"] is None:
+        out.append("The system at one of these points is no longer kept." if not got["reading"] else
+                   "Reading the system at that point… try again in a moment.")
+    elif not got["changes"]:
+        out.append("No change to the system's structure between them.")
+    else:
+        from . import human
+        out.append(canvas.cut(human.change_sentence(got["changes"], width), width))
+        out.append("")
+        out.append(f"What changed ({len(got['changes'])}, the most consequential first):")
+        for c in got["changes"]:
+            out.append(canvas.cut(f"  {c['sign']} {c['title']} — {c['why']}", width))
+    if got["between"]:
+        out += ["", f"What was asked in between ({len(got['between'])}, oldest first):"]
+        for e in got["between"]:
+            out.append(canvas.cut(f"  {when(e['at'])} · {asked_line(e)}", width))
+            out.append(canvas.cut(f"    → {sentence(e, width - 7)[0]}", width))
+    return "\n".join(out).rstrip() + "\n"
 
 
 def _entry(eid: str, at: float, since: float, request: Optional[dict], source: str, commit: Optional[str],
            message: str, changes: List[dict], base: str, head: str, files: Optional[int]) -> Dict[str, Any]:
-    text = (request or {}).get("text") or None
+    text = _said((request or {}).get("text"))
     got = got_line(changes)
     return {"id": eid, "at": round(at, 3), "since": round(since, 3), "request": _cut(text, REQUEST_MAX),
             "request_full": _cut(text, FULL_MAX), "source": source, "commit": commit, "message": message or "",
@@ -614,6 +1140,8 @@ class Recorder:
                 self.error = ""
             except Exception as exc:  # noqa: BLE001 - next time
                 self.error = f"{type(exc).__name__}: {exc}"
+            held = e.held
+            start_words(self.root, held.cfg if held is not None else None)   # better sentences, in a job of its own
             seen = e.wait(e.version if seen == -1 else seen, timeout=5.0)
 
     def _load(self) -> None:
@@ -759,8 +1287,9 @@ def text(root: Path, part: str = "", width: int = 100) -> str:
                 "No change to the system's structure recorded yet.")
     out = []
     for e in entries:
-        out.append(canvas.cut(f"{when(e['at'])} · {asked_line(e)}", width))
-        out.append(canvas.cut(f"  → it got: {e['got']}", width))
+        out.append(canvas.cut(f"{e['id']} · {when(e['at'])} · {asked_line(e)}", width))
+        said, by = sentence(e, width - 6)
+        out.append(canvas.cut(f"  → {said}" + (" ✦" if by else ""), width))
         for c in e["changes"][:6]:
             out.append(canvas.cut(f"    {c['sign']} {c['title']} — {c['why']}", width))
         if len(e["changes"]) > 6:
@@ -773,4 +1302,17 @@ def text(root: Path, part: str = "", width: int = 100) -> str:
         if tail:
             out.append("    " + " · ".join(tail))
         out.append("")
+    if any(sentence(e)[1] for e in entries):
+        out.append("✦ a summary an LLM wrote from the structural changes listed under it")
+    out.append("Compare two points: system-diff history --compare <id> <id|now>")
     return "\n".join(out).rstrip() + "\n"
+
+
+if __name__ == "__main__":     # the background jobs: `python -m system_diff.history read <sha> <root>` / `words <root>`
+    import sys
+    _args = sys.argv[1:]
+    if len(_args) == 3 and _args[0] == "read":
+        sys.exit(0 if read_now(Path(_args[2]), _args[1]) else 1)
+    if len(_args) == 2 and _args[0] == "words":
+        sys.exit(0 if words_now(Path(_args[1])) else 1)
+    sys.exit(2)

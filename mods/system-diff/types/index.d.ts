@@ -2,9 +2,11 @@
 // pick, and what each block lights and shows when picked.
 export type Run = [string, string] | [string, string, string] // text, style words, ids (space-separated)
 export type Row = Run[]
-// history: the History view of that block ('' the whole system); entry: one entry of the History shown, on the diagram
+// history: the History view of that block ('' the whole system); entry: one entry of the History shown, on the diagram;
+// compare: c on an entry of the History (or on its "now" row): the first marks where to compare from ("◆ from"), a
+// second shows the two compared (the part "[<block>#]compare:<A>..<B>"), c again on the marked one unmarks it
 export type Act = { zoom?: string; learn?: string; view?: string; clear_objective?: string; history?: string;
-                    entry?: string }
+                    entry?: string; compare?: string }
 export type PageBlock = {
   id: string
   x: number

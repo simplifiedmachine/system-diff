@@ -277,3 +277,11 @@ def test_while_the_engine_reads_again_it_serves_the_page_last_kept(repo):
     finally:
         lv.client_progress = real
     assert page["reading"]["stale"] and page["rows"][3] == [["last time", ""]]
+
+
+def test_a_newer_nightly_retires_the_one_before_it(monkeypatch):
+    import system_diff
+    monkeypatch.setattr(system_diff, "__version__", "0.9.0.dev2")
+    assert watch.older("0.9.0.dev1") and live._older("0.9.0.dev1")
+    assert not watch.older("0.9.0") and not live._older("0.9.0")          # the release is above its dev versions
+    assert watch.older("0.8.0") and not watch.older("0.9.0.dev2")

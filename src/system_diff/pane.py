@@ -1635,6 +1635,7 @@ def _rendered(out: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 # ── history: how the system evolved, as what was asked and what the system got (history.py) ──
 
 HISTORY_MOST = 20   # entries the pane lists; the web page and `system-diff history` have them all
+LLM_MARK = " ✦"     # after a sentence an LLM wrote (honest about certainty): the hover card names who
 
 
 def _history_now(root: Path):
@@ -1657,8 +1658,8 @@ def _history_decs(changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             for d in changes]
 
 
-def _history_entry_grid(e: Dict[str, Any], width: int) -> List[list]:
-    """A picked entry's detail: its changes with why each matters, then where it is from."""
+def _history_entry_grid(e: Dict[str, Any], width: int, marked: str = "") -> List[list]:
+    """A picked entry's detail: its changes with why each matters, then where it is from and what c does."""
     rows: List[list] = []
     for d in e["changes"][:2]:
         rows.append([[f" {d['sign']} ", NOTE_STYLE.get(d["status"], "")], [canvas.cut(d["title"], width - 4), ""]])
@@ -1671,19 +1672,61 @@ def _history_entry_grid(e: Dict[str, Any], width: int) -> List[list]:
     if e.get("files") is not None:
         tail.append(f"{e['files']} file{'' if e['files'] == 1 else 's'}")
     tail.append("↵ shows it on the diagram")
+    tail.append("c again: unmark" if marked == e["id"] else "c compares it with ◆" if marked
+                else "c: compare from here")
     rows.append([[canvas.cut("   " + " · ".join(tail), width), "muted"]])
     return rows
 
 
-def view_history(root: Path, width: int, part: str = "") -> Dict[str, Any]:
-    """How the system evolved, newest first: each entry what was asked (or the commit) and what the system got, a
-    block to pick (its changes, with why each matters) and to open (↵: that change on the diagram). With a block
-    (`part`), only the entries that changed it, and only their changes to it; "<block>#<entry>" opens one."""
+def _history_row(g: canvas.Grid, y: int, e: Dict[str, Any], width: int, bid: str, lead_mark: str = "") -> None:
+    """An entry in two rows: when and what was asked (or the commit); then → what the system gained or lost."""
     from . import history
-    block, eid = history.split_part(part)
+    narrow = width < 70
+    x = 0
+    if lead_mark:
+        g.put(0, y, lead_mark, "accent bold", [bid])
+        x = len(lead_mark)
+    lead = f" {history.when(e['at'])} · "
+    g.put(x, y, lead, "muted", [bid])
+    x += len(lead)
+    asked = history.asked_line(e)
+    style = "bold" if e.get("request") else ""
+    if asked.startswith("You asked: "):
+        word = "" if narrow else "You asked: "
+        g.put(x, y, word, "muted", [bid])
+        g.put(x + len(word), y, canvas.cut(asked[11:], max(8, width - x - len(word) - 1)), style, [bid])
+    else:
+        g.put(x, y, canvas.cut(asked, max(8, width - x - 1)), "muted" if not e.get("commit") else "", [bid])
+    arrow = "   → "
+    said, by = history.sentence(e, max(30, width - len(arrow) - len(LLM_MARK) - 1))
+    mark = LLM_MARK if by else ""
+    text = canvas.cut(said, max(8, width - len(arrow) - len(mark) - 1))
+    g.put(0, y + 1, arrow, "muted", [bid])
+    g.put(len(arrow), y + 1, text, "attention" if any(d["status"] == "warn" for d in e["changes"]) else "changed",
+          [bid])
+    if mark:
+        g.put(len(arrow) + len(text), y + 1, mark, "muted", [bid])
+
+
+def view_history(root: Path, width: int, part: str = "") -> Dict[str, Any]:
+    """How the system evolved, newest first: each entry what was asked (or the commit) and, in one sentence, what
+    the system gained or lost; a block to pick (its changes, with why each matters), to open (↵: that change on the
+    diagram) and to compare (c marks it "◆ from"; c on another, or on Now, compares the two: "compare:<A>..<B>").
+    With a block (`part`), only the entries that changed it, and only their changes to it; "<block>#<entry>" opens
+    one."""
+    from . import history
+    cmp = history.compare_part(part)
+    if cmp is not None and cmp[1] and cmp[2]:
+        return _history_compare_page(root, width, part, cmp[1], cmp[2])
+    if cmp is not None:
+        block, eid, marked = cmp[0], "", cmp[1]
+    else:
+        (block, eid), marked = history.split_part(part), ""
     if eid:
         return _history_entry_page(root, width, block, eid, part)
     entries = history.load(root)
+    if marked and marked not in {e["id"] for e in entries}:
+        marked = ""
     page = canvas.Page(width)
     narrow = width < 70
     if block:
@@ -1692,42 +1735,45 @@ def view_history(root: Path, width: int, part: str = "") -> Dict[str, Any]:
         name = _block_name(block, c, model)
         page.heading(f"History of {name}", canvas.cut("only what changed it, newest first · ↵ one · b back"
                                                       if narrow else "only what changed it, newest first · "
-                                                      "↵ shows one on the diagram · b back", max(8, width - 14 - len(name))))
+                                                      "↵ shows one · c compares · b back",
+                                                      max(8, width - 14 - len(name))))
     else:
-        page.heading("History", canvas.cut("newest first · ↵ shows one" if narrow else
+        page.heading("History", canvas.cut("newest first · ↵ one · c compare" if narrow else
                                            "how the system changed, newest first · ↵ shows one on the diagram · "
-                                           "h on a box: its own history", max(8, width - 10)))
+                                           "c on two compares them", max(8, width - 10)))
     if not entries:
         page.add(["   nothing recorded yet" + (" for this block" if block else "") + ": each change to the "
                   "structure is kept as it happens, and the commits are read in the background", "muted"])
         return page.json(view="history", part=part)
     g = canvas.Grid()
     shown = entries[:HISTORY_MOST]
-    for i, e in enumerate(shown):
-        y, bid = 2 * i, "hy:" + e["id"]
-        lead = f" {history.when(e['at'])} · "
-        g.put(0, y, lead, "muted", [bid])
-        asked = history.asked_line(e)
-        style = "bold" if e.get("request") else ""
-        if asked.startswith("You asked: "):
-            g.put(len(lead), y, "You asked: ", "muted", [bid])
-            g.put(len(lead) + 11, y, canvas.cut(asked[11:], max(8, width - len(lead) - 12)), style, [bid])
-        else:
-            g.put(len(lead), y, canvas.cut(asked, max(8, width - len(lead) - 1)), "muted" if not e.get("commit")
-                  else "", [bid])
-        arrow = "   → " if narrow else "   → it got: "
-        g.put(0, y + 1, arrow, "muted", [bid])
-        g.put(len(arrow), y + 1, canvas.cut(e["got"], max(8, width - len(arrow) - 1)),
-              "attention" if any(d["status"] == "warn" for d in e["changes"]) else "changed", [bid])
+    on: Dict[str, Dict[str, Any]] = {}
+    y = 0
+    if marked:   # where the comparison can end: now
+        g.put(0, 0, " ● now", "accent bold", ["hy:now"])
+        tail = canvas.cut(" · the system as it is · c here compares ◆ with now", max(8, width - 7))
+        g.put(6, 0, tail, "muted", ["hy:now"])
+        g.blocks.append({"id": "hy:now", "x": 0, "y": 0, "w": width - 1, "h": 1})
+        g.details["hy:now"] = [[["   c compares the change marked ◆ with the system as it is now", "muted"]]]
+        on["hy:now"] = {"enter": {"compare": history.NOW}, "on": {"c": {"compare": history.NOW}}}
+        y = 1
+    if any(history.sentence(e)[1] for e in shown):
+        page.add([canvas.cut(f"  {LLM_MARK.strip()} a summary an LLM wrote from the changes listed under it (pick one to "
+                             "see them)", width - 1), "muted"])
+    for e in shown:
+        bid = "hy:" + e["id"]
+        _history_row(g, y, e, width, bid, "◆ from" if e["id"] == marked else "")
         g.blocks.append({"id": bid, "x": 0, "y": y, "w": width - 1, "h": 2})
-        g.details[bid] = _history_entry_grid(e, width)
-    page.grid(g, slot=5, on={"hy:" + e["id"]: {"enter": {"entry": e["id"]}} for e in shown})
+        g.details[bid] = _history_entry_grid(e, width, marked)
+        on[bid] = {"enter": {"entry": e["id"]}, "on": {"c": {"compare": e["id"]}}}
+        y += 2
+    page.grid(g, slot=5, on=on)
     if len(entries) > len(shown):
         page.rows.insert(len(page.rows) - 5, [[f"   and {len(entries) - len(shown)} older: on the web page, or "
                                                "`system-diff history`", "muted"]])
         for b in page.blocks:
             b["slot"] = [b["slot"][0] + 1, b["slot"][1]]
-    page.pick = "hy:" + shown[0]["id"]
+    page.pick = "hy:" + (marked or shown[0]["id"])
     return page.json(view="history", part=part)
 
 
@@ -1751,8 +1797,11 @@ def _history_entry_page(root: Path, width: int, block: str, eid: str, part: str)
     page.heading("Change" + (f" to {name}" if name else ""), canvas.cut(
         history.when(e["at"]) + " · b back", max(8, width - 12 - len(name))))
     page.para(history.asked_line(e), "bold")
-    page.para("→ it got: " + (e.get("got") or history.got_line(e["changes"])), "changed", indent=0)
+    said, by = history.sentence(e)
+    page.para("→ " + said + (LLM_MARK if by else ""), "changed", indent=0)
     tail = []
+    if by:
+        tail.append(f"{LLM_MARK.strip()} summary by {by}")
     if e.get("commit"):
         tail.append(f"commit {e['commit'][:7]}" + (f": {e['message']}" if e.get("message") and e.get("request")
                                                     else ""))
@@ -1764,29 +1813,106 @@ def _history_entry_page(root: Path, width: int, block: str, eid: str, part: str)
     if c is not None and model is not None:
         page.heading("The system after it", canvas.cut("what it changed is coloured · ↵ on a box: its history",
                                                        max(8, width - 22)))
-        g = _diagram(page, c, model, width)
-        ids = {b["id"] for b in g.blocks}
-        for b in page.blocks:
-            if b["id"] in ids and (b.get("enter") or {}).get("zoom"):
-                b["enter"] = {"history": b["enter"]["zoom"]}
+        _history_diagram(page, c, model, width)
     else:
         page.add(["   the diagram at that point is no longer kept: what it changed is below", "muted"])
     if decs:
-        page.heading("What it changed", canvas.cut(f"{len(decs)}, the most consequential first · pick one",
-                                                   max(8, width - 18)))
-        g = canvas.Grid()
-        for y, d in enumerate(decs):
-            bid = "w:" + d["id"]
-            g.put(0, y, f" {d['sign']} ", NOTE_STYLE.get(d["status"], ""), [bid])
-            title = canvas.cut(d["title"], max(8, width - 4))
-            g.put(3, y, title, "", [bid])
-            g.blocks.append({"id": bid, "x": 0, "y": y, "w": 3 + len(title), "h": 1})
-            g.details[bid] = _decision_detail(d, width)
-        page.grid(g, slot=2)
+        _history_changes(page, decs, model, width, "What it changed")
+    return page.json(view="history", part=part)
+
+
+def _history_diagram(page: canvas.Page, c, model: Dict[str, Any], width: int) -> None:
+    """The system diagram as Review draws it; ↵ on a box shows that box's history (not a zoom)."""
+    g = _diagram(page, c, model, width)
+    ids = {b["id"] for b in g.blocks}
+    for b in page.blocks:
+        if b["id"] in ids and (b.get("enter") or {}).get("zoom"):
+            b["enter"] = {"history": b["enter"]["zoom"]}
+
+
+def _history_changes(page: canvas.Page, decs: List[Dict[str, Any]], model: Optional[Dict[str, Any]], width: int,
+                     title: str, most: int = 0, more: str = "") -> None:
+    """The ranked changes (the first `most`, if given), each a block to pick (why it matters; lit to its parts in the
+    diagram); `more` says where the rest are."""
+    page.heading(title, canvas.cut(f"{len(decs)}, the most consequential first · pick one", max(8, width - 18)))
+    g = canvas.Grid()
+    left = len(decs) - most if most else 0
+    decs = decs[:most] if most else decs
+    for y, d in enumerate(decs):
+        bid = "w:" + d["id"]
+        g.put(0, y, f" {d['sign']} ", NOTE_STYLE.get(d["status"], ""), [bid])
+        text = canvas.cut(d["title"], max(8, width - 4))
+        g.put(3, y, text, "", [bid])
+        g.blocks.append({"id": bid, "x": 0, "y": y, "w": 3 + len(text), "h": 1})
+        g.details[bid] = _decision_detail(d, width)
+    if left > 0:
+        g.put(0, len(decs), canvas.cut(f"   and {left} more" + (f": {more}" if more else ""), width - 1), "muted")
+    page.grid(g, slot=2)
+    if model is not None:
+        for bid, lit in _decision_lights(decs, model, page.lights).items():
+            page.lights[bid] = lit
+    page.pick = "w:" + decs[0]["id"]
+
+
+def _history_compared(root: Path, a: str, b: str) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    """history.compare for a view (kept states only; now from the engine's model), and the diagram's model."""
+    from . import history
+    cfg = config.lenient(root)
+    now = _history_now(root)[0].after if history.NOW in (a, b) else None
+    got = history.compare(root, a, b, cfg, now=now)
+    c = got["comparison"]
+    return got, (architecture.system(c, None, None) if c is not None else None)
+
+
+def _history_compare_page(root: Path, width: int, part: str, a: str, b: str) -> Dict[str, Any]:
+    """Two points of the history compared: from just after A to just after B (or now), the system diagram as of B with
+    what changed since A coloured, the changes ranked with why each matters, and the requests made in between."""
+    from . import history
+    page = canvas.Page(width)
+    got, model = _history_compared(root, a, b)
+    page.heading("Compare", canvas.cut("what changed between two points of the history · b back", max(8, width - 9)))
+    if got["missing"] or got["a"] is None:
+        page.add(["   " + ("That change is no longer in the history." if got["missing"] else "Nothing to compare.")
+                  + " b goes back.", "muted"])
+        return page.json(view="history", part=part)
+    A, B = got["a"], got["b"]
+    page.add(["   from  ", "muted"], [canvas.cut("just after " + history.point_line(A, width), width - 10), "bold"])
+    page.add(["   to    ", "muted"], [canvas.cut("now, the system as it is" if B is None else
+                                                 "just after " + history.point_line(B, width), width - 10), "bold"])
+    c, changes = got["comparison"], got["changes"]
+    if c is None:
+        page.add(["   " + ("reading the system at that point… (in the background: this fills in when it is read)"
+                           if got["reading"] else "the system at that point is no longer kept: the requests made in "
+                           "between are below"), "muted"])
+    elif not changes:
+        page.add(["   → no change to the system's structure between them", "muted"])
+    else:
+        from . import human
+        page.para("→ " + human.change_sentence(changes, max(40, 2 * width - 10)), "changed", indent=3)
+        page.heading("The system " + ("now" if B is None else "after it"),
+                     canvas.cut("what changed since “from” is coloured · ↵ on a box: its history",
+                                max(8, width - 18)))
         if model is not None:
-            for bid, lit in _decision_lights(decs, model, page.lights).items():
-                page.lights[bid] = lit
-        page.pick = "w:" + decs[0]["id"]
+            _history_diagram(page, c, model, width)
+        _history_changes(page, _history_decs(changes), model, width, "What changed", HISTORY_MOST * 2,
+                         f"on the web page, or `system-diff history --compare {A['id']} "
+                         f"{history.NOW if B is None else B['id']}`")
+    between = got["between"]
+    if between:
+        page.heading("Asked in between", canvas.cut(f"{len(between)}, oldest first · ↵ shows one",
+                                                    max(8, width - 19)))
+        g = canvas.Grid()
+        on = {}
+        for i, e in enumerate(between[:HISTORY_MOST]):
+            bid = "hy:" + e["id"]
+            _history_row(g, 2 * i, e, width, bid)
+            g.blocks.append({"id": bid, "x": 0, "y": 2 * i, "w": width - 1, "h": 2})
+            on[bid] = {"enter": {"entry": e["id"]}}
+        if len(between) > HISTORY_MOST:
+            g.put(0, 2 * HISTORY_MOST, f"   and {len(between) - HISTORY_MOST} more, newer: on the web page", "muted")
+        page.grid(g, on=on)
+        if not page.pick:
+            page.pick = "hy:" + between[0]["id"]
     return page.json(view="history", part=part)
 
 
@@ -1799,27 +1925,49 @@ def _history_lights(changes: List[Dict[str, Any]], model: Dict[str, Any], lights
 
 
 def _history_hover(e: Dict[str, Any]) -> Dict[str, Any]:
-    """An entry's hover card: the whole request, every change with why it matters, the commit, the files."""
+    """An entry's hover card: the whole request, what it gained or lost, every change with why it matters, the commit,
+    the files."""
     from . import history
     title = (f"You asked: “{e['request_full']}”" if e.get("request_full") else history.asked_line(e))
-    lines = ["It got: " + (e.get("got") or history.got_line(e["changes"]))]
+    said, by = history.sentence(e)
+    lines = ["→ " + said]
+    if by:
+        lines.append(f"{LLM_MARK.strip()} Summary written by {by} from the changes below")
     lines += [f"{d['sign']} {d['title']}: {d['why']}" for d in e["changes"]]
     if e.get("commit"):
         lines.append(f"Commit {e['commit'][:7]}" + (f": {e['message']}" if e.get("message") else ""))
     if e.get("files") is not None:
         lines.append(f"{e['files']} file{'' if e['files'] == 1 else 's'} changed")
     span = time.strftime("%d %b %Y %H:%M", time.localtime(e["at"]))
-    lines.append(f"{span} ({history.when(e['at'])})")
+    lines.append(f"{span} ({history.when(e['at'])}) · id {e['id']}")
     return {"title": title, "lines": lines}
 
 
-def _web_history(root: Path, part: str, zoom: int) -> Dict[str, Any]:
-    """The History view for the web page: the timeline (section kind "history": {id, when, at, asked, request, got,
-    source, commit, files, changes [{sign, status, text, why}], parts}) over the system diagram as it is now (an
-    entry lights the boxes it changed; a click on a box shows that box's history); with "<block>#<entry>", that
-    entry: the system after it, what it changed coloured, and each change."""
+def _web_history_item(e: Dict[str, Any], lit: List[str], marked: str = "") -> Dict[str, Any]:
     from . import history
-    block, eid = history.split_part(part)
+    said, by = history.sentence(e)
+    return {"id": "hy:" + e["id"], "eid": e["id"], "when": history.when(e["at"]), "at": e["at"],
+            "asked": history.asked_line(e), "request": e.get("request") or "", "said": said, "by": by,
+            "got": e["got"], "source": e.get("source", ""), "commit": (e.get("commit") or "")[:7],
+            "files": e.get("files"), "parts": lit, "marked": e["id"] == marked,
+            "changes": [{"sign": d["sign"], "status": d["status"], "text": d["title"], "why": d["why"]}
+                        for d in e["changes"]]}
+
+
+def _web_history(root: Path, part: str, zoom: int) -> Dict[str, Any]:
+    """The History view for the web page: the timeline (section kind "history", "pick": true: {id, eid, when, at,
+    asked, request, said (the sentence), by (the LLM that wrote it, or ""), got, source, commit, files, changes
+    [{sign, status, text, why}], parts, marked}) over the system diagram as it is now (an entry lights the boxes it
+    changed; a click on a box shows that box's history); with "<block>#<entry>", that entry: the system after it,
+    what it changed coloured, and each change; with "compare:<A>..<B>", the two compared (_web_history_compare)."""
+    from . import history
+    cmp = history.compare_part(part)
+    if cmp is not None and cmp[1] and cmp[2]:
+        return _web_history_compare(root, part, cmp[0], cmp[1], cmp[2], zoom)
+    if cmp is not None:
+        block, eid, marked = cmp[0], "", cmp[1]
+    else:
+        (block, eid), marked = history.split_part(part), ""
     if eid:
         e = history.find(root, eid)
         if e is None:
@@ -1839,8 +1987,12 @@ def _web_history(root: Path, part: str, zoom: int) -> Dict[str, Any]:
             diagram["lights"].update(_decision_lights(decs, model, diagram["lights"]))
             hover = _box_hover(c, model, decs, {}, "in this change")
         hover.update({"w:" + d["id"]: _decision_hover(d) for d in decs})
+        said, by = history.sentence(e)
         about = [{"text": history.asked_line({**e, "request": e.get("request_full") or e.get("request")}),
-                  "style": ""}, {"text": "→ it got: " + e["got"], "style": "changed"}]
+                  "style": ""}, {"text": "→ " + said + (LLM_MARK if by else ""), "style": "changed"}]
+        if by:
+            about.append({"text": f"{LLM_MARK.strip()} summary written by {by} from the changes below",
+                          "style": "muted"})
         if e.get("commit"):
             about.append({"text": f"commit {e['commit'][:7]}" + (f": {e['message']}" if e.get("message") else ""),
                           "style": "muted"})
@@ -1864,18 +2016,70 @@ def _web_history(root: Path, part: str, zoom: int) -> Dict[str, Any]:
         hid = "hy:" + e["id"]
         lit = _history_lights(e["changes"], model, diagram["lights"])
         diagram["lights"][hid] = lit
-        items.append({"id": hid, "when": history.when(e["at"]), "at": e["at"], "asked": history.asked_line(e),
-                      "request": e.get("request") or "", "got": e["got"], "source": e.get("source", ""),
-                      "commit": (e.get("commit") or "")[:7], "files": e.get("files"), "parts": lit,
-                      "changes": [{"sign": d["sign"], "status": d["status"], "text": d["title"], "why": d["why"]}
-                                  for d in e["changes"]]})
+        items.append(_web_history_item(e, lit, marked))
         hover[hid] = _history_hover(e)
     decs = [d for e in entries for d in _history_decs(e["changes"])]
     hover.update(_box_hover(c, model, decs, {}, "in its history"))
     title = f"History of {name}" if name else "History"
     aside = (f"{len(entries)} change{'' if len(entries) == 1 else 's'}, newest first · click one to see it on the "
-             "diagram" if entries else "nothing recorded yet: each change is kept as it happens, and the commits "
-             "are read in the background")
+             "diagram · tick two to compare them" if entries else "nothing recorded yet: each change is kept as it "
+             "happens, and the commits are read in the background")
+    sec = _web_section(title, "history", items, aside)
+    sec["pick"] = True
+    sec["block"] = block
     return {"view": "history", "part": part, "title": "History",
             "headline": (f"How {name} evolved" if name else "How the system evolved"),
-            "diagram": diagram, "sections": [_web_section(title, "history", items, aside)], "hover": hover}
+            "diagram": diagram, "sections": [sec], "hover": hover}
+
+
+def _web_history_compare(root: Path, part: str, block: str, a: str, b: str, zoom: int) -> Dict[str, Any]:
+    """Two points of the history compared, for the web page: a "compare" section {from, to: {id, eid, when, asked,
+    said, now}, block, reading, gone, sentence}, the diagram as of the later point with what changed since the earlier
+    coloured, "What changed" (notes, "w:<id>") and "Asked in between" (history items, oldest first)."""
+    from . import history, human
+    got, model = _history_compared(root, a, b)
+    A, B = got["a"], got["b"]
+
+    def side(e: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if e is None:
+            return {"id": "", "eid": history.NOW, "when": "now", "asked": "the system as it is", "said": "", "now": True}
+        return {"id": "hy:" + e["id"], "eid": e["id"], "when": history.when(e["at"]), "asked": history.asked_line(e),
+                "said": history.sentence(e)[0], "now": False}
+
+    if got["missing"] or A is None:
+        return {"view": "history", "part": part, "title": "History",
+                "headline": "That change is no longer in the history" if got["missing"] else "Nothing to compare",
+                "diagram": {}, "sections": [], "hover": {}}
+    c, changes = got["comparison"], got["changes"]
+    decs = _history_decs(changes)
+    diagram: Dict[str, Any] = {}
+    hover: Dict[str, Any] = {}
+    if c is not None and model is not None:
+        diagram = _web_diagram(c, model, "The system " + ("now" if B is None else "just after “to”"),
+                               "what changed since “from” is coloured · hover a change to light it · click a box: "
+                               "its history", zoom, [])
+        diagram["lights"].update(_decision_lights(decs, model, diagram["lights"]))
+        hover = _box_hover(c, model, decs, {}, "between these two points")
+    hover.update({"w:" + d["id"]: _decision_hover(d) for d in decs})
+    between = got["between"]
+    items = []
+    for e in between:
+        lit = _history_lights(e["changes"], model, diagram["lights"]) if model is not None and diagram else []
+        if diagram:
+            diagram["lights"]["hy:" + e["id"]] = lit
+        items.append(_web_history_item(e, lit))
+        hover["hy:" + e["id"]] = _history_hover(e)
+    head = {"from": side(A), "to": side(B), "block": block, "reading": bool(got["reading"]),
+            "gone": bool(got["gone"] and c is None),
+            "sentence": human.change_sentence(changes) if c is not None else ""}
+    sections = [_web_section("Compare", "compare", [head], "what changed between two points of the history")]
+    if c is not None:
+        sections.append(_web_section("What changed", "notes", [_web_decision(d) for d in decs],
+                                     f"{len(decs)}, the most consequential first" if decs else
+                                     "no change to the system's structure between them"))
+    sections.append(_web_section("Asked in between", "history", items,
+                                 f"{len(items)}, oldest first · click one to see it on its own"))
+    to = "now" if B is None else history.point_line(B, 60)
+    return {"view": "history", "part": part, "title": "History",
+            "headline": f"From {history.point_line(A, 60)} to {to}", "diagram": diagram, "sections": sections,
+            "hover": hover}

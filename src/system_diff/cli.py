@@ -14,6 +14,7 @@
     system-diff setup claude [--scope user|project|local] [--undo]  -> the hooks, status line, a skill, the MCP server
     system-diff objectives [clear ID | restore ID | learn]          -> what you keep asking for, learned from your requests
     system-diff history [--part ID] [--json]                        -> how the system evolved: what you asked, what it got
+    system-diff history --compare ID ID|now                         -> what changed between two points of it
     system-diff mcp                                                 -> the MCP server (stdio)
 
 Deterministic: everything is read from git objects (no checkout) or a directory, with the standard library only.
@@ -259,6 +260,8 @@ def parser() -> argparse.ArgumentParser:
     hi.add_argument("--part", default="", help="only what changed this block (a part's or container's id)")
     hi.add_argument("--json", action="store_true", help="the entries, as JSON")
     hi.add_argument("--width", type=int, default=0, help="columns to fit (default: the terminal's)")
+    hi.add_argument("--compare", nargs=2, metavar=("FROM", "TO"), default=None,
+                    help="what changed from just after one entry to just after another (an id, or now)")
     hb = sub.add_parser("hub", help="the one address listing every running project (each repository's engine)")
     hb.add_argument("--open", action="store_true", help="open it in the browser too")
     hb.add_argument("--no-serve", action="store_true", help="when no engine runs, say so instead of serving the list")
@@ -308,13 +311,29 @@ def _history(args, root: Path) -> int:
     from . import history
     if not history.load(root):
         history.backfill(root)
+    width = args.width or shutil.get_terminal_size((100, 24)).columns
+    if args.compare:
+        a, b = args.compare
+        now = None
+        if history.NOW in (a, b):
+            from . import pane
+            now = pane._history_now(root)[0].after
+        if args.json:
+            got = history.compare(root, a, b, now=now, wait=True)
+            print(json.dumps({"from": got["a"] and got["a"]["id"], "to": got["b"]["id"] if got["b"] else history.NOW,
+                              "missing": got["missing"], "changes": got["changes"],
+                              "between": [e["id"] for e in got["between"]]}, ensure_ascii=False, indent=1))
+            return 1 if got["missing"] else 0
+        print(history.compare_text(root, a, b, width, now), end="")
+        return 0
+    history.start_words(root)
     if args.json:
         entries = history.load(root)
         if args.part:
             entries = history.for_part(entries, {args.part})
         print(json.dumps(entries, ensure_ascii=False, indent=1))
         return 0
-    print(history.text(root, args.part, args.width or shutil.get_terminal_size((100, 24)).columns), end="")
+    print(history.text(root, args.part, width), end="")
     return 0
 
 

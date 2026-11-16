@@ -6,7 +6,8 @@ import type { Page, PageBlock, Row, Run } from '../types'
 // the clicks: ← ↑ ↓ → pick a block (a box of the system diagram, a component in a container, a technology), Enter
 // or a second click zooms in on it, space marks a technology new to you, [ and ] scroll a picture wider than the
 // pane, shift ↑ ↓ and Page Up/Down scroll a tall one (as the wheel does), b goes back, f follows Claude, n m c t h
-// switch tabs (h on a picked box: that box's own history), Esc hands the keys back. Shift ← → are left to the terminal.
+// switch tabs (h on a picked box: that box's own history; c on a change in the History: compare it with another, the
+// key the picked block names first), Esc hands the keys back. Shift ← → are left to the terminal.
 //
 // A picked block is blue; what it connects to (its lines, in and out, and the blocks at their other ends) is lit;
 // the rest keeps its colours: yellow what changed, green what is new, red what went, gray the background.
@@ -212,6 +213,7 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
       })}
       <Text dimColor wrap="truncate-end">
         {'click here, then ← ↑ ↓ → pick · ↵ ' + (picked?.enter?.entry !== undefined ? 'show it' :
+          picked?.enter?.compare !== undefined ? 'compare' :
           picked?.enter?.history !== undefined ? 'its history' : 'zoom in') + keysOf(picked) +
           (sel.startsWith('b:') ? ' · h its history' : ' · h history') + ' · [ ] shift+↑ ↓ scroll' +
           (canGoBack ? ' · b back' : '') + ' · f follow · Esc leaves'}

@@ -78,12 +78,12 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,488 C544,488 544,248 484,248" marker-end="url(#ar-call-same)"><title>architecture → extract</title></path>
 <path class="be k-call s-same" d="M478,488 C544,488 544,788 484,788" marker-end="url(#ar-call-same)"><title>architecture → names</title></path>
 <path class="be k-call s-same" d="M478,488 C507,488 507,112 536,112" marker-end="url(#ar-call-same)"><title>architecture → sources</title></path>
+<path class="be k-call s-same" d="M214,52 C280,52 280,368 220,368" marker-end="url(#ar-call-same)"><title>cli → panel</title></path>
 <path class="be k-call s-same" d="M214,52 C260,52 260,172 220,172" marker-end="url(#ar-call-same)"><title>cli → agent</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,188 272,188" marker-end="url(#ar-call-same)"><title>cli → config</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,248 272,248" marker-end="url(#ar-call-same)"><title>cli → extract</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,368 272,368" marker-end="url(#ar-call-same)"><title>cli → graph</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,1148 272,1148" marker-end="url(#ar-call-same)"><title>cli → learn</title></path>
-<path class="be k-call s-same" d="M214,52 C280,52 280,368 220,368" marker-end="url(#ar-call-same)"><title>cli → panel</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,1328 272,1328" marker-end="url(#ar-call-same)"><title>cli → src/system_diff</title></path>
 <path class="be k-call s-same" d="M214,52 C246,52 246,83 278,83 L478,83 C507,83 507,172 536,172" marker-end="url(#ar-call-same)"><title>cli → activity</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,112 272,112" marker-end="url(#ar-call-same)"><title>cli → compare</title></path>
@@ -113,16 +113,16 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,248 C544,248 544,1328 484,1328" marker-end="url(#ar-call-same)"><title>extract → src/system_diff</title></path>
 <path class="be k-call s-same" d="M742,52 C778,52 778,112 748,112" marker-end="url(#ar-call-same)"><title>gitfs → sources</title></path>
 <path class="be k-call s-same" d="M478,368 C514,368 514,308 484,308" marker-end="url(#ar-call-same)"><title>graph → diff</title></path>
+<path class="be k-call s-same" d="M478,728 C514,728 514,668 484,668" marker-end="url(#ar-call-same)"><title>history → human</title></path>
 <path class="be k-call s-same" d="M478,728 C507,728 507,172 536,172" marker-end="url(#ar-call-same)"><title>history → activity</title></path>
 <path class="be k-call s-same" d="M478,728 C544,728 544,248 484,248" marker-end="url(#ar-call-same)"><title>history → extract</title></path>
 <path class="be k-call s-same" d="M478,728 C507,728 507,112 536,112" marker-end="url(#ar-call-same)"><title>history → sources</title></path>
-<path class="be k-call s-same" d="M478,728 C507,728 507,52 536,52" marker-end="url(#ar-call-same)"><title>history → gitfs</title></path>
 <path class="be k-call s-same" d="M478,728 C534,728 534,908 484,908" marker-end="url(#ar-call-same)"><title>history → canvas</title></path>
+<path class="be k-call s-same" d="M478,728 C507,728 507,52 536,52" marker-end="url(#ar-call-same)"><title>history → gitfs</title></path>
+<path class="be k-call s-same" d="M478,728 C544,728 544,1028 484,1028" marker-end="url(#ar-call-same)"><title>history → narrate</title></path>
+<path class="be k-call s-same" d="M478,728 C524,728 524,848 484,848" marker-end="url(#ar-call-same)"><title>history → objectives</title></path>
 <path class="be k-call s-same" d="M478,728 C544,728 544,112 484,112" marker-end="url(#ar-call-same)"><title>history → compare</title></path>
 <path class="be k-call s-same" d="M478,728 C544,728 544,188 484,188" marker-end="url(#ar-call-same)"><title>history → config</title></path>
-<path class="be k-call s-same" d="M478,728 C524,728 524,608 484,608" marker-end="url(#ar-call-same)"><title>history → design</title></path>
-<path class="be k-call s-same" d="M478,728 C544,728 544,308 484,308" marker-end="url(#ar-call-same)"><title>history → diff</title></path>
-<path class="be k-call s-same" d="M478,728 C514,728 514,668 484,668" marker-end="url(#ar-call-same)"><title>history → human</title></path>
 <path class="be k-call s-same" d="M214,308 C246,308 246,159 278,159 L478,159 C507,159 507,52 536,52" marker-end="url(#ar-call-same)"><title>hub → gitfs</title></path>
 <path class="be k-call s-same" d="M214,308 C246,308 246,219 278,219 L478,219 C507,219 507,112 536,112" marker-end="url(#ar-call-same)"><title>hub → sources</title></path>
 <path class="be k-call s-same" d="M214,308 C250,308 250,248 220,248" marker-end="url(#ar-call-same)"><title>hub → watch</title></path>
@@ -166,16 +166,16 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,848 C544,848 544,188 484,188" marker-end="url(#ar-call-same)"><title>objectives → config</title></path>
 <path class="be k-call s-same" d="M478,848 C534,848 534,1028 484,1028" marker-end="url(#ar-call-same)"><title>objectives → narrate</title></path>
 <path class="be k-call s-same" d="M478,848 C507,848 507,112 536,112" marker-end="url(#ar-call-same)"><title>objectives → sources</title></path>
-<path class="be k-call s-same" d="M214,368 C243,368 243,112 272,112" marker-end="url(#ar-call-same)"><title>panel → compare</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,728 272,728" marker-end="url(#ar-call-same)"><title>panel → history</title></path>
+<path class="be k-call s-same" d="M214,368 C243,368 243,112 272,112" marker-end="url(#ar-call-same)"><title>panel → compare</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,1148 272,1148" marker-end="url(#ar-call-same)"><title>panel → learn</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,188 272,188" marker-end="url(#ar-call-same)"><title>panel → config</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,248 272,248" marker-end="url(#ar-call-same)"><title>panel → extract</title></path>
 <path class="be k-call s-same" d="M214,368 C246,368 246,279 278,279 L478,279 C507,279 507,172 536,172" marker-end="url(#ar-call-same)"><title>panel → activity</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,368 272,368" marker-end="url(#ar-call-same)"><title>panel → graph</title></path>
+<path class="be k-call s-same" d="M214,368 C243,368 243,668 272,668" marker-end="url(#ar-call-same)"><title>panel → human</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,52 272,52" marker-end="url(#ar-call-same)"><title>panel → live</title></path>
 <path class="be k-call s-same" d="M214,368 C246,368 246,219 278,219 L478,219 C507,219 507,112 536,112" marker-end="url(#ar-call-same)"><title>panel → sources</title></path>
-<path class="be k-call s-same" d="M214,368 C243,368 243,488 272,488" marker-end="url(#ar-call-same)"><title>panel → architecture</title></path>
 <path class="be k-call s-same" d="M478,1268 C507,1268 507,112 536,112" marker-end="url(#ar-call-same)"><title>png → sources</title></path>
 <path class="be k-call s-same" d="M478,1088 C544,1088 544,188 484,188" marker-end="url(#ar-call-same)"><title>regroup → config</title></path>
 <path class="be k-call s-same" d="M478,1088 C544,1088 544,608 484,608" marker-end="url(#ar-call-same)"><title>regroup → design</title></path>

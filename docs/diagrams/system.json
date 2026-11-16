@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 450,
+   "lines": 469,
    "hub": false,
    "quiet": false
   },
@@ -177,7 +177,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 776,
+   "lines": 1318,
    "hub": false,
    "quiet": false
   },
@@ -201,7 +201,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 676,
+   "lines": 897,
    "hub": false,
    "quiet": false
   },
@@ -225,7 +225,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1336,
+   "lines": 1338,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2334,
+   "lines": 2538,
    "hub": false,
    "quiet": false
   },
@@ -405,7 +405,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1575,
+   "lines": 1665,
    "hub": false,
    "quiet": false
   }
@@ -454,7 +454,7 @@
   "cli>mcp": 1,
   "cli>narrate": 1,
   "cli>objectives": 1,
-  "cli>panel": 2,
+  "cli>panel": 3,
   "cli>pictures": 1,
   "cli>png": 1,
   "cli>readme": 1,
@@ -491,15 +491,16 @@
   "graph>diff": 1,
   "graph>pictures": 1,
   "history>activity": 3,
-  "history>canvas": 1,
+  "history>canvas": 2,
   "history>compare": 1,
   "history>config": 1,
   "history>design": 1,
   "history>diff": 1,
   "history>extract": 3,
   "history>gitfs": 2,
-  "history>human": 1,
-  "history>objectives": 1,
+  "history>human": 4,
+  "history>narrate": 2,
+  "history>objectives": 2,
   "history>sources": 3,
   "hub>gitfs": 2,
   "hub>sources": 1,
@@ -555,8 +556,8 @@
   "panel>extract": 4,
   "panel>gitfs": 1,
   "panel>graph": 3,
-  "panel>history": 5,
-  "panel>human": 1,
+  "panel>history": 10,
+  "panel>human": 3,
   "panel>learn": 5,
   "panel>live": 3,
   "panel>objectives": 1,
@@ -761,10 +762,12 @@
    "overview"
   ],
   "cli>history": [
+   "NOW",
    "load",
    "backfill",
-   "for_part",
-   "text"
+   "compare",
+   "compare_text",
+   "for_part"
   ],
   "cli>hub": [
    "main"
@@ -790,6 +793,7 @@
    "restore"
   ],
   "cli>panel": [
+   "_history_now",
    "fast",
    "main"
   ],
@@ -967,10 +971,19 @@
    "head"
   ],
   "history>human": [
-   "decisions"
+   "change_sentence",
+   "SENTENCE_MAX",
+   "decisions",
+   "outside_kind"
+  ],
+  "history>narrate": [
+   "complete",
+   "off",
+   "configured"
   ],
   "history>objectives": [
-   "requests"
+   "requests",
+   "clean"
   ],
   "history>sources": [
    "GitSource",
@@ -1239,20 +1252,20 @@
    "connections"
   ],
   "panel>history": [
+   "sentence",
    "asked_line",
    "when",
+   "NOW",
    "for_part",
-   "members",
-   "load",
-   "entry_comparison"
+   "members"
   ],
   "panel>human": [
    "decisions",
    "block_details",
    "mark_objectives",
    "touched_line",
-   "intent",
-   "intent_line"
+   "change_sentence",
+   "intent"
   ],
   "panel>learn": [
    "story",
@@ -1477,7 +1490,9 @@
    "NO_COLOR"
   ],
   "history": [
-   "SYSTEM_DIFF_HISTORY"
+   "PYTEST_CURRENT_TEST",
+   "SYSTEM_DIFF_HISTORY",
+   "SYSTEM_DIFF_HISTORY_JOBS"
   ],
   "hub": [
    "CODESPACE_NAME",
@@ -1643,6 +1658,8 @@
    "os": 1,
    "pathlib": 1,
    "re": 1,
+   "subprocess": 1,
+   "sys": 1,
    "threading": 1,
    "time": 1,
    "typing": 1
@@ -1827,6 +1844,7 @@
    "json": 1,
    "os": 1,
    "pathlib": 1,
+   "re": 1,
    "secrets": 1,
    "signal": 1,
    "socket": 1,
@@ -1972,6 +1990,8 @@
    "os": 1,
    "pathlib": 1,
    "re": 1,
+   "subprocess": 1,
+   "sys": 1,
    "threading": 1,
    "time": 1,
    "typing": 1
@@ -2161,6 +2181,7 @@
    "json": 1,
    "os": 1,
    "pathlib": 1,
+   "re": 1,
    "secrets": 1,
    "signal": 1,
    "socket": 1,
@@ -2189,6 +2210,7 @@
   "tests/test_doctor.py": 1,
   "tests/test_git_calls.py": 1,
   "tests/test_history.py": 1,
+  "tests/test_history_compare.py": 1,
   "tests/test_hub.py": 1,
   "tests/test_human.py": 1,
   "tests/test_incremental.py": 1,

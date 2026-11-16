@@ -50,7 +50,7 @@ def test_the_commits_are_read_back_as_entries_in_plain_words(repo):
     assert first["base"] == "empty" and first["source"] == "commit" and first["changes"]
     assert history.backfill(repo) == 0                             # read once: never again
     text = history.text(repo, width=100)
-    assert "→ it got:" in text and "commit " in text
+    assert "\n  → " in text and "commit " in text
 
 
 def test_a_change_the_engine_sees_is_recorded_under_the_latest_request_and_bursts_fold(repo, engine):
@@ -127,7 +127,7 @@ def test_the_history_page_lists_entries_as_blocks_with_their_changes(repo):
     history.backfill(repo)
     page = pane.show(repo, 100, "history")
     text = _text(page)
-    assert "HISTORY" in text and "→ it got: " in text and "commit " in text
+    assert "HISTORY" in text and "\n   → " in text and "commit " in text
     ids = [b["id"] for b in page["blocks"]]
     assert ids and all(i.startswith("hy:") for i in ids) and page["pick"] == ids[0]
     first = page["blocks"][0]
@@ -168,7 +168,7 @@ def test_the_web_page_has_the_history_with_hover_cards(repo):
         assert item["id"].startswith("hy:") and item["id"] in out["hover"] and item["got"] and item["asked"]
         assert item["id"] in out["diagram"]["lights"]
         card = out["hover"][item["id"]]
-        assert card["title"] and any(line.startswith("It got: ") for line in card["lines"])
+        assert card["title"] and any(line.startswith("→ ") for line in card["lines"])
         assert any("files changed" in line for line in card["lines"])
         assert any(line.startswith("Commit ") for line in card["lines"])
     assert out["diagram"]["svg"]
@@ -182,7 +182,7 @@ def test_the_web_page_has_the_history_with_hover_cards(repo):
 def test_the_history_command(repo, capsys):
     assert cli.main(["--repo", str(repo), "history", "--width", "100"]) == 0   # empty: read from the commits now
     out = capsys.readouterr().out
-    assert "→ it got:" in out and "commit " in out
+    assert "\n  → " in out and "commit " in out
     assert cli.main(["--repo", str(repo), "history", "--json", "--part", "api"]) == 0
     entries = json.loads(capsys.readouterr().out)
     assert entries and all("api" in c["parts"] for e in entries for c in e["changes"])
@@ -221,3 +221,12 @@ def test_a_page_kept_for_another_part_is_never_served_for_this_one(repo):
     assert live.saved_page(repo, ("pane", "history", 80, -1, "api"))["rows"][3][0][0] == "HISTORY OF API"
     assert live.saved_page(repo, ("pane", "history", 100, -1, "")) is None            # the whole system's: not API's
     assert live.saved_page(repo, ("pane", "history", 100, -1, "api#t1")) is None      # one entry: not the list
+
+
+def test_a_request_with_something_pasted_reads_as_typed():
+    from system_diff import history
+    raw = 'btw this history <pasted_content id="127f">\nHow the system evolved\n</pasted_content> is not readable'
+    assert history._said(raw) == "btw this history is not readable [pasted text]"
+    assert history._said('<pasted_content id="1">a log</pasted_content>') == "[pasted text]"
+    e = history._readable({"id": "x", "at": 1.0, "changes": [], "request": raw, "request_full": raw})
+    assert "pasted_content" not in e["request"] and "pasted_content" not in e["request_full"]
