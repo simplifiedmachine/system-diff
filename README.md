@@ -65,10 +65,15 @@ its own (`system-diff tui`). All three show the same live picture.
    ```
 2. The plugin, in Claude Code:
    ```
-   /plugin marketplace add simplifiedmachine/system-diff
+   /plugin marketplace add simplifiedmachine/system-diff#stable
    /plugin install system-diff
    ```
-3. Restart Claude Code. The pane opens beside the chat; `/system-diff` opens it again.
+3. Restart Claude Code, and type `/system-diff` to open the pane beside the chat.
+
+**Stable and nightly.** The commands above install the latest [stable release](https://github.com/simplifiedmachine/system-diff/releases/latest)
+(PyPI, and the plugin from the `stable` branch). To test what is coming, run nightly from `main`:
+`pip install "system-diff[mcp] @ git+https://github.com/simplifiedmachine/system-diff@main"` and
+`/plugin marketplace add simplifiedmachine/system-diff`. Bugs found there are very welcome as issues.
 
 <details><summary>Windows, tmux, and a pane that opens above the chat</summary>
 

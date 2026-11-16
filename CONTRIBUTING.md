@@ -75,7 +75,8 @@ Python and TypeScript are done, and add a fixture repository in `tests/`.
    anyone wait; plain words; only show, never act for the person; honest about what is certain.
 
 Maintainers review as soon as they can; small PRs are reviewed fastest. Versions and releases are done by the
-maintainers.
+maintainers: `main` is nightly; a tag `vX.Y.Z` publishes to PyPI, moves the `stable` branch (what stable plugin
+users follow) and makes a GitHub Release.
 
 ## Style
 

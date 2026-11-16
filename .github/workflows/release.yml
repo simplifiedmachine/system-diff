@@ -39,3 +39,23 @@ jobs:
           name: dist
           path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  stable:
+    # A release is the new stable: the `stable` branch (what `/plugin marketplace add simplifiedmachine/system-diff#stable`
+    # follows) moves to it, and it gets a GitHub Release (notes written by hand are kept; otherwise generated).
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Move stable to this release
+        run: git push --force origin "$GITHUB_SHA:refs/heads/stable"
+      - name: A GitHub Release for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --verify-tag --latest --generate-notes --title "system-diff ${GITHUB_REF_NAME#v}"
