@@ -124,7 +124,7 @@ pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 .attn .item .sign { color:var(--warn); }
 .attn { border-color:var(--warn-line); }
 .attn > h2 { color:var(--warn); }
-#hovercard { position:fixed; z-index:20; max-width:min(360px, calc(100vw - 16px)); padding:10px 12px; border-radius:10px;
+#hovercard { position:fixed; z-index:40; max-width:min(360px, calc(100vw - 16px)); padding:10px 12px; border-radius:10px;
              background:var(--card); color:var(--ink); border:1px solid var(--line); font-size:13px; line-height:1.45;
              box-shadow:0 6px 24px rgba(0,0,0,.18); pointer-events:none; overflow-wrap:anywhere; }
 #hovercard .t { font-weight:650; margin-bottom:4px; }
@@ -236,8 +236,9 @@ pre.lines .s-attention { color:var(--attn); font-weight:600; } pre.lines .s-acce
 .cmp .sum { grid-column:1 / -1; color:var(--warn); font-weight:600; margin-top:4px; overflow-wrap:anywhere; }
 .cmp .note { grid-column:1 / -1; color:var(--muted); font-size:13px; }
 .cmp .acts { grid-column:1 / -1; display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
-form.send { position:sticky; bottom:0; z-index:5; display:flex; gap:10px; align-items:flex-end; padding:10px 20px;
-            background:var(--card); border-top:1px solid var(--line); }
+body { padding-bottom:var(--sendh, 76px); }   /* room under the page for the send box pinned over it */
+form.send { position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; gap:10px; align-items:flex-end; padding:10px 20px;
+            background:var(--card); border-top:1px solid var(--line); box-shadow:0 -4px 16px rgba(0,0,0,.06); }
 form.send label { font-weight:600; font-size:13px; align-self:center; white-space:nowrap; }
 #say { flex:1; font:inherit; font-size:13.5px; min-height:2.6em; max-height:30vh; resize:vertical; padding:7px 10px;
        border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); }
@@ -699,6 +700,13 @@ $("dia").addEventListener("click", e => {
   if (t) go(ui.view === "history" ? "history" : "now", t);
   else if (d && keyed(g.files, d)) showCode(keyed(g.files, d));
 });
+// the send box stays pinned to the bottom of the window, over the page; the page keeps room for it as it grows
+(function () {
+  const f = $("send");
+  const room = () => document.body.style.setProperty("--sendh", (f.offsetHeight + 12) + "px");
+  room();
+  if (window.ResizeObserver) new ResizeObserver(room).observe(f); else addEventListener("resize", room);
+})();
 // a file box's click: its code, read-only, below the diagram (lines of code one click away, never the first thing)
 async function showCode(path) {
   const box = $("code");
