@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 443,
+   "lines": 450,
    "hub": false,
    "quiet": false
   },
@@ -17,7 +17,7 @@
    "label": "Agent activity",
    "layer": "",
    "kind": "data",
-   "order": 31,
+   "order": 32,
    "container": "",
    "declared": true,
    "files": 1,
@@ -41,7 +41,7 @@
    "label": "Agent team",
    "layer": "",
    "kind": "logic",
-   "order": 17,
+   "order": 18,
    "container": "",
    "declared": true,
    "files": 1,
@@ -53,7 +53,7 @@
    "label": "System diagram",
    "layer": "",
    "kind": "logic",
-   "order": 16,
+   "order": 17,
    "container": "",
    "declared": true,
    "files": 2,
@@ -65,7 +65,7 @@
    "label": "Pane pictures",
    "layer": "",
    "kind": "logic",
-   "order": 23,
+   "order": 24,
    "container": "",
    "declared": true,
    "files": 1,
@@ -77,7 +77,7 @@
    "label": "Checkpoints and snapshots",
    "layer": "",
    "kind": "logic",
-   "order": 10,
+   "order": 11,
    "container": "",
    "declared": true,
    "files": 1,
@@ -89,7 +89,7 @@
    "label": "Config",
    "layer": "",
    "kind": "logic",
-   "order": 11,
+   "order": 12,
    "container": "",
    "declared": true,
    "files": 1,
@@ -101,7 +101,7 @@
    "label": "Design notes",
    "layer": "",
    "kind": "logic",
-   "order": 18,
+   "order": 19,
    "container": "",
    "declared": true,
    "files": 1,
@@ -113,7 +113,7 @@
    "label": "Typed diff",
    "layer": "",
    "kind": "logic",
-   "order": 13,
+   "order": 14,
    "container": "",
    "declared": true,
    "files": 1,
@@ -125,7 +125,7 @@
    "label": "Doctor",
    "layer": "",
    "kind": "interface",
-   "order": 8,
+   "order": 9,
    "container": "",
    "declared": true,
    "files": 1,
@@ -137,11 +137,11 @@
    "label": "Extraction",
    "layer": "",
    "kind": "logic",
-   "order": 12,
+   "order": 13,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1487,
+   "lines": 2108,
    "hub": false,
    "quiet": false
   },
@@ -149,7 +149,7 @@
    "label": "Git reader",
    "layer": "",
    "kind": "data",
-   "order": 5,
+   "order": 6,
    "container": "",
    "declared": true,
    "files": 1,
@@ -161,7 +161,7 @@
    "label": "Map layout",
    "layer": "",
    "kind": "logic",
-   "order": 14,
+   "order": 15,
    "container": "",
    "declared": true,
    "files": 1,
@@ -173,7 +173,7 @@
    "label": "History",
    "layer": "",
    "kind": "logic",
-   "order": 20,
+   "order": 21,
    "container": "",
    "declared": true,
    "files": 1,
@@ -181,15 +181,27 @@
    "hub": false,
    "quiet": false
   },
+  "hub": {
+   "label": "Projects hub",
+   "layer": "",
+   "kind": "interface",
+   "order": 4,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 493,
+   "hub": false,
+   "quiet": false
+  },
   "human": {
    "label": "Worth a look",
    "layer": "",
    "kind": "logic",
-   "order": 19,
+   "order": 20,
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 338,
+   "lines": 676,
    "hub": false,
    "quiet": false
   },
@@ -197,7 +209,7 @@
    "label": "Lessons and topics",
    "layer": "",
    "kind": "logic",
-   "order": 27,
+   "order": 28,
    "container": "",
    "declared": true,
    "files": 3,
@@ -209,7 +221,7 @@
    "label": "Live engine",
    "layer": "",
    "kind": "logic",
-   "order": 4,
+   "order": 5,
    "container": "",
    "declared": true,
    "files": 1,
@@ -233,7 +245,7 @@
    "label": "Readable names",
    "layer": "",
    "kind": "logic",
-   "order": 21,
+   "order": 22,
    "container": "",
    "declared": true,
    "files": 1,
@@ -245,7 +257,7 @@
    "label": "LLM summary",
    "layer": "",
    "kind": "logic",
-   "order": 25,
+   "order": 26,
    "container": "",
    "declared": true,
    "files": 1,
@@ -257,7 +269,7 @@
    "label": "Objectives",
    "layer": "",
    "kind": "logic",
-   "order": 22,
+   "order": 23,
    "container": "",
    "declared": true,
    "files": 1,
@@ -269,11 +281,11 @@
    "label": "Pane beside the chat",
    "layer": "",
    "kind": "interface",
-   "order": 6,
+   "order": 7,
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2335,
+   "lines": 2334,
    "hub": false,
    "quiet": false
   },
@@ -281,7 +293,7 @@
    "label": "SVG pictures",
    "layer": "",
    "kind": "logic",
-   "order": 15,
+   "order": 16,
    "container": "",
    "declared": true,
    "files": 1,
@@ -293,7 +305,7 @@
    "label": "PNG rendering",
    "layer": "",
    "kind": "logic",
-   "order": 29,
+   "order": 30,
    "container": "",
    "declared": true,
    "files": 1,
@@ -305,7 +317,7 @@
    "label": "src/system_diff",
    "layer": "undeclared",
    "kind": "",
-   "order": 32,
+   "order": 33,
    "container": "",
    "declared": false,
    "files": 1,
@@ -317,7 +329,7 @@
    "label": "README section",
    "layer": "",
    "kind": "logic",
-   "order": 24,
+   "order": 25,
    "container": "",
    "declared": true,
    "files": 1,
@@ -329,7 +341,7 @@
    "label": "LLM regrouping",
    "layer": "",
    "kind": "logic",
-   "order": 26,
+   "order": 27,
    "container": "",
    "declared": true,
    "files": 1,
@@ -341,7 +353,7 @@
    "label": "Git and folder sources",
    "layer": "",
    "kind": "data",
-   "order": 30,
+   "order": 31,
    "container": "",
    "declared": true,
    "files": 1,
@@ -353,7 +365,7 @@
    "label": "Status line",
    "layer": "",
    "kind": "interface",
-   "order": 9,
+   "order": 10,
    "container": "",
    "declared": true,
    "files": 1,
@@ -365,7 +377,7 @@
    "label": "Terminal pictures",
    "layer": "",
    "kind": "logic",
-   "order": 28,
+   "order": 29,
    "container": "",
    "declared": true,
    "files": 1,
@@ -377,7 +389,7 @@
    "label": "Terminal view",
    "layer": "",
    "kind": "interface",
-   "order": 7,
+   "order": 8,
    "container": "",
    "declared": true,
    "files": 1,
@@ -393,7 +405,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1471,
+   "lines": 1575,
    "hub": false,
    "quiet": false
   }
@@ -437,6 +449,7 @@
   "cli>extract": 2,
   "cli>graph": 2,
   "cli>history": 1,
+  "cli>hub": 1,
   "cli>learn": 2,
   "cli>mcp": 1,
   "cli>narrate": 1,
@@ -488,8 +501,15 @@
   "history>human": 1,
   "history>objectives": 1,
   "history>sources": 3,
+  "hub>gitfs": 2,
+  "hub>sources": 1,
   "human>activity": 1,
+  "human>architecture": 1,
   "human>design": 1,
+  "human>graph": 1,
+  "human>history": 1,
+  "human>learn": 1,
+  "human>names": 1,
   "human>objectives": 1,
   "learn>activity": 1,
   "learn>diff": 1,
@@ -534,7 +554,7 @@
   "panel>extract": 4,
   "panel>gitfs": 1,
   "panel>graph": 3,
-  "panel>history": 4,
+  "panel>history": 5,
   "panel>human": 1,
   "panel>learn": 5,
   "panel>live": 3,
@@ -570,11 +590,12 @@
   "tui>panel": 3,
   "tui>src/system_diff": 1,
   "watch>activity": 1,
-  "watch>cli": 3,
+  "watch>cli": 4,
   "watch>compare": 1,
   "watch>diff": 1,
   "watch>extract": 1,
   "watch>graph": 1,
+  "watch>hub": 1,
   "watch>learn": 1,
   "watch>live": 1,
   "watch>panel": 3,
@@ -743,6 +764,9 @@
    "backfill",
    "for_part",
    "text"
+  ],
+  "cli>hub": [
+   "main"
   ],
   "cli>learn": [
    "find_part",
@@ -951,6 +975,13 @@
    "GitSource",
    "git_dir"
   ],
+  "hub>gitfs": [
+   "branch",
+   "locate"
+  ],
+  "hub>sources": [
+   "git_dir"
+  ],
   "human>activity": [
    "PROMPT",
    "is_system",
@@ -959,12 +990,31 @@
    "ago",
    "part_of"
   ],
+  "human>architecture": [
+   "protocol"
+  ],
   "human>design": [
-   "Reading",
    "and_list",
-   "STATE_CHANGING",
+   "Reading",
    "name_of",
+   "STATE_CHANGING",
+   "kinds",
    "py"
+  ],
+  "human>graph": [
+   "connections",
+   "files_word"
+  ],
+  "human>history": [
+   "when"
+  ],
+  "human>learn": [
+   "TECH",
+   "TOP_PACKAGE",
+   "tech_key"
+  ],
+  "human>names": [
+   "about"
   ],
   "human>objectives": [
    "touches"
@@ -1182,19 +1232,19 @@
    "change_marks",
    "neighbourhood",
    "overview",
-   "connections",
-   "files_word"
+   "connections"
   ],
   "panel>history": [
    "asked_line",
    "when",
    "for_part",
    "members",
-   "entry_comparison",
-   "find"
+   "load",
+   "entry_comparison"
   ],
   "panel>human": [
    "decisions",
+   "block_details",
    "mark_objectives",
    "touched_line",
    "intent",
@@ -1368,6 +1418,14 @@
    "diff_svg",
    "neighbourhood"
   ],
+  "watch>hub": [
+   "HREF_JS",
+   "branch",
+   "host_ok",
+   "hub_page",
+   "project_name",
+   "projects"
+  ],
   "watch>learn": [
    "story",
    "lesson",
@@ -1416,6 +1474,10 @@
   ],
   "history": [
    "SYSTEM_DIFF_HISTORY"
+  ],
+  "hub": [
+   "CODESPACE_NAME",
+   "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
   ],
   "learn": [
    "XDG_CONFIG_HOME"
@@ -1580,6 +1642,21 @@
    "threading": 1,
    "time": 1,
    "typing": 1
+  },
+  "hub": {
+   "hmac": 1,
+   "http": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "secrets": 1,
+   "socket": 1,
+   "sys": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1,
+   "urllib": 1,
+   "webbrowser": 1
   },
   "human": {
    "hashlib": 1,
@@ -1895,6 +1972,22 @@
    "time": 1,
    "typing": 1
   },
+  "hub": {
+   "hmac": 1,
+   "http.client": 1,
+   "http.server": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "secrets": 1,
+   "socket": 1,
+   "sys": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1,
+   "urllib.parse": 1,
+   "webbrowser": 1
+  },
   "human": {
    "hashlib": 1,
    "re": 1,
@@ -2088,9 +2181,11 @@
   "tests/test_checkpoint_watch_mcp.py": 1,
   "tests/test_clients.py": 1,
   "tests/test_design_and_pane.py": 1,
+  "tests/test_details.py": 1,
   "tests/test_doctor.py": 1,
   "tests/test_git_calls.py": 1,
   "tests/test_history.py": 1,
+  "tests/test_hub.py": 1,
   "tests/test_human.py": 1,
   "tests/test_incremental.py": 1,
   "tests/test_live.py": 1,
@@ -2104,5 +2199,7 @@
   "tests/test_topics_and_link.py": 1,
   "tests/test_tui.py": 1,
   "tests/test_web.py": 1
- }
+ },
+ "connections": {},
+ "part_tables": {}
 }

@@ -66,6 +66,14 @@ group = "From the terminal"
 paths = ["src/system_diff/watch.py"]
 
 [[components]]
+id = "hub"
+label = "Projects hub"
+kind = "interface"
+about = "every running project, one place"
+group = "From the terminal"
+paths = ["src/system_diff/hub.py"]
+
+[[components]]
 id = "live"
 label = "Live engine"
 kind = "logic"

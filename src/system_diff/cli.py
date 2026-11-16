@@ -9,6 +9,7 @@
     system-diff checkpoint [--ref REF]                              -> mark what you have seen
     system-diff show [PART] [--base checkpoint]                     -> the map, or one part zoomed in, in the terminal
     system-diff watch [--base checkpoint] [--port 8765]             -> a live page of the diff since then
+    system-diff hub [--open]                                        -> one address listing every running project
     system-diff tui [--view now|review|agents|topics]               -> the pane's views in a terminal of their own
     system-diff setup claude [--scope user|project|local] [--undo]  -> the hooks, status line, a skill, the MCP server
     system-diff objectives [clear ID | restore ID | learn]          -> what you keep asking for, learned from your requests
@@ -258,6 +259,9 @@ def parser() -> argparse.ArgumentParser:
     hi.add_argument("--part", default="", help="only what changed this block (a part's or container's id)")
     hi.add_argument("--json", action="store_true", help="the entries, as JSON")
     hi.add_argument("--width", type=int, default=0, help="columns to fit (default: the terminal's)")
+    hb = sub.add_parser("hub", help="the one address listing every running project (each repository's engine)")
+    hb.add_argument("--open", action="store_true", help="open it in the browser too")
+    hb.add_argument("--no-serve", action="store_true", help="when no engine runs, say so instead of serving the list")
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
@@ -317,6 +321,9 @@ def _history(args, root: Path) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     _utf8()
     args = parser().parse_args(argv)
+    if args.cmd == "hub":   # every repository's, not one: no repository needed
+        from . import hub
+        return hub.main(open_it=args.open, serve=not args.no_serve)
     root = repo_root(Path(args.repo) if args.repo else None)
     if args.cmd == "map":
         return _map(args, root)

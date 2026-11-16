@@ -12,6 +12,12 @@ system. A declared outside system is drawn only when some deploy configuration s
 code but configured nowhere, it is DORMANT: listed, not drawn. With none declared, the outside systems are found
 instead: the databases, queues and mail servers the compose file runs, and the services whose client libraries the
 code imports.
+
+How each outside system is reached (`connections`): the settings that point at it and their values where the
+repository sets them (compose `environment`, example env files, application.yml, Kubernetes manifests, the code's
+defaults), taken apart into host, port, database, bucket and index, with the service that runs it, the client
+libraries and the parts that use them. Redacted as each file is read (no password, token or key, never a real .env's
+values), so not even the facts kept on disk hold a secret.
 """
 from __future__ import annotations
 
@@ -28,7 +34,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from . import progress
 from .config import segment_rx
 
-EXTRACT_VERSION = "3"  # what a blueprint records: a blueprint cached by another version is read again
+EXTRACT_VERSION = "4"  # what a blueprint records: a blueprint cached by another version is read again
 
 
 def glob_rx(pattern: str) -> re.Pattern:
@@ -988,6 +994,614 @@ def find_outside(imported: Dict[str, Counter], env: Dict[str, Counter], containe
     return out, primary
 
 
+# ── how the system reaches what is outside it: the settings that point at it, where the repository says so ─────────
+#
+# Read from what the repository keeps for anyone to read: compose files (services, images, ports, `environment`),
+# example env files (.env.example, .env.sample, .env.template; never a real .env's values), Spring's application.yml
+# or .properties, Kubernetes manifests (never a Secret's values), and the code's own defaults (os.getenv("X", "…"), a
+# settings class's field defaults, a constant holding a URL, a client's endpoint, bucket or index). SECRETS NEVER
+# LEAVE HERE: a setting whose name looks secret keeps no value, a URL loses its password, a value that looks like a
+# key or token is masked; what is kept (in the facts store too) is only ever the redacted text.
+
+SECRET_WORDS = ("PASSWORD", "PASSWD", "PASSPHRASE", "SECRET", "TOKEN", "CREDENTIAL", "APIKEY", "PRIVATE",
+                "SIGNATURE")
+SECRET_TOKENS = {"PWD", "PASS", "KEY", "KEYS", "AUTH", "SALT", "CERT", "COOKIE", "JWT", "SIG", "HMAC", "OTP"}
+TOKEN_LIKE = re.compile(r"(?:sk|pk|rk|ghp|gho|ghs|ghu|xox[abprs]|AKIA|ASIA|AIza|eyJ)[-_A-Za-z0-9.]{8,}|"
+                        r"[A-Za-z0-9+/_=-]{32,}")
+URL_USER = re.compile(r"^((?:[a-z][a-z0-9+.:-]*:)?//)([^@/\s?#]*)@", re.I)
+URL_QUERY_SECRET = re.compile(r"([?&;](?:password|passwd|pass|pwd|secret|token|key|apikey|api_key|access_token|"
+                              r"auth|sig|signature|x-amz-[a-z-]+)=)[^&#\s]*", re.I)
+KV_SECRET = re.compile(r"\b(password|passwd|pwd|secret|token)\s*=\s*[^\s;&]+", re.I)
+CONN_NAME = re.compile(r"(?:URL|URI|DSN|HOST|HOSTS|HOSTNAME|PORT|BUCKET|BUCKET_NAME|INDEX|INDEX_NAME|REGION|ENDPOINT|"
+                       r"ENDPOINT_URL|DATABASE|DB|DB_NAME|SERVER|SERVERS|BROKER|BROKERS|ADDR|ADDRESS|NAME|USER)$")
+ENV_DEFAULT_PY = re.compile(r"""(?:getenv|environ\.get)\(\s*["']([A-Z][A-Z0-9_]+)["']\s*,\s*(?:[rbu]?["']([^"'\n]*)["']|(\d+))""")
+ENV_DEFAULT_TS = re.compile(r"""(?:import\.meta\.env|process\.env)\.([A-Z][A-Z0-9_]+)\s*(?:\|\||\?\?)\s*["'`]([^"'`\n$]*)["'`]""")
+URL_LITERAL = re.compile(r"""["'`]((?:jdbc:)?(?:postgres(?:ql)?(?:\+\w+)?|mysql(?:\+\w+)?|mariadb|redis|rediss|"""
+                         r"""mongodb(?:\+srv)?|amqps?|kafka|nats|smtps?|s3|sqlite(?:\+\w+)?|https?)://[^"'`\s]+)["'`]""")
+CLIENT_KW = re.compile(r"""\b(Bucket|bucket|bucket_name|BucketName|index|index_name|endpoint_url|endpoint|region_name|"""
+                       r"""region)\s*[=:]\s*[rbu]?["'`]([^"'`\n$]+)["'`]""")
+BUCKET_CALL = re.compile(r"""\.Bucket\(\s*["']([^"']+)["']""")
+SQL_TABLE = re.compile(r"""\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+[`"]?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)""", re.I)
+EXAMPLE_ENV = re.compile(r"(?:^|/)\.env[^/]*(?:example|sample|template|dist|defaults?)[^/]*$|"
+                         r"(?:^|/)[^/]*\.env\.(?:example|sample|template|dist)$", re.I)
+REAL_ENV = re.compile(r"(?:^|/)\.env(?:\.[^/]*)?$")
+SPRING = re.compile(r"(?:^|/)application[^/]*\.(?:ya?ml|properties)$")
+K8S = re.compile(r"(?:^|/)(?:k8s|kubernetes|kube|manifests?|deploy|deployment|deployments|helm|charts|infra|"
+                 r"ops)/(?:[^/]+/)*[^/]+\.ya?ml$")
+KIND_ORDER = {"compose": 0, "k8s": 1, "spring": 2, "example": 3, "code": 4}   # whose value is shown first
+
+# where a value points, when its name does not say: the URL's scheme, a well-known port, an Amazon host
+SCHEME_OF = (("postgres", "postgres"), ("mysql", "mysql"), ("mariadb", "mariadb"), ("rediss", "redis"),
+             ("redis", "redis"), ("mongodb", "mongodb"), ("amqp", "rabbitmq"), ("kafka", "kafka"), ("nats", "nats"),
+             ("smtp", "mail"), ("s3", "aws-s3"), ("sqlite", "sqlite"))
+PORT_OF = {"5432": "postgres", "3306": "mysql", "6379": "redis", "27017": "mongodb", "9200": "elasticsearch",
+           "5672": "rabbitmq", "9092": "kafka", "4222": "nats", "11211": "memcached", "1025": "mail"}
+NAME_HINTS = {  # an outside system -> more of the setting names that point at it than OUTSIDE's prefixes
+    "elasticsearch": ("ES_", "ELASTIC"), "opensearch": ("OPENSEARCH", "ES_"), "minio": ("MINIO", "S3_"),
+    "aws-s3": ("S3_", "_S3", "BUCKET", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_ENDPOINT", "AWS_S3"),
+    "redis": ("REDIS", "CACHE_URL"), "rabbitmq": ("BROKER_URL", "CELERY_BROKER"), "mail": ("SMTP", "MAIL_"),
+}
+CLIENT_NAMES = {"psycopg": "psycopg", "psycopg2": "psycopg2", "asyncpg": "asyncpg", "sqlalchemy": "SQLAlchemy",
+                "sqlmodel": "SQLModel", "django": "Django ORM", "elasticsearch": "elasticsearch-py",
+                "@elastic/elasticsearch": "Elasticsearch JS client", "boto3": "boto3", "aioboto3": "aioboto3",
+                "botocore": "botocore", "redis": "redis-py", "pymongo": "PyMongo", "motor": "Motor",
+                "opensearchpy": "opensearch-py", "minio": "MinIO client", "pika": "pika", "pg": "node-postgres",
+                "@prisma/client": "Prisma", "prisma": "Prisma", "typeorm": "TypeORM", "mysql2": "mysql2",
+                "pymysql": "PyMySQL", "ioredis": "ioredis", "kafkajs": "KafkaJS", "confluent_kafka": "confluent-kafka",
+                "aiokafka": "aiokafka", "tortoise": "Tortoise ORM", "peewee": "peewee", "drizzle-orm": "Drizzle",
+                "knex": "Knex", "sequelize": "Sequelize", "kysely": "Kysely"}
+
+
+def secret_name(name: str) -> bool:
+    """A setting whose name says it holds a secret (a password, token, key, credential): its value is never kept."""
+    up = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).upper()
+    if any(w in up for w in SECRET_WORDS):
+        return True
+    return bool(set(re.split(r"[^A-Z0-9]+", up)) & SECRET_TOKENS)
+
+
+def redact(value: str) -> str:
+    """A value with what could be a secret masked: a URL's password (user:***@host; a token as the user of an
+    http(s) URL), password=… and token=… pairs and query parameters, a value that looks like a key or token."""
+    v = value.strip()
+
+    def user(m: re.Match) -> str:
+        info = m.group(2)
+        if ":" in info:
+            return f"{m.group(1)}{info.split(':', 1)[0]}:***@"
+        if m.group(1).lower().startswith(("http", "https")) or len(info) >= 20:
+            return f"{m.group(1)}***@"
+        return m.group(0)
+    v = URL_USER.sub(user, v)
+    m = re.match(r"^(jdbc:)?([a-z][a-z0-9+.]*:)(//)", v, re.I)
+    if m and not URL_USER.match(v):   # jdbc:postgresql://u:p@h (two colons before the //)
+        v = v[: m.end(2)] + URL_USER.sub(user, v[m.end(2):])
+    v = URL_QUERY_SECRET.sub(r"\1***", v)
+    v = KV_SECRET.sub(lambda k: f"{k.group(1)}=***", v)
+    if "://" not in v and TOKEN_LIKE.fullmatch(v) and not re.fullmatch(r"[a-z0-9._/-]+", v):
+        return "***"
+    if "://" not in v and re.fullmatch(r"(?:sk|pk|rk|ghp|gho|xox[abprs]|AKIA|ASIA|AIza)[-_A-Za-z0-9]{8,}", v):
+        return "***"
+    return v
+
+
+def _placeholder(value: str) -> Optional[str]:
+    """`${X:-default}` and Spring's `${X:default}` are their default; a bare `${X}` is set at deploy time (None)."""
+    m = re.fullmatch(r"\$\{([\w.]+)(?::?-|:)([^}]*)\}", value) or re.fullmatch(r"\$\{([\w.]+)\}()", value)
+    if m:
+        return m.group(2) or None
+    return re.sub(r"\$\{[\w.]+(?::?-|:)([^}]*)\}", r"\1", value) if "${" in value else value
+
+
+def _setting(name: str, value: Any, service: str = "") -> list:
+    """[name, redacted value or None, secret, service]: a setting as kept, never with a secret's value."""
+    secret = secret_name(name)
+    if secret or value is None:
+        return [name, None, secret, service]
+    text = str(value).strip().strip("\"'")
+    text = _placeholder(text) if text else None
+    return [name, redact(text) if text else None, False, service]
+
+
+def mini_yaml(text: str) -> List[Any]:
+    """Just enough YAML for compose files, Kubernetes manifests and application.yml: block maps and lists of
+    scalars or maps, `---` documents, comments, quotes and [a, b] lists. Not anchors, not multi-line strings."""
+    docs: List[Any] = []
+    key_rx = re.compile(r"""^("[^"]+"|'[^']+'|[^\s:"'-][^:]*?|-[^\s:][^:]*?)\s*:(?:\s+(.*))?$""")
+    for doc in re.split(r"^---[^\n]*$", text, flags=re.M):
+        root: Dict[str, Any] = {}
+        stack: List[Tuple[int, Any]] = [(0, root)]      # (the indent of a container's own lines, the container)
+        pending: Optional[Tuple[int, Any, Any]] = None   # (indent, holder, key): a key waiting for its block
+        skip_above: Optional[int] = None
+        for raw in doc.splitlines():
+            if not raw.strip() or raw.lstrip().startswith("#"):
+                continue
+            line = re.sub(r"\s+#[^\"']*$", "", raw.rstrip())
+            indent = len(line) - len(line.lstrip(" "))
+            if skip_above is not None:
+                if indent > skip_above:
+                    continue
+                skip_above = None
+            body = line.strip()
+            item = body == "-" or body.startswith("- ")
+            if pending is not None:
+                p_indent, holder, key = pending
+                pending = None
+                if indent > p_indent or (item and indent == p_indent):
+                    holder[key] = [] if item else {}
+                    stack.append((indent, holder[key]))
+            while len(stack) > 1 and indent < stack[-1][0]:
+                stack.pop()
+            parent = stack[-1][1]
+            if item:
+                if not isinstance(parent, list):
+                    continue
+                rest = body[1:].lstrip()
+                m = key_rx.match(rest)
+                if m:
+                    entry: Dict[str, Any] = {}
+                    parent.append(entry)
+                    child = indent + len(body) - len(rest)
+                    stack.append((child, entry))
+                    k, v = m.group(1).strip("\"'"), (m.group(2) or "").strip()
+                    if v:
+                        entry[k] = _scalar(v)
+                    else:
+                        entry[k] = None
+                        pending = (child, entry, k)
+                elif rest:
+                    parent.append(_scalar(rest))
+                continue
+            m = key_rx.match(body)
+            if not m or not isinstance(parent, dict):
+                continue
+            k, v = m.group(1).strip("\"'"), (m.group(2) or "").strip()
+            if v in ("|", ">", "|-", ">-", "|+", ">+"):
+                skip_above = indent
+                parent[k] = ""
+            elif v:
+                parent[k] = _scalar(v)
+            else:
+                parent[k] = None
+                pending = (indent, parent, k)
+        docs.append(root)
+    return docs
+
+
+def _scalar(v: str) -> Any:
+    v = v.strip()
+    if v.startswith("[") and v.endswith("]"):
+        return [x.strip().strip("\"'") for x in v[1:-1].split(",") if x.strip()]
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        return v[1:-1]
+    return v
+
+
+def _env_pairs(env: Any) -> List[Tuple[str, Any]]:
+    """A compose service's `environment` (a map, or a list of K=V) as pairs."""
+    if isinstance(env, dict):
+        return [(str(k), v) for k, v in env.items()]
+    out = []
+    for e in env if isinstance(env, list) else []:
+        if isinstance(e, str):
+            k, eq, v = e.partition("=")
+            out.append((k.strip(), v if eq else None))
+    return out
+
+
+def compose_conn(text: str) -> dict:
+    """What a compose file says about how things are reached: each service's image, ports and the settings its
+    `environment` sets (redacted). Never what an `env_file` holds."""
+    services, settings = {}, []
+    for doc in mini_yaml(text):
+        for name, svc in ((doc or {}).get("services") or {}).items() if isinstance(doc, dict) else ():
+            if not isinstance(svc, dict):
+                continue
+            ports = [str(p.get("published", "")) + ":" + str(p.get("target", "")) if isinstance(p, dict) else str(p)
+                     for p in svc.get("ports") or [] if p]
+            services[name] = {"image": str(svc.get("image") or ""), "ports": ports,
+                              "expose": [str(p) for p in svc.get("expose") or []]}
+            for k, v in _env_pairs(svc.get("environment")):
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", k):
+                    settings.append(_setting(k, v, name))
+    return {"kind": "compose", "services": services, "settings": settings}
+
+
+def env_example_conn(text: str) -> dict:
+    """An example env file's settings (KEY=value), redacted."""
+    out = []
+    for line in text.splitlines():
+        m = re.match(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$", line)
+        if m:
+            value = re.sub(r"\s+#.*$", "", m.group(2)) if not m.group(2).startswith(("'", '"')) else m.group(2)
+            out.append(_setting(m.group(1), value or None))
+    return {"kind": "example", "settings": out}
+
+
+def _flatten(data: Any, prefix: str = "") -> List[Tuple[str, Any]]:
+    out = []
+    if isinstance(data, dict):
+        for k, v in data.items():
+            out += _flatten(v, f"{prefix}.{k}" if prefix else str(k))
+    elif isinstance(data, list):
+        if all(not isinstance(x, (dict, list)) for x in data):
+            out.append((prefix, ",".join(str(x) for x in data)))
+    elif data is not None:
+        out.append((prefix, data))
+    return out
+
+
+def spring_conn(path: str, text: str) -> dict:
+    """application.yml / application.properties: every leaf setting (spring.datasource.url …), redacted."""
+    if path.endswith(".properties"):
+        pairs = [(m.group(1), m.group(2)) for m in re.finditer(r"^\s*([\w.\-\[\]]+)\s*[=:]\s*(.*?)\s*$", text, re.M)
+                 if not m.group(1).startswith(("#", "!"))]
+    else:
+        pairs = [p for doc in mini_yaml(text) for p in _flatten(doc)]
+    return {"kind": "spring", "settings": [_setting(k, v) for k, v in pairs if k]}
+
+
+def k8s_conn(text: str) -> dict:
+    """Kubernetes manifests: a ConfigMap's data, a container's env (value, or set at deploy time from a secret or
+    a field), a Service's name and ports. A Secret's values are never kept, only its names."""
+    settings, services = [], {}
+    for doc in mini_yaml(text):
+        if not isinstance(doc, dict) or "kind" not in doc:
+            continue
+        kind = str(doc.get("kind"))
+        name = str((doc.get("metadata") or {}).get("name") or "") if isinstance(doc.get("metadata"), dict) else ""
+        if kind == "Secret":
+            for section in ("data", "stringData"):
+                for k in (doc.get(section) or {}) if isinstance(doc.get(section), dict) else ():
+                    settings.append([str(k), None, True, name])
+        elif kind == "ConfigMap" and isinstance(doc.get("data"), dict):
+            settings += [_setting(str(k), v, name) for k, v in doc["data"].items()]
+        elif kind == "Service":
+            spec = doc.get("spec") if isinstance(doc.get("spec"), dict) else {}
+            ports = [f"{p.get('port', '')}:{p.get('targetPort', p.get('port', ''))}" for p in spec.get("ports") or []
+                     if isinstance(p, dict)]
+            services[name] = {"image": "", "ports": ports, "expose": []}
+
+        def walk(node: Any, owner: str) -> None:
+            if isinstance(node, dict):
+                if isinstance(node.get("env"), list):
+                    for e in node["env"]:
+                        if isinstance(e, dict) and e.get("name"):
+                            settings.append(_setting(str(e["name"]), e.get("value"), owner))
+                if node.get("image") and node.get("name"):
+                    services.setdefault(str(node["name"]), {"image": str(node["image"]), "ports": [], "expose": []})
+                for v in node.values():
+                    walk(v, str(node.get("name") or owner) if node.get("image") else owner)
+            elif isinstance(node, list):
+                for v in node:
+                    walk(v, owner)
+        if kind not in ("Secret", "ConfigMap"):
+            walk(doc.get("spec"), name)
+    return {"kind": "k8s", "settings": settings, "services": services}
+
+
+def settings_defaults(text: str) -> List[Tuple[str, str]]:
+    """The defaults a pydantic settings class gives its fields (`database_url: str = "postgresql://…"`), each named
+    as the setting it reads (upper case, under the class's env_prefix)."""
+    out: List[Tuple[str, str]] = []
+    classes = list(CLASS.finditer(text))
+    for i, m in enumerate(classes):
+        if "BaseSettings" not in (m.group(3) or ""):
+            continue
+        indent = len(m.group(1).expandtabs())
+        end = next((c.start() for c in classes[i + 1:] if len(c.group(1).expandtabs()) <= indent), len(text))
+        body = text[m.end(): end]
+        prefix = (ENV_PREFIX.search(body) or [None, ""])[1].upper()
+        for f in re.finditer(r"^[ \t]+([A-Za-z_]\w*)\s*:[^=\n]*=\s*(?:Field\(\s*(?:default\s*=\s*)?)?"
+                             r"(?:[rbu]?[\"']([^\"'\n]*)[\"']|(\d+)\b)", body, re.M):
+            out.append((prefix + f.group(1).upper(), f.group(2) if f.group(2) is not None else f.group(3)))
+    return out
+
+
+def code_conn(path: str, text: str) -> dict:
+    """What a code file says about reaching outside systems: settings' defaults, constants holding a URL or naming
+    a host, port, bucket or index, URL literals of databases, queues and local services, a client's bucket, index,
+    endpoint or region, and the tables its SQL names. All redacted."""
+    defaults: List[list] = []
+    if path.endswith(".py"):
+        for name, s, n in ENV_DEFAULT_PY.findall(text):
+            defaults.append(_setting(name, s if s or not n else n))
+        defaults += [_setting(n, v) for n, v in settings_defaults(text)]
+        defaults += [_setting(n, v) for n, v in CONSTANT.findall(text)
+                     if n.isupper() and v and ("://" in v or CONN_NAME.search(n))]
+    else:
+        defaults += [_setting(n, v) for n, v in ENV_DEFAULT_TS.findall(text)]
+    urls = []
+    for u in URL_LITERAL.findall(text):
+        host = re.match(r"^[^:]+://(?:[^@/]*@)?([^/:?#]*)(?::(\d+))?", u.replace("jdbc:", ""))
+        if u.startswith("http") and host and "." in host.group(1) and not host.group(2) \
+                and not host.group(1).endswith("amazonaws.com") and host.group(1) != "127.0.0.1":
+            continue   # a link to a web page, not a service the code reaches
+        if "{" in u:
+            continue
+        urls.append(redact(u))
+    kw = [[k, redact(v)] for k, v in CLIENT_KW.findall(text) if v.strip() and "{" not in v]
+    kw += [["Bucket", redact(b)] for b in BUCKET_CALL.findall(text)]
+    sql = sorted({t for t in SQL_TABLE.findall(text)}) if re.search(r"\b(?:SELECT|INSERT|UPDATE|DELETE)\b", text) \
+        else []
+    return {"kind": "code", "settings": [d for d in defaults if d[1] is not None or d[2]],
+            "urls": sorted(set(urls))[:20], "kw": kw[:40], "sql": sql[:200]}
+
+
+def conn_facts(path: str, text: str) -> dict:
+    """How a file says outside systems are reached, by what it is; {} for anything else (a real .env: nothing)."""
+    base = path.rsplit("/", 1)[-1]
+    if REAL_ENV.search(path) and not EXAMPLE_ENV.search(path):
+        return {}
+    if EXAMPLE_ENV.search(path):
+        return env_example_conn(text)
+    if re.fullmatch(r"(?:docker-)?compose[^/]*\.ya?ml", base):
+        return compose_conn(text)
+    if SPRING.search(path):
+        return spring_conn(path, text)
+    if K8S.search(path) or (path.endswith((".yaml", ".yml")) and re.search(r"^apiVersion:", text, re.M)
+                             and re.search(r"^kind:", text, re.M)):
+        return k8s_conn(text)
+    if path.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")):
+        return code_conn(path, text)
+    return {}
+
+
+def _safe_conn(path: str, text: str) -> dict:
+    """conn_facts, or nothing for a file it cannot make sense of: how things are reached only adds to the picture."""
+    try:
+        return conn_facts(path, text)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def conn_file(path: str) -> bool:
+    """A file that is not code but is read for how things are reached (code files are, too, with their code)."""
+    base = path.rsplit("/", 1)[-1]
+    return bool(EXAMPLE_ENV.search(path) or re.fullmatch(r"(?:docker-)?compose[^/]*\.ya?ml", base)
+                or SPRING.search(path) or K8S.search(path))
+
+
+def endpoint(value: Optional[str]) -> Dict[str, str]:
+    """A redacted URL or host[:port] taken apart: scheme, host, port, path (a database, a bucket)."""
+    if not value:
+        return {}
+    v = value.strip()
+    if v.startswith("jdbc:"):
+        v = v[5:]
+    m = re.match(r"^([a-z][a-z0-9+.-]*)://(?:[^@/]*@)?(\[[^\]]+\]|[^/:?#,]*)(?::(\d+))?(/[^?#]*)?", v, re.I)
+    if m:
+        out = {"scheme": m.group(1).lower(), "host": m.group(2), "port": m.group(3) or "",
+               "path": (m.group(4) or "").strip("/")}
+        return {k: x for k, x in out.items() if x}
+    m = re.fullmatch(r"([A-Za-z0-9_.-]+):(\d{2,5})", v)
+    if m:
+        return {"host": m.group(1), "port": m.group(2)}
+    return {}
+
+
+def points_at(value: Optional[str], service_of: Dict[str, str]) -> str:
+    """The outside system a value points at, when it says: a URL's scheme, a compose service it names, an Amazon
+    host, a well-known port; "" when it does not."""
+    ep = endpoint(value)
+    if not ep:
+        return ""
+    scheme = ep.get("scheme", "").split("+")[0]
+    for prefix, xid in SCHEME_OF:
+        if scheme.startswith(prefix):
+            return xid
+    host = ep.get("host", "")
+    if host in service_of:
+        return service_of[host]
+    if host.endswith("amazonaws.com"):
+        svc = re.match(r"^(?:[^.]+\.)?(s3|sqs|sns|dynamodb|ses|kinesis)[.-]", host)
+        return f"aws-{svc.group(1)}" if svc else "aws"
+    return PORT_OF.get(ep.get("port", ""), "")
+
+
+DB_NAME_SETTINGS = re.compile(r"(?:^|_)(?:DB|DATABASE|DB_NAME|DATABASE_NAME|DBNAME)$")
+URLISH = re.compile(r"(?:URL|URI|DSN|ENDPOINT|ENDPOINT_URL|HOSTS|ADDR|ADDRESS|SERVERS|BROKERS?)$")
+S3ISH = ("aws-s3", "minio", "aws", "gcp")
+SEARCHISH = ("elasticsearch", "opensearch")
+
+
+def _connections(cfg: Dict[str, Any], externals: Dict[str, dict], store: str, facts: Dict[str, dict],
+                 owner: Dict[str, str], env_by_comp: Dict[str, Counter], imported: Dict[str, Counter]
+                 ) -> Dict[str, dict]:
+    """How the system reaches each outside system, where the repository says so (all of it already redacted when
+    each file's facts were read): the settings that point at it, by name or by where their value points, each with
+    its value and the file that sets it, or none ("set at deploy time"); taken apart into scheme, host, port,
+    database, bucket, index and region; the compose or Kubernetes service that runs it; the client libraries the
+    code reaches it with; and which parts read which of those settings or import which client."""
+    given: Dict[str, List[tuple]] = defaultdict(list)    # setting -> [(order, file, value, secret, service)]
+    services: Dict[str, dict] = {}
+    code_urls: List[Tuple[str, str]] = []                # (part, url)
+    code_kw: List[Tuple[str, str, str]] = []             # (part, keyword, value)
+    for f in sorted(facts):
+        cx = facts[f].get("conn") or {}
+        kind = cx.get("kind")
+        if not kind:
+            continue
+        for name, value, secret, service in cx.get("settings") or []:
+            given[name].append((KIND_ORDER.get(kind, 5), f, value, secret, service))
+        for name, svc in (cx.get("services") or {}).items():
+            services.setdefault(name, {**svc, "where": f})
+        if kind == "code" and f in owner:
+            code_urls += [(owner[f], u) for u in cx.get("urls") or []]
+            code_kw += [(owner[f], k, v) for k, v in cx.get("kw") or []]
+
+    declared_env = {e["id"]: e.get("env") or [] for e in cfg.get("externals", []) if "id" in e}
+    by_label = {e["label"].casefold(): x for x, e in externals.items()}
+
+    def alias(xid: str) -> str:
+        """An outside system as the blueprint names it (a declared one may have its own id)."""
+        if not xid or xid in externals:
+            return xid
+        label = next((o[1] for o in OUTSIDE if o[0] == xid), AWS.get(xid[4:], ("",))[0] if xid.startswith("aws-")
+                     else "")
+        if label and label.casefold() in by_label:
+            return by_label[label.casefold()]
+        if xid in RELATIONAL and store in externals and store not in {o[0] for o in OUTSIDE}:
+            return store   # the database the tables live in, named by the config or just "Database"
+        if xid.startswith("aws-") and "aws" in externals:
+            return "aws"
+        return ""
+
+    runs: Dict[str, str] = {}       # service name -> the outside system it runs
+    for name, svc in services.items():
+        img = image_name(svc.get("image", ""))
+        hit = next((o[0] for o in OUTSIDE if img and img in o[3]), "")
+        if hit:
+            runs[name] = alias(hit) or hit
+
+    def prefixes(x: str) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+        """(name prefixes, name parts) of the settings that point at x."""
+        base = next((o for o in OUTSIDE if o[0] == x or alias(o[0]) == x), None)
+        starts = tuple(base[5]) if base else ()
+        has = tuple(NAME_HINTS.get(x, ())) + tuple(NAME_HINTS.get(base[0], ()) if base else ())
+        if x.startswith("aws-"):
+            svc = x[4:].upper().replace("-", "_")
+            starts += ("AWS_", svc + "_")
+            has += ("_" + svc + "_", "_" + svc) + NAME_HINTS.get(x, ())
+        if x == store:
+            starts += DB_SETTINGS
+        return starts, has
+
+    read_by: Dict[str, Counter] = env_by_comp
+    every = set(given) | {v for vs in read_by.values() for v in vs}
+    out: Dict[str, dict] = {}
+    for x, e in externals.items():
+        starts, has = prefixes(x)
+        names = set()
+        for n in every:
+            up = n.upper()
+            if up.startswith(starts) or any("_" + h.strip("_") in "_" + up for h in has) \
+                    or matches(n, declared_env.get(x, ())):
+                names.add(n)
+            elif any(alias(points_at(v, runs)) == x for _o, _f, v, _s, _sv in given.get(n, ()) if v):
+                names.add(n)
+        if x != store and store:   # the database's generic settings are the database's, not every system's
+            names -= {n for n in names if n.upper().startswith(DB_SETTINGS) and not n.upper().startswith(starts)
+                      and not any(alias(points_at(v, runs)) == x for _o, _f, v, _s, _sv in given.get(n, ()) if v)}
+        settings = []
+        for n in sorted(names):
+            got = sorted(given.get(n, ()), key=lambda g: (g[0], g[2] is None, g[1]))
+            secret = secret_name(n) or any(g[3] for g in got)
+            best = next((g for g in got if g[2] is not None), got[0] if got else None)
+            settings.append({"name": n, "value": None if secret or not best else best[2], "secret": secret,
+                             "where": best[1] if best else "", "on": best[4] if best else "",
+                             "read_by": sorted(c for c, vs in read_by.items() if n in vs)})
+        settings.sort(key=lambda s: (s["secret"], s["value"] is None, not URLISH.search(s["name"].upper()),
+                                     not s["read_by"], s["name"]))
+        # where it is: the URL a setting or the code gives, then HOST/PORT/DB settings, then the service that runs it
+        cand = [(s["value"], s["where"]) for s in settings if s["value"] and URLISH.search(s["name"].upper())]
+        cand += [(u, "") for c, u in code_urls if alias(points_at(u, runs)) == x]
+        users = set(e.get("used_by") or [])
+        for c, k, v in code_kw:
+            if k in ("endpoint_url",) and c in users and x in S3ISH + tuple(a for a in externals if a.startswith("aws-")):
+                cand.append((v, ""))
+        info: Dict[str, Any] = {}
+        for value, where in cand:
+            ep = endpoint(value)
+            if ep.get("host") or ep.get("scheme"):
+                info = {"url": value, **ep, **({"from": where} if where else {})}
+                break
+        for s in settings:
+            up, v = s["name"].upper(), s["value"]
+            if not v:
+                continue
+            if up.endswith(("HOST", "HOSTNAME", "SERVER")) and "host" not in info:
+                info["host"] = v
+            elif up.endswith("PORT") and "port" not in info and re.fullmatch(r"\d{2,5}", v):
+                info["port"] = v
+            elif DB_NAME_SETTINGS.search(up) and "database" not in info and "://" not in v:
+                info["database"] = v
+            elif "BUCKET" in up:
+                info.setdefault("bucket", [])
+                if v not in info["bucket"]:
+                    info["bucket"].append(v)
+            elif "INDEX" in up:
+                info.setdefault("index", [])
+                if v not in info["index"]:
+                    info["index"].append(v)
+            elif "REGION" in up and "region" not in info:
+                info["region"] = v
+        for c, k, v in code_kw:
+            if c not in users:
+                continue
+            key = {"Bucket": "bucket", "bucket": "bucket", "bucket_name": "bucket", "BucketName": "bucket",
+                   "index": "index", "index_name": "index", "region_name": "region", "region": "region"}.get(k)
+            fits = {"bucket": x in S3ISH or x.startswith("aws-s3"), "index": x in SEARCHISH,
+                    "region": x.startswith("aws")}.get(key or "", False)
+            if not fits:
+                continue
+            if key == "region":
+                info.setdefault("region", v)
+            elif v not in info.setdefault(key, []):
+                info[key].append(v)
+        if "path" in info:
+            path = info.pop("path")
+            shape_db = x == store or alias(points_at(info.get("url"), runs)) in RELATIONAL + ("mongodb",)
+            if info.get("scheme", "").startswith("s3"):
+                info.setdefault("bucket", []).insert(0, info.get("host", ""))
+            elif shape_db or x in RELATIONAL or x == store:
+                info.setdefault("database", path)
+            elif x in SEARCHISH and path and "/" not in path:
+                info.setdefault("index", [path])
+        svc = next((n for n, r in runs.items() if r == x), "") or (info.get("host") if info.get("host") in services
+                                                                  else "")
+        if svc:
+            s = services[svc]
+            info["service"] = {"name": svc, "image": s.get("image", ""), "ports": s.get("ports") or [],
+                               "where": s.get("where", "")}
+            if not info.get("host"):
+                info["host"] = svc
+            if not info.get("port"):
+                published = [p.split(":")[-1].split("/")[0] for p in s.get("ports") or [] if p]
+                port = (published or [str(p) for p in s.get("expose") or []] or [""])[0]
+                if port:
+                    info["port"] = port
+        base = next((o for o in OUTSIDE if o[0] == x or alias(o[0]) == x), None)
+        libs = tuple(base[4]) if base else ()
+        if x.startswith("aws"):
+            libs += ("boto3", "aioboto3", "botocore", "@aws-sdk/*", "aws-sdk")
+        if x == store:
+            libs += ORMS
+        clients: Dict[str, set] = defaultdict(set)
+        for c, got in imported.items():
+            for n in got:
+                if libs and _library(n, libs):
+                    clients[c].add(CLIENT_NAMES.get(top_package(n), CLIENT_NAMES.get(n, top_package(n))))
+        parts: Dict[str, dict] = {}
+        for c in sorted(set(e.get("used_by") or []) | {c for s in settings for c in s["read_by"]}):
+            parts[c] = {"settings": [s["name"] for s in settings if c in s["read_by"]],
+                        "clients": sorted(clients.get(c, ()))}
+        info["settings"] = settings[:12]
+        info["clients"] = sorted({n for c in parts for n in parts[c]["clients"]})
+        info["parts"] = parts
+        out[x] = info
+    return out
+
+
+def part_tables(code: List[str], facts: Dict[str, dict], owner: Dict[str, str], tables: Iterable[str]) -> Dict[str, dict]:
+    """The tables each part defines (its ORM models) and the known tables its SQL names."""
+    short = {t.rsplit(".", 1)[-1].lower(): t for t in tables}
+    out: Dict[str, dict] = defaultdict(lambda: {"defines": set(), "queries": set()})
+    for f in code:
+        fx = facts.get(f) or {}
+        cid = owner.get(f)
+        if cid is None:
+            continue
+        for t in (fx.get("code") or {}).get("tables") or []:
+            out[cid]["defines"].add(short.get(t.lower(), t))
+        for t in (fx.get("conn") or {}).get("sql") or []:
+            hit = short.get(t.rsplit(".", 1)[-1].lower())
+            if hit:
+                out[cid]["queries"].add(hit)
+    return {c: {"defines": sorted(v["defines"]), "queries": sorted(v["queries"] - v["defines"])}
+            for c, v in sorted(out.items()) if v["defines"] or v["queries"]}
+
+
 # ── what each file says, read once per content ───────────────────────────────────────────────────────────────────
 #
 # Reading a large repository is mostly reading each file: its imports, routes, settings, tables. What a file says
@@ -1052,6 +1666,7 @@ SECTIONS: Dict[str, Callable[[str, str], Any]] = {  # what a file is read for, a
     "alembic": lambda path, text: alembic_facts(text),
     "prisma": lambda path, text: _prisma_facts(text),
     "package": lambda path, text: package_dependencies(text),
+    "conn": lambda path, text: _safe_conn(path, text),
 }
 
 
@@ -1257,7 +1872,10 @@ def read_blueprint(source, cfg: Dict[str, Any], deadline: Optional[float] = None
 
     sections: Dict[str, set] = defaultdict(set)   # what each file is read for
     for f in code:
-        sections[f].add("code")
+        sections[f].update(("code", "conn"))
+    for f in files:
+        if conn_file(f):
+            sections[f].add("conn")
     if any(not f.endswith(".py") for f in files):
         for f in files:
             if TSCONFIG.search(f):
@@ -1479,6 +2097,9 @@ def _combine(source, cfg: Dict[str, Any], code_of: Code, files: List[str], files
         "store": store,   # the outside system the tables live in
         "migrations": migrations,
         "tests": dict(sorted(test_files.items())),
+        # how each outside system is reached, where the repository says so (redacted); each part's tables
+        "connections": _connections(cfg, externals, store, facts, owner, env_by_comp, imported),
+        "part_tables": part_tables(code, facts, owner, tables),
     }
 
 

@@ -78,7 +78,7 @@ test('the pane paints the page in its own region, and its rows, on every surface
     await ui.unmount()
   }
   const terminal = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await terminal.find({ type: 'Text', text: /^v\d+\.\d+\.\d+$/ })).toBeDefined() // the version, bottom right
+  expect(await terminal.find({ type: 'Text', text: /^v\d+\.\d+\.\d+(\.dev\d+)?$/ })).toBeDefined() // the version, bottom right
   await terminal.key({ key: 'down', in: 'page' }) // the page's own region, taking the keys (throws if absent)
   await terminal.unmount()
 })
@@ -409,4 +409,32 @@ test('h on a picked box opens that box\'s own history; b goes back to where it w
   await ui.press({ key: 'view-now' })                           // leaving History: no block carried into Now
   expect(last().endsWith('--view now --part ')).toBe(true)
   await ui.unmount()
+})
+
+test('the pane does not open with the session unless asked; system-diff still starts', async ($, on) => {
+  const opened: Array<{ columns?: number }> = []
+  const asked: string[][] = []
+  answer(on, asked, 0, '', opened)
+  on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
+  on('clock.every', () => ({ value: undefined }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true } as any)
+  expect(opened.length).toBe(0)                                     // no pane until asked
+})
+
+test('with "open the pane at session start" on, it opens with the session', { options: { open_pane_at_start: true } },
+  async ($, on) => {
+    const opened: Array<{ columns?: number }> = []
+    answer(on, [], 0, '', opened)
+    on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
+    on('clock.every', () => ({ value: undefined }))
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true } as any)
+    expect(opened.length).toBe(1)
+  })
+
+test('/system-diff autostart says how it is, and how to change it', async ($, on) => {
+  answer(on, [])
+  const got = await $.command.run({ ...RUN, args: 'autostart' })
+  expect(String((got as { text?: string }).text)).toMatch(/does not open with each session.*autostart on\|off/)
+  const changed = await $.command.run({ ...RUN, args: 'autostart on' })
+  expect(String((changed as { text?: string }).text)).toMatch(/will open with each session|set .* in \/config/)
 })

@@ -54,6 +54,10 @@ def _explain(c, model: Dict[str, Any]) -> Tuple[Dict[str, dict], Dict[str, Tuple
     """Each box of a diagram: what Enter does on it ({bid: {"enter": {"zoom": id}}}), and its detail, what it uses and
     what uses it, as (lead, text) ({bid: (lead, text)}), in the diagram's order."""
     conns = graph.connections(c.after)
+    try:
+        plain = human.block_details(c, model)
+    except Exception:  # noqa: BLE001 - the words only help: without them, what it uses and what uses it
+        plain = {}
     names = {n["id"]: n["title"] for n in model["nodes"]}
     names.update({i["id"]: i["title"] for n in model["nodes"] for i in n.get("items") or []})
     on: Dict[str, dict] = {}
@@ -72,6 +76,9 @@ def _explain(c, model: Dict[str, Any]) -> Tuple[Dict[str, dict], Dict[str, Tuple
                 said[bid] = (f"{nid[2:]}  ", " · ".join(words) or "stands alone in its part")
                 continue
             on[bid] = {"enter": {"zoom": nid}}
+            if plain.get(bid, {}).get("short"):           # what it is, does and connects to, most useful first
+                said[bid] = (f"{title}  ", plain[bid]["short"])
+                continue
             if nid.startswith("a:"):
                 uses = sorted({names.get(e["to"], e["to"]) for e in model["edges"] if e["from"] == nid})
                 said[bid] = (f"{title}  ", f"uses {design.and_list(uses, 5)}")
@@ -1159,8 +1166,12 @@ def _web_diagram(c, model: Dict[str, Any], title: str, aside: str, zoom: int, pi
         svg = draw(model, label=title) if draw else ""
     except Exception:
         svg = ""
+    try:
+        full = {bid: d["more"] for bid, d in human.block_details(c, model).items() if d.get("more")}
+    except Exception:  # noqa: BLE001
+        full = {}
     return {"svg": svg or "", "title": title, "aside": aside, "lights": dict(g.lights),
-            "details": {bid: text for bid, (_lead, text) in said.items()},
+            "details": {bid: full.get(bid) or text for bid, (_lead, text) in said.items()},
             "enter": {bid: o["enter"]["zoom"] for bid, o in on.items()},
             "pick": next((b for b in pick if b in ids), "")}
 
@@ -1254,7 +1265,7 @@ def _web_now(root: Path, part: str, zoom: int) -> Dict[str, Any]:
     told = _web_steps(events, code, cfg)
     if told:
         sections.append(_web_section("What just happened", "steps", told, "the system diff, step by step"))
-    hover = _box_hover(c, model, decs, team(root, events, code), base)
+    hover = _box_hover(c, model, decs, team(root, events, code), base, _past(root))
     hover.update({"w:" + d["id"]: _decision_hover(d) for d in shown})
     hover.update(_objective_hover(root, objs, checks))
     return {"view": "now", "part": part or "", "title": "Now", "headline": headline,
@@ -1295,58 +1306,46 @@ def _decision_hover(d: Dict[str, Any]) -> Dict[str, Any]:
     return {"title": d["title"], "lines": lines}
 
 
-KIND_WORDS = {"ui": "a front end people use", "interface": "an entry point", "logic": "logic inside the system",
-              "data": "data access", "store": "an outside store of data", "external": "an outside system"}
+def _past(root: Path) -> List[Dict[str, Any]]:
+    """The history's entries, newest first, for "last changed …" ([] when there is none)."""
+    try:
+        from . import history
+        return history.load(root)
+    except Exception:  # noqa: BLE001 - only a nicety of the hover card
+        return []
 
 
 def _box_hover(c, model: Dict[str, Any], decs: List[Dict[str, Any]], who: Dict[str, Dict[str, Any]],
-               since: str) -> Dict[str, Dict[str, Any]]:
-    """Each diagram box's hover card ("b:<id>", as pictures.architecture_svg's data-id): what it is, what changed in
-    it (the ranked changes touching it, the most consequential first, with why the first matters), the request it
-    came under, and the agents that edited or read it."""
-    kind = design.kinds(c.after, c.cfg)
+               since: str, past: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Dict[str, Any]]:
+    """Each diagram box's hover card ("b:<id>", as pictures.architecture_svg's data-id), in plain words
+    (human.block_details): what it is, what changed in it `since` (the ranked changes touching it, the most
+    consequential first, with why the first matters and the request it came under; else when it last changed, from
+    `past`, the history; else nothing), what it does, how it connects and how an outside system is reached; and the
+    agents that edited or read it. The details strip has the rest."""
     llm = _llm_groups(c)
+    try:
+        plain = human.block_details(c, model, decs, since, past)
+    except Exception:  # noqa: BLE001 - without the words, the box's name and what changed
+        plain = {}
     out: Dict[str, Dict[str, Any]] = {}
     for n in model["nodes"]:
         for box in [n] + list(n.get("items") or []):
             nid = box["id"]
             inside = {i["id"] for i in n.get("items") or []} if box is n and n.get("items") else {nid}
-            lines = []
-            comp = c.after["components"].get(nid) or c.before["components"].get(nid)
-            if nid.startswith("a:"):
-                lines.append("Who uses the system" + (f": {box.get('sub')}" if box.get("sub") else ""))
-            elif nid.startswith("f:"):
-                lines.append(f"A module: {nid[2:]}")
-            elif comp:
-                lines.append(f"{KIND_WORDS.get(kind.get(nid, ''), 'a part')[0].upper()}"
-                             f"{KIND_WORDS.get(kind.get(nid, ''), 'a part')[1:]} · "
-                             f"{graph.files_word(comp.get('files', 0))}")
-            elif nid.startswith("x:"):
-                lines.append(KIND_WORDS.get(kind.get(nid, ""), "an outside system")[0].upper()
-                             + KIND_WORDS.get(kind.get(nid, ""), "an outside system")[1:])
-            elif box is n and n.get("items"):
-                lines.append(f"A container of {len(n['items'])} parts"
-                             + (" (a grouping an LLM proposed)" if nid in llm else ""))
-            mine = [d for d in decs if inside & set(d["parts"])]
-            if mine:
-                lines.append(f"Changed {since}:")
-                lines += ["  " + d["title"] for d in mine[:4]]
-                if len(mine) > 4:
-                    lines.append(f"  and {len(mine) - 4} more")
-                top = mine[0]
-                if top["look"]:
-                    lines.append("Why it matters: " + top["why"])
-                asked = next((d["request"] for d in mine if d["request"]), "")
-                if asked:
-                    lines.append(f'Under your request "{canvas.cut(asked, 100)}"')
-            else:
-                lines.append(f"No change to its structure {since}")
+            got = plain.get("b:" + nid) or {}
+            lines = list(got.get("lines") or [])
+            if nid.startswith("f:"):
+                lines = [f"A module: {nid[2:]}"]
+            elif not lines:
+                mine = [d for d in decs if inside & set(d["parts"])]
+                lines = [f"Changed {since}: " + d["title"] for d in mine[:4]]
+            if box is n and n.get("items") and nid in llm and lines:
+                lines[0] += " (a grouping an LLM proposed)"
             edited = sorted(a for a, w in who.items() if inside & set(w["edits"]))
             read = sorted(a for a, w in who.items() if inside & set(w["reads"]) and a not in edited)
-            if edited:
-                lines.append("Edited by " + design.and_list(edited, 4))
-            if read:
-                lines.append("Read by " + design.and_list(read, 4))
+            agents_ = (["Edited by " + design.and_list(edited, 4)] if edited else []) + (
+                ["Read by " + design.and_list(read, 4)] if read else [])
+            lines = lines[:max(2, human.CARD + 1 - len(agents_))] + agents_
             out["b:" + nid] = {"title": box.get("title", nid).split("  @")[0], "lines": lines}
     return out
 
@@ -1427,7 +1426,7 @@ def _web_review(root: Path, zoom: int) -> Dict[str, Any]:
     model = architecture.system(c, None, agent)
     ranked = human.mark_objectives(human.decisions(c, events, Code(cfg), reading), c, objectives.current(root))
     diagram["lights"].update(_decision_lights(ranked, model, diagram["lights"]))
-    hover = _box_hover(c, model, ranked, team(root, events, Code(cfg)), short)
+    hover = _box_hover(c, model, ranked, team(root, events, Code(cfg)), short, _past(root))
     hover.update({"w:" + d["id"]: _decision_hover(d) for d in ranked})
     sections = [_web_section("Every change " + short, "notes", [_web_decision(d) for d in ranked],
                              f"{len(ranked)}, the most consequential first" if ranked
@@ -1506,7 +1505,7 @@ def _web_agents(root: Path, zoom: int) -> Dict[str, Any]:
         bus.append({"text": f"{time.strftime('%H:%M', time.localtime(m['at']))} {m['from']} → {m['topic']}: "
                             f"{m['text']}" + (f" ({m['why']})" if m.get("why") else ""), "style": style})
     sections.append(_web_section("The bus", "lines", bus, "what agents told each other, newest first"))
-    hover = _box_hover(c, model, human.decisions(c, events, code), who, "this turn")
+    hover = _box_hover(c, model, human.decisions(c, events, code), who, "this turn", _past(root))
     hover.update(_agent_hover(root, cfg, who, L, st, checked, texts))
     hover.update(_objective_hover(root, objs, checks))
     if objs:

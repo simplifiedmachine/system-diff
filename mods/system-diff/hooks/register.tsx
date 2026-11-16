@@ -15,7 +15,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.8.0' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.9.0.dev1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't'],
@@ -520,14 +520,17 @@ function open($: EngineInterface) {
   return $.ui.open({ id: PANE, title: 'System diff', columns: WIDEST })
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // The pane opens with the session only when the person asked for that (/config, or /system-diff autostart on);
+  // system-diff itself always starts: the looks below start its engine, which the web page shows.
+  const openAtStart = options?.open_pane_at_start === true
   on('session.start', async ($, e, next) => {
-    void open($)
+    if (openAtStart) void open($)
     // `/system-diff` opens it; `/system-diff-pane` too, the name it had first. A name someone else holds is skipped.
     for (const name of COMMANDS) {
       try {
         await $.command.register({ name, description: 'Show the System diff pane beside the chat (close: hide it; ' +
-                                     'tui: the same in a terminal of its own)', argumentHint: '[close|tui]' })
+                                     'tui: the same in a terminal of its own; autostart on|off: open it with every session)', argumentHint: '[close|tui|autostart on|off]' })
       } catch {
         // taken
       }
@@ -539,7 +542,24 @@ export const register: Register = on => {
 
   for (const command of COMMANDS) {
     on('command.run', { command }, async ($, e) => {
-      if (e.args.trim().toLowerCase() === 'close') {
+      const said = e.args.trim().toLowerCase()
+      const auto = /^autostart(?:\s+(on|off))?$/.exec(said)
+      if (auto) {
+        if (!auto[1]) {
+          return { text: `The System diff pane ${openAtStart ? 'opens' : 'does not open'} with each session. ` +
+                         '/system-diff autostart on|off changes it (also in /config).' }
+        }
+        const turnOn = auto[1] === 'on'
+        try {
+          await $.config.set({ key: 'system-diff.open_pane_at_start', value: turnOn })
+        } catch {
+          return { text: 'Could not change it here: set "Open the System diff pane at session start" in /config.' }
+        }
+        return { text: turnOn ? 'The System diff pane will open with each session.'
+                          : 'The System diff pane will open only when you type /system-diff. system-diff still ' +
+                            'follows the system in the background; the web page shows it.' }
+      }
+      if (said === 'close') {
         await $.ui.close({ id: PANE })
         return { text: 'System diff pane closed. /system-diff opens it again.' }
       }

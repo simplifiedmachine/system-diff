@@ -1,11 +1,19 @@
 {
   "name": "system-diff",
-  "version": "0.8.0",
+  "version": "0.9.0.dev1",
   "description": "A pane beside the chat: what Claude is working on in your system, zoomed in, what just happened and why it matters, and a topic to learn (system-diff)",
   "types": "./types/index.d.ts",
   "author": {
     "name": "simplifiedmachine"
   },
   "homepage": "https://github.com/simplifiedmachine/system-diff",
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "open_pane_at_start": {
+      "type": "boolean",
+      "title": "Open the System diff pane at session start",
+      "description": "Off: the pane opens only when you type /system-diff (system-diff still follows the system in the background, and the web page shows it). On: it opens beside the chat in every session.",
+      "default": false
+    }
+  }
 }

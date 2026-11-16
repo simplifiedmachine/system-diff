@@ -68,7 +68,9 @@ its own (`system-diff tui`). All three show the same live picture.
    /plugin marketplace add simplifiedmachine/system-diff#stable
    /plugin install system-diff
    ```
-3. Restart Claude Code, and type `/system-diff` to open the pane beside the chat.
+3. Restart Claude Code, and type `/system-diff` to open the pane beside the chat. system-diff follows the system from
+   the start of every session either way (the web page shows it); `/system-diff autostart on` (or `/config`) opens
+   the pane with each session.
 
 **Stable and nightly.** The commands above install the latest [stable release](https://github.com/simplifiedmachine/system-diff/releases/latest)
 (PyPI, and the plugin from the `stable` branch). To test what is coming, run nightly from `main`:
@@ -105,6 +107,17 @@ On Windows, `python -m pip install "system-diff[mcp]"` works where `pip` is not 
 Everything stays on your machine, under `.git/system-diff/`: never committed, never sent anywhere. The only exception
 is the optional LLM features (regrouping the diagram, learning objectives), which send structure, never code, to the
 LLM your own Claude Code already uses. `SYSTEM_DIFF_LLM=off` turns them off.
+
+### Several projects
+
+Each repository gets its own engine, on the first free port from 8765 (the first project you open is on 8765, the
+next on 8766, and so on, up to 8774), and keeps serving only its own repository. The web page shows a row of project
+tabs on top, one per running engine, with its branch and a dot when it changed since you last looked; a tab is a plain
+link to that project's own page, in the same view (`[` and `]` switch). `system-diff hub` prints one address that
+lists every running project (`http://localhost:8765/projects/page` while an engine runs there); bookmark it. Engines
+list themselves in a folder of your own (`~/.local/state/system-diff/engines/`, `~/Library/Application
+Support/system-diff/engines/` on macOS, `%LOCALAPPDATA%\system-diff\engines\` on Windows), without their tokens, and
+remove themselves when they stop.
 
 ## How it works
 

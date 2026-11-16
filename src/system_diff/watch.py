@@ -14,6 +14,10 @@ waiting for a newer version than `since` (a long poll); GET /web gives the web p
 {"paths": [...]} tells it which files Claude just edited. /page and /touch need the token, which web.json (readable
 on this machine only, under the git dir) keeps for the pane and the hooks; /page also answers this server's own page
 (same origin).
+
+Several projects (hub.py): each engine writes itself to this user's registry while it runs (no token there); GET
+/projects lists the running ones (token or same origin) and the page shows them as a row of project tabs, plain links
+to each engine's own page; GET /projects/page lists them all, at the first engine from port 8765 (`system-diff hub`).
 """
 from __future__ import annotations
 
@@ -34,7 +38,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import activity, graph, learn, live, pictures
+from . import activity, graph, hub, learn, live, pictures
 from .compare import Comparison, checkpoint, checkpoint_sha, compare_worktree, turn_sha, worktree_tree
 from .diff import diff
 from .extract import Code
@@ -193,13 +197,26 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
 #sendnote { color:var(--muted); font-size:12.5px; max-width:30vw; }
 #sendnote.bad { color:var(--attn); }
 .hint { color:var(--muted); font-size:12px; text-align:center; padding:0 0 10px; }
+nav.projects { display:flex; gap:2px; align-items:flex-end; padding:6px 20px 0; background:var(--bg);
+               border-bottom:1px solid var(--line); overflow-x:auto; scrollbar-width:thin; }
+nav.projects a { display:flex; gap:7px; align-items:baseline; padding:5px 12px 6px; border:1px solid transparent;
+                 border-bottom:0; border-radius:8px 8px 0 0; color:var(--muted); text-decoration:none; white-space:nowrap;
+                 font-size:13px; max-width:280px; flex:0 0 auto; }
+nav.projects a:hover { color:var(--ink); background:var(--card); }
+nav.projects a[aria-current="page"] { background:var(--card); border-color:var(--line); color:var(--ink); font-weight:600;
+                                      margin-bottom:-1px; padding-bottom:7px; }
+nav.projects .nm { overflow:hidden; text-overflow:ellipsis; }
+nav.projects .br { font:11.5px var(--mono); color:var(--muted); font-weight:400; overflow:hidden; text-overflow:ellipsis; }
+nav.projects .dot { width:7px; height:7px; border-radius:50%; background:var(--c3); align-self:center; flex:none; }
+nav.projects a.all { margin-left:auto; font-size:12.5px; padding:5px 4px 6px 12px; }
 @media (max-width:720px) {
-  header.top, main, form.send { padding-left:16px; padding-right:16px; }
+  header.top, main, form.send, nav.projects { padding-left:16px; padding-right:16px; }
   .swim { grid-template-columns:1fr; }
   .timeline li { grid-template-columns:56px 20px 1fr; } .timeline li::before { left:75px; }
   form.send label, #sendnote { display:none; }
 }
 </style></head><body>
+<nav class="projects" id="projects" aria-label="Projects" hidden></nav>
 <header class="top">
   <h1>System diff</h1>
   <div class="tabs" role="tablist" id="tabs">
@@ -225,7 +242,7 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
     <div class="diawrap" id="diawrap"><div id="dia" role="img"></div><div id="detail" aria-live="polite"></div></div></section>
   <div id="after" style="display:grid;gap:16px"></div>
 </main>
-<div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · <kbd>f</kbd> follow Claude · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
+<div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · <kbd>f</kbd> follow Claude · <kbd>[</kbd> <kbd>]</kbd> projects · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
 <form class="send" id="send"><label for="say">Send to Claude</label>
   <textarea id="say" placeholder="Ask or tell Claude something about this change (Ctrl+Enter sends)"></textarea>
   <span id="sendnote" aria-live="polite"></span><button id="sendbtn" class="primary" type="submit">Send</button></form>
@@ -234,6 +251,7 @@ const TOKEN = "__TOKEN__";
 const $ = id => document.getElementById(id);
 const VIEWS = ["now", "review", "agents", "topics", "history"];
 const ui = { view:"now", part:"", zoom:-1, history:[], data:null, last:{}, pick:"", mine:false, hover:null, seq:0 };
+const projects = { list:[] };   // every running project of this user (GET /projects), this one "current"
 (function fromHash() {
   const h = new URLSearchParams(location.hash.slice(1));
   if (VIEWS.includes(h.get("view"))) ui.view = h.get("view");
@@ -585,6 +603,48 @@ function paintChrome() {
   $("in").disabled = ui.zoom === 0; $("out").disabled = ui.zoom === 2;
   const h = new URLSearchParams({ view:ui.view }); if (ui.part) h.set("part", ui.part); if (ui.zoom >= 0) h.set("zoom", ui.zoom);
   history.replaceState(null, "", "#" + h);
+  paintProjects();
+}
+// ---- the project tabs: one per running engine, plain links to each engine's own page, keeping the view ----
+__PROJECT_HREF__
+function paintProjects() {
+  const nav = $("projects"), key = JSON.stringify([projects.list, ui.view]);
+  if (nav.dataset.key === key) return;
+  nav.dataset.key = key;
+  const items = [];
+  for (const p of projects.list) {
+    const a = el("a"), here = !!p.current;
+    a.href = projectHref(p.port, ui.view);
+    a.title = (p.root || "") + (p.changed ? " · changed since you last looked" : "") + (here ? "" : " ([ and ] switch)");
+    a.append(el("span", p.name || "(unnamed)", "nm"));
+    if (p.branch) a.append(el("span", p.branch, "br"));
+    if (p.changed) { const d = el("span", null, "dot"); d.setAttribute("aria-label", "changed"); a.append(d); }
+    if (here) {
+      a.setAttribute("aria-current", "page");
+      a.addEventListener("click", e => e.preventDefault());
+      document.title = (p.name || "System diff") + " · System diff";
+    }
+    items.push(a);
+  }
+  const all = el("a", "All projects ↗", "all");
+  all.href = "projects/page"; all.title = "Every running project on one page, to bookmark (system-diff hub)";
+  items.push(all);
+  nav.replaceChildren(...items);
+  nav.hidden = !projects.list.length;
+}
+async function loadProjects() {
+  try {
+    const r = await fetch("projects", { cache:"no-store", headers:{ "X-Token":TOKEN } });
+    if (!r.ok) return;
+    const d = await r.json();
+    projects.list = Array.isArray(d.projects) ? d.projects : [];
+    paintProjects();
+  } catch (e) { /* the engine stopped: the page says so already */ }
+}
+function switchProject(by) {
+  const n = projects.list.length, i = projects.list.findIndex(p => p.current);
+  if (n < 2 || i < 0) return;
+  location.href = projectHref(projects.list[(i + by + n) % n].port, ui.view);
 }
 // The engine numbers each state of the system; the page asks for the next one and the server answers when it comes
 // (a long poll, ~25 s at most), so the page follows within a moment of a change and does nothing in between.
@@ -676,12 +736,17 @@ document.addEventListener("keydown", e => {
   else if (e.key === "h") go("history", ui.mine && ui.pick && ui.pick.startsWith("b:") ? rawId(ui.pick) : "");
   else if (e.key === "b" || e.key === "Backspace") back();
   else if (e.key === "f") go("now", "");
+  else if (e.key === "[") switchProject(-1);
+  else if (e.key === "]") switchProject(1);
   else if (e.key === "-") zoomBy(1);
   else if (e.key === "+" || e.key === "=") zoomBy(-1);
   else if (e.key === "Escape") { hideTip(); ui.mine = false; ui.pick = ""; ui.last.dia = ""; ui.hover = null; render(ui.data || {}); }
 });
 paintChrome();
 follow();
+loadProjects();
+setInterval(() => { if (!document.hidden) loadProjects(); }, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadProjects(); });
 </script></body></html>
 """
 
@@ -728,6 +793,13 @@ class Watcher:
         self.taught: tuple = ()           # (part, look) the zoomed picture and the lesson were made for
         self.engine: Optional[live.Engine] = None   # the resident engine, when serving: it knows the working tree
         self.pages: Optional[live.Pages] = None
+        self.looked = 0                   # the engine's version the web page last showed (the project tabs' dot)
+
+    def moved(self) -> Dict[str, Any]:
+        """GET /moved (token): for the other projects' tabs, how far this engine's model has moved ("seq") and how far
+        its web page has looked ("seen"): a dot on its tab while seq > seen."""
+        seq = self.engine.version if self.engine is not None else self.state["version"]
+        return {"id": self.ident, "seq": seq, "seen": self.looked}
 
     def key(self) -> tuple:
         e = self.engine
@@ -890,6 +962,12 @@ def handler(w: Watcher):
                 return self._page()
             if path == "/whoami":   # this is system-diff's server for the repository whose web.json names this id
                 return self._json(200, {"app": "system-diff", "id": w.ident, "pid": os.getpid()})
+            if path == "/moved":   # token only: another engine of this user's, which read it from web.json
+                if not live.token_ok(self.headers.get("X-Token"), w.token):
+                    return self._json(403, {"error": "forbidden"})
+                return self._json(200, w.moved())
+            if path in ("/projects", "/projects/page"):
+                return self._projects(path)
             if path == "/progress":   # where the engine is, at once however busy it is (the pane shows it meanwhile)
                 if not self._authorized():
                     return self._json(403, {"error": "forbidden"})
@@ -941,9 +1019,31 @@ def handler(w: Watcher):
                 key = ("web", view, zoom, part)
                 self._wait(since, key)
                 version, page = _page_of(w, key)
+                w.looked = max(w.looked, version)   # the page shows this: no dot on this project's tab
             except Exception as exc:  # noqa: BLE001 - the page shows it and keeps polling
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
             return self._json(200, {**page, "version": version})
+
+        def _projects(self, path: str):
+            """The project tabs (GET /projects: every running engine of this user, from the registry cleaned of
+            stale entries; token or same origin) and the page listing them (GET /projects/page). Plain links between
+            engines: no CORS, no tokens. The Host must be this machine's (no DNS rebinding)."""
+            bound = self.server.server_address[1]
+            if not hub.host_ok(self.headers.get("Host"), bound):
+                return self._json(403, {"error": "forbidden"})
+            if path == "/projects/page":
+                return self._send(200, hub.hub_page(w.token), "text/html; charset=utf-8")
+            if not self._authorized():
+                return self._json(403, {"error": "forbidden"})
+            try:
+                got = hub.projects(w.ident, w.moved())
+            except Exception as exc:  # noqa: BLE001 - the tabs are a convenience
+                return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+            if not any(p["current"] for p in got):   # no registry (or not written): this one at least
+                got.insert(0, {"root": str(w.root), "name": hub.project_name(w.root), "branch": hub.branch(w.root),
+                               "url": f"http://127.0.0.1:{bound}/", "port": bound, "id": w.ident, "version": "",
+                               "started": 0, "current": True, "changed": False, "busy": False})
+            return self._json(200, {"projects": got, "self": w.ident})
 
         def _authorized(self) -> bool:
             """The token (the pane and the hooks read it from web.json), or this server's own page."""
@@ -1102,6 +1202,7 @@ def handler(w: Watcher):
 
 
 VIEWS = ("now", "review", "agents", "topics", "history")
+PAGE = PAGE.replace("__PROJECT_HREF__", hub.HREF_JS)
 PANE_LOCK = threading.Lock()
 
 
@@ -1444,6 +1545,8 @@ def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: O
     bound = server.server_address[1]
     url = f"http://127.0.0.1:{bound}/"
     web = _write_web(root, url, bound, w.ident, w.token)
+    from . import __version__
+    entry = hub.register(root, url, bound, w.ident, __version__)   # the other projects' pages show it as a tab
     if config_path is None:   # the engine reads the repository's own config, as the views do
         try:
             w.engine = live.Engine(root, interval=min(interval, live.INTERVAL)).start()
@@ -1468,4 +1571,5 @@ def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: O
         if w.engine is not None:
             w.engine.stop()
         server.server_close()
+        hub.unregister(entry)
         _forget_web(web, bound)
