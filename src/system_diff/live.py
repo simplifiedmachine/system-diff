@@ -33,8 +33,8 @@ How changes arrive:
   read again in Python; when an ignore or attributes rule changes, the start's listing runs again. On the start, a
   file whose size and time are those the index has (and not racily so) is taken as the index's blob without reading.
 - the repository's other state the views show (the checkpoint and the turn, the activity log, the agents' bus, the
-  LLM's regrouping, the person's learning profile, the history) is watched by file time; a change bumps the version
-  too.
+  LLM's regrouping and its words for the blocks, the person's learning profile, the history) is watched by file
+  time; a change bumps the version too.
 
 History: the engine's Recorder (history.py, its own thread) records each structural change of the model as it
 happens, under the person's request, and reads the commits HEAD gains (backfill) in the background; never in a
@@ -766,7 +766,8 @@ class Engine:
                  st(g / "refs" / "worktree" / "system-diff" / "turn"), st(c / "refs" / "system-diff" / "checkpoint"),
                  st(self._sd / "activity.jsonl"), st(self._sd / "agents.json"), st(self._sd / "bus.jsonl"),
                  st(self._sd / "history.jsonl"),
-                 listing(self._sd / "regroup"), listing(self._sd / "parts"), prof)
+                 listing(self._sd / "regroup"), listing(self._sd / "parts"), st(self._sd / "explain" / "cache.json"),
+                 prof)
         rules = (st(c / "info" / "exclude"), st(c / "info" / "attributes"), st(g / "index"))
         return git_state, views, rules
 

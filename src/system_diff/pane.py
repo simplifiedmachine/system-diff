@@ -35,6 +35,10 @@ def compare(root: Path, base: str, head: str = "."):
     the background job that makes it; it never waits). Not for a partial read: the structure is not known yet."""
     c = _compare(root, base, head)
     try:
+        c.root = Path(root)     # where explain.py keeps the LLM's words for its blocks
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         c.regroup = None if c.after.get("partial") else regroup.ensure(root, c.after, c.cfg)
     except Exception:  # noqa: BLE001 - only an improvement of the picture
         c.regroup = None
@@ -65,6 +69,9 @@ def _explain(c, model: Dict[str, Any]) -> Tuple[Dict[str, dict], Dict[str, Tuple
     for n in model["nodes"]:
         for nid, title in [(n["id"], n["title"])] + [(i["id"], i["title"]) for i in n.get("items") or []]:
             bid = "b:" + nid
+            if nid.startswith("f:") and plain.get(bid, {}).get("short"):   # a module: what it is for, explained
+                said[bid] = (f"{title}  ", plain[bid]["short"])
+                continue
             if nid.startswith("f:"):                      # a module: what it imports, what imports it, what it serves
                 outs = sorted({names.get(e["to"], e["to"]) for e in model["edges"] if e["from"] == nid})
                 ins = sorted({names.get(e["from"], e["from"]) for e in model["edges"] if e["to"] == nid})
@@ -1167,10 +1174,17 @@ def _web_diagram(c, model: Dict[str, Any], title: str, aside: str, zoom: int, pi
     except Exception:
         svg = ""
     try:
-        full = {bid: d["more"] for bid, d in human.block_details(c, model).items() if d.get("more")}
-    except Exception:  # noqa: BLE001
+        from . import explain
+        full = {bid: explain.public(ex) for bid, ex in explain.blocks(c, model).items()}
+    except Exception:  # noqa: BLE001 - the pane's line instead
         full = {}
-    return {"svg": svg or "", "title": title, "aside": aside, "lights": dict(g.lights),
+    files = {"b:" + n["id"]: n["id"][2:] for n in model["nodes"] if str(n["id"]).startswith("f:")}
+    for bid, ex in full.items():
+        if bid in files:
+            ex["inside"] = "Click to read its code"      # a module of a part zoomed in on: its code, one click away
+        elif bid not in on:
+            ex["inside"] = ""
+    return {"svg": svg or "", "title": title, "aside": aside, "lights": dict(g.lights), "files": files,
             "details": {bid: full.get(bid) or text for bid, (_lead, text) in said.items()},
             "enter": {bid: o["enter"]["zoom"] for bid, o in on.items()},
             "pick": next((b for b in pick if b in ids), "")}
@@ -1334,19 +1348,27 @@ def _box_hover(c, model: Dict[str, Any], decs: List[Dict[str, Any]], who: Dict[s
             inside = {i["id"] for i in n.get("items") or []} if box is n and n.get("items") else {nid}
             got = plain.get("b:" + nid) or {}
             lines = list(got.get("lines") or [])
-            if nid.startswith("f:"):
+            if not lines and nid.startswith("f:"):
                 lines = [f"A module: {nid[2:]}"]
             elif not lines:
                 mine = [d for d in decs if inside & set(d["parts"])]
                 lines = [f"Changed {since}: " + d["title"] for d in mine[:4]]
-            if box is n and n.get("items") and nid in llm and lines:
+            grouped = box is n and n.get("items") and nid in llm
+            if grouped and lines:
                 lines[0] += " (a grouping an LLM proposed)"
             edited = sorted(a for a, w in who.items() if inside & set(w["edits"]))
             read = sorted(a for a, w in who.items() if inside & set(w["reads"]) and a not in edited)
             agents_ = (["Edited by " + design.and_list(edited, 4)] if edited else []) + (
                 ["Read by " + design.and_list(read, 4)] if read else [])
             lines = lines[:max(2, human.CARD + 1 - len(agents_))] + agents_
-            out["b:" + nid] = {"title": box.get("title", nid).split("  @")[0], "lines": lines}
+            card = {"title": box.get("title", nid).split("  @")[0], "lines": lines}
+            ex = got.get("ex")
+            if ex:                  # the page shows it in parts: what it is for, how, worth knowing; then the news
+                from . import explain
+                card["ex"] = {k: v for k, v in explain.public(ex).items() if k in ("headline", "how", "insights", "by")}
+                card["notes"] = list(got.get("changes") or [])[:4] + agents_ + (
+                    ["A grouping an LLM proposed"] if grouped else [])
+            out["b:" + nid] = card
     return out
 
 

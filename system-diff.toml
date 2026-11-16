@@ -194,6 +194,14 @@ group = "Explaining"
 paths = ["src/system_diff/human.py"]
 
 [[components]]
+id = "explain"
+label = "Explanations"
+kind = "logic"
+about = "what each block is for, how it works, what is worth knowing"
+group = "Explaining"
+paths = ["src/system_diff/explain.py"]
+
+[[components]]
 id = "history"
 label = "History"
 kind = "logic"

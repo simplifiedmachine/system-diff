@@ -189,19 +189,25 @@ def test_a_part_says_what_it_serves_keeps_reads_is_built_with_and_connects_to(fl
     said = human.block_details(c, model, [], "this turn")
     api = said["b:app/api"]
     card = "\n".join(api["lines"])
-    assert "3 endpoints" in card and "GET /flows" in card and "POST /flows/{id}/run" in card
-    assert "Used by Main program and Web app over HTTP; uses Cache, Database access, Search and Storage" in card
-    assert "FastAPI" in card
-    db = "\n".join(said["b:app/db"]["lines"])
-    assert "flow_runs" in db and "SQLAlchemy" in db and "PostgreSQL over SQL at db:5432, database flows" in db
-    settings = "\n".join(said["b:app/settings"]["lines"])
-    assert "Reads settings AWS_REGION, DATABASE_URL, ELASTICSEARCH_URL and S3_BUCKET" in settings
+    assert "web requests" in card and "Main program and Web app use it" in card       # what it is for, who uses it
+    facts = {f["title"]: f for f in api["ex"]["facts"]}
+    assert facts["Endpoints"]["summary"].startswith("3 endpoints under /flows: GET /flows")
+    assert "POST /flows/{id}/run" in facts["Endpoints"]["summary"] and "FastAPI" in facts["Built with"]["summary"]
+    assert facts["Uses"]["summary"] == "Cache, Database access, Search and Storage"
+    db = said["b:app/db"]
+    assert "flow_runs" in db["ex"]["headline"] and "PostgreSQL (at db:5432, database flows)" in " ".join(db["ex"]["how"])
+    assert "SQLAlchemy" in {f["title"]: f for f in db["ex"]["facts"]}["Built with"]["summary"]
+    settings = {f["title"]: f for f in said["b:app/settings"]["ex"]["facts"]}["Settings"]
+    assert settings["summary"].startswith("4 settings: 2 addresses of other services")
+    assert "AWS_REGION" in " ".join(settings["items"]) and "S3_BUCKET" in " ".join(settings["items"])
     for d in said.values():
         assert len(d["lines"]) <= human.CARD
-        assert "no change" not in (" ".join(d["lines"]) + d["short"] + d["more"]).lower()
+        assert "no change" not in (" ".join(d["lines"]) + d["short"]).lower()
     pg = said["b:x:postgres"]
-    assert pg["short"].startswith("at db:5432, database flows (postgresql) via DATABASE_URL")
-    assert any("Runs as service db (postgres:16), published on localhost:5433" in line for line in pg["lines"])
+    assert "db:5432, database flows (postgresql)" in pg["short"]
+    where = {f["title"]: f for f in pg["ex"]["facts"]}["Where and how"]
+    assert where["summary"].startswith("Reached at db:5432, database flows (postgresql), set by DATABASE_URL")
+    assert any("Runs as service db (postgres:16), published on localhost:5433" in line for line in where["items"])
 
 
 def test_the_page_and_the_pane_show_it_and_never_say_nothing_changed(flows):
@@ -209,7 +215,7 @@ def test_the_page_and_the_pane_show_it_and_never_say_nothing_changed(flows):
     for card in page["hover"].values():
         assert not any("no change to its structure" in line.lower() for line in card["lines"])
     assert "db:5432" in " ".join(page["hover"]["b:x:postgres"]["lines"])
-    assert "flow-uploads" in page["diagram"]["details"]["b:x:aws-s3"]
+    assert "flow-uploads" in json.dumps(page["diagram"]["details"]["b:x:aws-s3"])
     zoomed = pane.web_view(flows, "review", "", 1)
     assert zoomed["hover"]   # the boxes of a zoomed-in view have their cards too
     shown = pane.show(flows, 100, "review")
@@ -225,7 +231,14 @@ def test_what_changed_or_when_it_last_did(flows):
              "why": "a new entry point", "request": "let people run a flow"}]
     past = [{"at": time.time() - 2 * 86400, "parts": ["app/search"], "request": "add search"}]
     said = human.block_details(c, model, decs, "this turn", past)
-    assert said["b:app/api"]["lines"][1] == "Changed this turn: Claude added POST /flows/{id}/run"
+    assert said["b:app/api"]["lines"][1] == "Changed this turn: Claude added POST /flows/{id}/run"   # after what it is
     assert said["b:app/api"]["short"].startswith("changed this turn")
     assert "Last changed 2 days ago: you asked “add search”" in said["b:app/search"]["lines"]
     assert not any("changed" in line.lower() for line in said["b:app/storage"]["lines"])
+
+
+def test_a_count_of_tokens_is_not_a_secret_but_an_authorization_is():
+    from system_diff.extract import secret_name
+    assert not secret_name("MAX_TOKENS") and not secret_name("NUM_TOKENS") and not secret_name("TOKEN_LIMIT")
+    for name in ("API_TOKENS", "GITHUB_TOKEN", "HCX_AUTHORIZATION", "OPENAI_API_KEY", "ACCESS_TOKEN_TTL", "DB_PASSWORD"):
+        assert secret_name(name), name

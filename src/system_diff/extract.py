@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from . import progress
 from .config import segment_rx
 
-EXTRACT_VERSION = "4"  # what a blueprint records: a blueprint cached by another version is read again
+EXTRACT_VERSION = "5"  # what a blueprint records: a blueprint cached by another version is read again
 
 
 def glob_rx(pattern: str) -> re.Pattern:
@@ -1004,7 +1004,8 @@ def find_outside(imported: Dict[str, Counter], env: Dict[str, Counter], containe
 # key or token is masked; what is kept (in the facts store too) is only ever the redacted text.
 
 SECRET_WORDS = ("PASSWORD", "PASSWD", "PASSPHRASE", "SECRET", "TOKEN", "CREDENTIAL", "APIKEY", "PRIVATE",
-                "SIGNATURE")
+                "AUTHORIZATION", "BEARER", "SIGNATURE")
+COUNT_WORDS = {"MAX", "MIN", "NUM", "LIMIT", "COUNT", "BUDGET", "TOTAL", "PER"}
 SECRET_TOKENS = {"PWD", "PASS", "KEY", "KEYS", "AUTH", "SALT", "CERT", "COOKIE", "JWT", "SIG", "HMAC", "OTP"}
 TOKEN_LIKE = re.compile(r"(?:sk|pk|rk|ghp|gho|ghs|ghu|xox[abprs]|AKIA|ASIA|AIza|eyJ)[-_A-Za-z0-9.]{8,}|"
                         r"[A-Za-z0-9+/_=-]{32,}")
@@ -1055,9 +1056,11 @@ CLIENT_NAMES = {"psycopg": "psycopg", "psycopg2": "psycopg2", "asyncpg": "asyncp
 def secret_name(name: str) -> bool:
     """A setting whose name says it holds a secret (a password, token, key, credential): its value is never kept."""
     up = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).upper()
-    if any(w in up for w in SECRET_WORDS):
-        return True
-    return bool(set(re.split(r"[^A-Z0-9]+", up)) & SECRET_TOKENS)
+    parts = set(re.split(r"[^A-Z0-9]+", up))
+    hits = [w for w in SECRET_WORDS if w in up]
+    if hits == ["TOKEN"] and parts & COUNT_WORDS and not parts & SECRET_TOKENS:
+        return False   # MAX_TOKENS, NUM_TOKENS, TOKEN_LIMIT: a count of an LLM's tokens, not a secret token
+    return bool(hits) or bool(parts & SECRET_TOKENS)
 
 
 def redact(value: str) -> str:
@@ -1610,7 +1613,7 @@ def part_tables(code: List[str], facts: Dict[str, dict], owner: Dict[str, str], 
 # matches, which part owns what, the counts) is worked out again each time from every file's facts (`_combine`), fast.
 # An edit re-reads the one file; the base of a comparison and the working tree share every file they have in common.
 
-FACTS_VERSION = "1"   # what a file's facts hold: facts kept by another version are read again
+FACTS_VERSION = "2"   # what a file's facts hold: facts kept by another version are read again
 COLD_BUDGET = 4.0     # seconds one budgeted read (the pane's) spends reading files nobody read yet; the next goes on
 PRUNE_AT = 256        # entries a shard of the facts store holds before the ones not used lately are let go
 
@@ -1657,6 +1660,37 @@ def _prisma_facts(text: str) -> List[str]:
     return out
 
 
+PY_DOC = re.compile(r'''\A\s*(?:#[^\n]*\n\s*)*[rRuU]?("""|\'\'\')(.*?)\1''', re.S)
+PY_TOP_DEF = re.compile(r"^(class|def|async[ \t]+def)[ \t]+([A-Za-z_]\w*)", re.M)
+TS_DOC = re.compile(r"\A\s*(?://[^\n]*\n\s*)*/\*\*?(.*?)\*/", re.S)
+TS_EXPORT = re.compile(r"^export[ \t]+(?:default[ \t]+)?(?:async[ \t]+)?(function\*?|class|const|let|interface|type|enum)"
+                       r"[ \t]+([A-Za-z_$][\w$]*)", re.M)
+
+
+def _first_sentence(text: str, most: int = 200) -> str:
+    text = " ".join(text.split())
+    m = re.match(r"(.+?[.!?])(\s|$)", text)
+    said = (m.group(1) if m else text).strip()
+    return said if len(said) <= most else said[:most - 1].rsplit(" ", 1)[0] + "…"
+
+
+def about_facts(path: str, text: str) -> dict:
+    """What a code file says about itself, for its box when its part is zoomed in on: its module docstring's (or
+    leading comment block's) first sentence, and the classes and functions it defines at the top level (or exports)."""
+    doc, classes, functions = "", [], []
+    if path.endswith(".py"):
+        m = PY_DOC.match(text)
+        doc = _first_sentence(m.group(2).strip().split("\n\n")[0]) if m else ""
+        for kind, name in PY_TOP_DEF.findall(text):
+            (classes if kind == "class" else functions).append(name)
+    else:
+        m = TS_DOC.match(text)
+        doc = _first_sentence(re.sub(r"^\s*\*\s?", "", m.group(1), flags=re.M).strip().split("\n\n")[0]) if m else ""
+        for kind, name in TS_EXPORT.findall(text):
+            (classes if kind in ("class", "interface", "type", "enum") else functions).append(name)
+    return {"doc": doc, "classes": list(dict.fromkeys(classes))[:40], "functions": list(dict.fromkeys(functions))[:60]}
+
+
 SECTIONS: Dict[str, Callable[[str, str], Any]] = {  # what a file is read for, and what reading it for that gives
     "code": lambda path, text: code_facts(path, text),
     "tsconfig": lambda path, text: path_prefixes([path], lambda _f: text),
@@ -1667,6 +1701,7 @@ SECTIONS: Dict[str, Callable[[str, str], Any]] = {  # what a file is read for, a
     "prisma": lambda path, text: _prisma_facts(text),
     "package": lambda path, text: package_dependencies(text),
     "conn": lambda path, text: _safe_conn(path, text),
+    "about": lambda path, text: about_facts(path, text),   # read only when a part is zoomed in on
 }
 
 

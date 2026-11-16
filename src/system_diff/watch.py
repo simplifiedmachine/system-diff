@@ -130,6 +130,11 @@ pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 #hovercard .t { font-weight:650; margin-bottom:4px; }
 #hovercard .l { color:var(--ink2); }
 #hovercard .l + .l { margin-top:3px; }
+#hovercard .h { color:var(--ink); margin-bottom:4px; }
+#hovercard ul { margin:4px 0 0; padding-left:16px; color:var(--ink2); }
+#hovercard li + li { margin-top:2px; }
+#hovercard .n { color:var(--muted); margin-top:4px; }
+.llm { color:var(--work); font-size:.9em; margin-left:3px; }
 .lit-ui { box-shadow:0 0 0 2px var(--work) !important; }
 .dia { padding:0; overflow:hidden; }
 .dia > h2 { padding:14px 16px 0; }
@@ -140,6 +145,28 @@ pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 #detail { padding:12px 16px; min-height:44px; white-space:pre-wrap; color:var(--ink2); font-size:13.5px; }
 #detail .what { color:var(--muted); }
 #detail b { color:var(--ink); }
+#detail .ex { white-space:normal; display:grid; gap:10px; max-width:860px; }
+#detail .ex h3 { margin:0; font-size:15px; color:var(--ink); }
+#detail .ex h4 { margin:0 0 3px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+                 font-weight:650; }
+#detail .ex p { margin:0; }
+#detail .ex ul { margin:0; padding-left:18px; }
+#detail .ex li + li { margin-top:3px; }
+#detail .ex .facts { display:grid; gap:4px; }
+#detail .ex .fact b { font-weight:600; }
+#detail .ex details { margin:2px 0 0 0; }
+#detail .ex summary { cursor:pointer; color:var(--work); font-size:12.5px; }
+#detail .ex details ul { margin-top:4px; max-height:240px; overflow:auto; }
+#code { border-top:1px solid var(--line); padding:10px 16px 14px; }
+#code .head { display:flex; gap:10px; align-items:baseline; margin-bottom:6px; }
+#code .head b { font:600 13px var(--mono); color:var(--ink); }
+#code .head .sub { flex:1; }
+#code pre { margin:0; max-height:520px; overflow:auto; background:var(--bg); border:1px solid var(--line);
+            border-radius:8px; padding:8px 0; font:12.5px/1.5 var(--mono); counter-reset:ln; }
+#code pre span { display:block; padding:0 12px 0 0; white-space:pre; }
+#code pre span::before { counter-increment:ln; content:counter(ln); display:inline-block; width:3.5em; padding-right:1em;
+                         text-align:right; color:var(--muted); user-select:none; }
+#dia.enterable [data-id].can-read { cursor:pointer; }
 .timeline { list-style:none; margin:0; padding:0 0 0 4px; }
 .timeline li { position:relative; display:grid; grid-template-columns:76px 20px 1fr; gap:8px; padding:6px 0; }
 .timeline li::before { content:""; position:absolute; left:95px; top:0; bottom:0; width:1px; background:var(--line); }
@@ -259,7 +286,7 @@ nav.projects a.all { margin-left:auto; font-size:12.5px; padding:5px 4px 6px 12p
   <section class="card" id="status" hidden></section>
   <div id="before" style="display:grid;gap:16px"></div>
   <section class="card dia" id="diacard" hidden><h2 id="diatitle"></h2>
-    <div class="diawrap" id="diawrap"><div id="dia" role="img"></div><div id="detail" aria-live="polite"></div></div></section>
+    <div class="diawrap" id="diawrap"><div id="dia" role="img"></div><div id="detail" aria-live="polite"></div><div id="code" hidden></div></div></section>
   <div id="after" style="display:grid;gap:16px"></div>
 </main>
 <div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · tick two changes in History to compare them · <kbd>f</kbd> follow Claude · <kbd>[</kbd> <kbd>]</kbd> projects · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
@@ -531,7 +558,18 @@ function showTipSoon(n) {
     const box = tipBox();
     box.replaceChildren();
     if (card.title) box.append(el("div", String(card.title), "t"));
-    for (const line of Array.isArray(card.lines) ? card.lines : []) box.append(el("div", String(line), "l"));
+    const ex = card.ex && typeof card.ex === "object" && card.ex.headline ? card.ex : null;
+    if (ex) {               // what it is for, how it works, what is worth knowing; then what changed and who worked there
+      const h = el("div", String(ex.headline), "h");
+      if (ex.by) { const m = el("span", "✦", "llm"); m.title = "written by " + ex.by; h.append(m); }
+      box.append(h);
+      const how = Array.isArray(ex.how) ? ex.how.join(" ") : String(ex.how || "");
+      if (how) box.append(el("div", how, "l"));
+      const notes = Array.isArray(card.notes) ? card.notes.slice(0, 3) : [];
+      const ins = Array.isArray(ex.insights) ? ex.insights.slice(0, notes.length > 1 ? 2 : 3) : [];
+      if (ins.length) { const ul = el("ul"); for (const i of ins) ul.append(el("li", String(i))); box.append(ul); }
+      for (const n of notes) box.append(el("div", String(n), "n"));
+    } else for (const line of Array.isArray(card.lines) ? card.lines : []) box.append(el("div", String(line), "l"));
     box.hidden = false;
     const r = n.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight, vw = innerWidth, vh = innerHeight;
     let x = Math.min(Math.max(8, r.left), vw - w - 8), y = r.bottom + 8;
@@ -592,13 +630,54 @@ function applyPick() {
       : !!picked && (pid === picked || lit.has(pid) || own.includes(picked) || own.includes(rawId(picked)));
     e.classList.toggle("lit-ui", on);
   }
-  const det = $("detail"); det.replaceChildren();
+  const det = $("detail");
+  // the strip is drawn again only when what it shows changes: a "show all" someone opened stays open
+  const shows = picked ? [picked, keyed(g.details, picked), keyed(g.enter, picked)] : ["", g.aside || ""];
+  const said = JSON.stringify(shows);
+  if (det.dataset.shows === said) return;
+  det.dataset.shows = said; det.replaceChildren();
   if (picked) {
     const text = keyed(g.details, picked), target = keyed(g.enter, picked);
-    if (text) det.append(el("span", text));
-    if (target) det.append(el("div", "Click to zoom into " + target + ".", "what"));
+    if (text && typeof text === "object") det.append(explained(text, !!target));
+    else if (text) det.append(el("span", text));
+    if (!target && keyed(g.files, picked) && !(text && typeof text === "object" && text.inside))
+      det.append(el("div", "Click to read its code.", "what"));
+    if (target && !(text && typeof text === "object" && text.inside))
+      det.append(el("div", "Click to look inside " + ((text && text.title) || "it") + ".", "what"));
     if (!text && !target) det.append(el("span", rawId(picked), "what"));
   } else det.append(el("span", g.aside || "Hover a part to see what it is and what it connects to.", "what"));
+}
+// the details strip for a block: What it is · How it works · Worth knowing · Facts, long lists behind "show all (N)"
+function explained(x, canEnter) {
+  const box = el("div", null, "ex");
+  const part = (title, ...kids) => { const s = el("section"); s.append(el("h4", title), ...kids); box.append(s); };
+  if (x.title) box.append(el("h3", String(x.title)));
+  const p = el("p", String(x.headline || ""));
+  if (x.by) { const m = el("span", "✦", "llm"); m.title = "written by " + x.by + " from the structure"; p.append(m); }
+  part("What it is", p);
+  const how = Array.isArray(x.how) ? x.how : [];
+  if (how.length) part("How it works", el("p", how.join(" ")));
+  const ins = Array.isArray(x.insights) ? x.insights : [];
+  if (ins.length) { const ul = el("ul"); for (const i of ins) ul.append(el("li", String(i))); part("Worth knowing", ul); }
+  const facts = Array.isArray(x.facts) ? x.facts : [];
+  if (facts.length) {
+    const list = el("div", null, "facts");
+    for (const f of facts) {
+      const row = el("div", null, "fact");
+      row.append(el("b", String(f.title || "")), document.createTextNode(" " + String(f.summary || "")));
+      const items = Array.isArray(f.items) ? f.items : [];
+      if (items.length) {
+        const d = el("details"), ul = el("ul");
+        d.append(el("summary", "show all (" + items.length + ")"));
+        for (const i of items) ul.append(el("li", String(i)));
+        d.append(ul); row.append(d);
+      }
+      list.append(row);
+    }
+    part("Facts", list);
+  }
+  if (x.inside && (canEnter || x.kind === "file")) box.append(el("div", String(x.inside) + ".", "what"));
+  return box;
 }
 function pickAt(target) {
   const n = target && target.closest && target.closest("#dia [data-id]");
@@ -618,7 +697,29 @@ $("dia").addEventListener("focusout", () => { ui.over = false; applyPick(); });
 $("dia").addEventListener("click", e => {
   const d = pickAt(e.target), g = (ui.data && ui.data.diagram) || {}, t = d && keyed(g.enter, d);
   if (t) go(ui.view === "history" ? "history" : "now", t);
+  else if (d && keyed(g.files, d)) showCode(keyed(g.files, d));
 });
+// a file box's click: its code, read-only, below the diagram (lines of code one click away, never the first thing)
+async function showCode(path) {
+  const box = $("code");
+  box.hidden = false; box.replaceChildren(el("div", "Reading " + path + "…", "sub"));
+  let got = null;
+  try {
+    const r = await fetch("file?path=" + encodeURIComponent(path), { cache:"no-store", headers:{ "X-Token":TOKEN } });
+    got = await r.json();
+  } catch (err) { got = { error: String(err) }; }
+  box.replaceChildren();
+  const head = el("div", null, "head"), close = el("button", "Close");
+  close.type = "button"; close.addEventListener("click", () => { box.hidden = true; box.replaceChildren(); });
+  head.append(el("b", path), el("span", got && got.text != null ? (got.lines + " lines" + (got.cut ? ", cut" : "")
+                                                               + " · as it is on disk now") : "", "sub"), close);
+  box.append(head);
+  if (!got || got.text == null) { box.append(el("div", "Could not show it: " + ((got && got.error) || "no answer"), "error")); return; }
+  const pre = el("pre");
+  for (const line of got.text.replace(/\n$/, "").split("\n")) pre.append(el("span", line || " "));
+  box.append(pre);
+  box.scrollIntoView({ block:"nearest", behavior:"smooth" });
+}
 function drawDiagram(g) {
   const box = $("dia");
   box.innerHTML = g.svg || "";
@@ -635,9 +736,12 @@ function drawDiagram(g) {
   }
   for (const n of box.querySelectorAll("[data-id]")) {
     if (keyed(g.enter, n.getAttribute("data-id"))) n.classList.add("can-enter");
+    else if (keyed(g.files, n.getAttribute("data-id"))) n.classList.add("can-read");
     if (hoverOf(n.getAttribute("data-id"))) n.setAttribute("tabindex", "0");
   }
-  box.classList.toggle("enterable", !!(g.enter && Object.keys(g.enter).length));
+  box.classList.toggle("enterable", !!(g.enter && Object.keys(g.enter).length) || !!(g.files && Object.keys(g.files).length));
+  const shown = $("code").querySelector(".head b");      // a file shown that this diagram no longer has: closed
+  if (shown && !Object.values(g.files || {}).includes(shown.textContent)) { $("code").hidden = true; $("code").replaceChildren(); }
 }
 
 // ---- the page: re-render only what changed ----
@@ -1083,6 +1187,37 @@ class Watcher:
             return View(**vars(self.view))
 
 
+FILE_MAX = 400_000   # bytes of a file the page shows; the rest is cut
+
+
+def read_code_file(root: Path, rel: str) -> Dict[str, Any]:
+    """A code file of the repository as it is on disk, for the page's file viewer: {"path", "text", "lines",
+    "cut"}; {"path", "text": None, "error"} for anything else. Only a code file the system's diagram can show (by
+    the config's code extensions, not skipped, not a test): never an env file, a key or anything outside the
+    repository."""
+    from .config import lenient
+    from .extract import Code
+    rel = (rel or "").replace("\\", "/").strip()
+    bad = {"path": rel, "text": None}
+    if not rel or rel.startswith("/") or ".." in rel.split("/") or ":" in rel or "\0" in rel:
+        return {**bad, "error": "not a path in the repository"}
+    try:
+        code = Code(lenient(root))
+        if not code.is_code(rel) or code.skip.search(rel):
+            return {**bad, "error": "not a code file of the system"}
+        base = Path(root).resolve()
+        f = (base / rel).resolve()
+        if base not in f.parents or not f.is_file():
+            return {**bad, "error": "no such file"}
+        with open(f, "rb") as fh:
+            data = fh.read(FILE_MAX + 1)
+    except Exception as exc:  # noqa: BLE001
+        return {**bad, "error": type(exc).__name__}
+    text = data[:FILE_MAX].decode("utf-8", errors="replace")
+    return {"path": rel, "text": text, "lines": text.count("\n") + (0 if text.endswith("\n") else 1),
+            "cut": len(data) > FILE_MAX}
+
+
 def handler(w: Watcher):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):  # quiet: the terminal shows the URL, not every poll
@@ -1112,6 +1247,11 @@ def handler(w: Watcher):
                 return self._json(200, w.moved())
             if path in ("/projects", "/projects/page"):
                 return self._projects(path)
+            if path == "/file":       # one code file of the system, read-only: what a file box's click shows
+                if not self._authorized():
+                    return self._json(403, {"error": "forbidden"})
+                got = read_code_file(w.root, self._query().get("path", ""))
+                return self._json(200 if got.get("text") is not None else 404, got)
             if path == "/progress":   # where the engine is, at once however busy it is (the pane shows it meanwhile)
                 if not self._authorized():
                     return self._json(403, {"error": "forbidden"})

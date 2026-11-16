@@ -48,7 +48,8 @@ def test_now_draws_the_system_as_a_designer_would_with_claude_lit(repo, files, c
     assert {"b:core", "e:api>core"} <= set(out["lights"]["b:api"])                     # its flows and their ends
     api = next(b for b in out["blocks"] if b["id"] == "b:api")
     assert api["enter"] == {"zoom": "api"} and api["slot"][1] == 2
-    assert "uses Core" in "".join(r[0] for row in out["details"]["b:api"] for r in row)
+    said = "".join(r[0] for row in out["details"]["b:api"] for r in row)
+    assert said.startswith("API  ") and "web requests" in said                         # what it is for, in words
     for heading in ("THIS TURN", "LEARN · HOW API IS DESIGNED", "WHAT JUST HAPPENED"):
         assert any(t.startswith(heading) for t in text), heading
     happened = text[next(i for i, t in enumerate(text) if t.startswith("WHAT JUST HAPPENED")) + 1:]
@@ -72,7 +73,8 @@ def test_enter_on_a_component_opens_its_insides(repo, files, capsys):
     diagram = "\n".join(text)
     assert "● + health.py" in diagram and "GET /health" in diagram              # Claude's module, new, what it serves
     assert "HTTP" in diagram                                                     # the front end's calls, to a router
-    assert "serves GET /health" in "".join(r[0] for row in out["details"]["b:f:app/api/health.py"] for r in row)
+    said = " ".join("".join(r[0] for r in row).strip() for row in out["details"]["b:f:app/api/health.py"])
+    assert "Defines the health endpoint: GET /health" in said                        # a module, said as what it is for
     assert "e:web>f:app/api/routes.py" in out["lights"]["b:web"]
 
 

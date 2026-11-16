@@ -340,15 +340,13 @@ def touched_line(t: Dict[str, str]) -> str:
 
 # ── what a block is, does and connects to, in plain words ───────────────────────────────────────────────────────
 #
-# For every box of a diagram (a part, a container of parts, who uses the system, an outside system or store): a
-# SHORT line for the pane's two rows under the diagram (the most useful first), a CARD of about eight lines for the
-# web page's hover, and MORE, everything, for its details strip. From the blueprint and the diagram's model only (how
-# an outside system is reached is extract.py's `connections`, read once per file by content and already redacted):
-# nothing is read again. A box with no change says nothing about changes, or when it last changed if the history
-# knows.
+# For every box of a diagram (a part, a container of parts, who uses the system, an outside system or store, a file of
+# a part zoomed in on): its explanation (explain.py), a SHORT line for the pane's rows under the diagram, and a CARD of
+# about eight lines for the web page's hover; the details strip shows the explanation's sections. How an outside system
+# is reached (where_it_is, connection_lines) is extract.py's `connections`, read once per file by content and already
+# redacted: nothing is read again. A box with no change says nothing about changes, or when it last changed if the
+# history knows.
 
-ROLE_WORDS = {"ui": "a front end people use", "interface": "an entry point", "logic": "logic inside the system",
-              "data": "data access", "store": "an outside store of data", "external": "an outside system"}
 CARD = 8   # lines a hover card holds before the rest goes to the details strip
 
 
@@ -447,69 +445,17 @@ def connection_short(conn: Dict[str, Any]) -> str:
     return "where: set at deploy time" + (f" ({read[0]})" if read else "")
 
 
-def _routes_words(routes: List[str], most: int = 3) -> str:
-    n = len(routes)
-    return f"{n} endpoint{'' if n == 1 else 's'}" + (f": {', '.join(routes[:most])}" + (", …" if n > most else "")
-                                                       if routes else "")
-
-
-def _techs(bp: dict, parts: Iterable[str]) -> List[str]:
-    from .topics import TECH, TOP_PACKAGE, tech_key
-    found: Dict[str, int] = {}
-    for p in parts:
-        for name, n in ((bp.get("imported") or bp.get("stack") or {}).get(p) or {}).items():
-            key = tech_key(name) or tech_key(TOP_PACKAGE.get(name, ""))
-            if key:
-                found[key] = found.get(key, 0) + int(n or 1)
-    order = sorted(found, key=lambda k: (-found[k], k))
-    return [TECH[k][0] for k in order if k in TECH]
-
-
 def block_details(c, model: Dict[str, Any], decs: Optional[List[Dict[str, Any]]] = None, since: str = "this turn",
                   past: Optional[List[Dict[str, Any]]] = None, about: Optional[Dict[str, str]] = None,
                   clock: Optional[float] = None) -> Dict[str, Dict[str, Any]]:
-    """{"b:<id>": {"title", "short", "lines", "more"}} for every box and item of a diagram's model: what it is (its
-    name, role, own description, files and lines), what it does (endpoints, tables, settings, technologies, the
-    outside systems it reaches and how), how it connects (who uses it and what it uses, over what), and what changed
-    in it `since` (`decs`: human.decisions), or else when it last changed (`past`: history entries, newest first)."""
-    from . import graph, names as names_
-    bp, before, cfg = c.after, c.before, c.cfg
-    kind = design.kinds(bp, cfg)
-    about = about if about is not None else names_.about(bp)
-    conns = graph.connections(bp)
-    labels: Dict[str, str] = {}
-    for n in model.get("nodes") or []:
-        labels[n["id"]] = str(n.get("title", n["id"])).split("  @")[0]
-        for i in n.get("items") or []:
-            labels[i["id"]] = str(i.get("title", i["id"])).split("  @")[0]
-
-    def name(nid: str) -> str:
-        return labels.get(nid) or design.name_of(nid, bp, before)
-
-    via: Dict[tuple, str] = {}                      # (from, to) -> what travels on it, as the diagram labels it
-    for e in model.get("edges") or []:
-        for pair in e.get("pairs") or [[e["from"], e["to"]]]:
-            if e.get("label") and not e["label"].endswith("+"):
-                via.setdefault(tuple(pair), e["label"])
-    from .architecture import protocol
-    for x, e in bp["externals"].items():
-        for u in e.get("used_by") or []:
-            via.setdefault((u, "x:" + x), protocol(e["label"], e.get("shape", "")))
-    for key in bp.get("api") or {}:
-        via.setdefault(tuple(key.split(">")), "HTTP")
-    actor_flows = [(e["from"], e["to"], e.get("label", "")) for e in model.get("edges") or []
-                   if str(e.get("from", "")).startswith("a:")]
-
-    def linked(ids: List[str], inside: Set[str]) -> List[str]:
-        said = []
-        for o in ids:
-            how = next((via[k] for k in via if (k[0] in inside and k[1] == o) or (k[1] in inside and k[0] == o)), "")
-            said.append(name(o) + (f" over {how}" if how and how not in ("call",) else ""))
-        return said
-
-    def host_port(o: str) -> str:
-        conn = (bp.get("connections") or {}).get(o[2:]) or {}
-        return where_it_is({k: v for k, v in conn.items() if k in ("host", "port")})
+    """{"b:<id>": {"title", "short", "lines", "changes", "ex"}} for every box and item of a diagram's model: its
+    explanation (explain.blocks: what it is for, how it works and fits, what is worth knowing, the facts behind it),
+    and what changed in it `since` (`decs`: human.decisions), or else when it last changed (`past`: history entries,
+    newest first). "lines" is the hover card's plain text (headline, what changed, how, insights), "short" the pane's
+    detail (what changed, else the headline and the best insight). Starts the background job that asks for better words
+    (explain.ensure) when the comparison knows its repository."""
+    from . import explain
+    ex_all = explain.blocks(c, model)
 
     def changes(inside: Set[str]) -> Tuple[List[str], str]:
         mine = [d for d in decs or [] if inside & set(d.get("parts") or [])]
@@ -531,143 +477,33 @@ def block_details(c, model: Dict[str, Any], decs: Optional[List[Dict[str, Any]]]
                 return [f"Last changed {when(e['at'], clock)}{tail}"], f"last changed {when(e['at'], clock)}"
         return [], ""
 
-    def part_facts(inside: List[str]) -> Dict[str, Any]:
-        mine = set(inside)
-        routes = sorted((r for r, o in bp["routes"].items() if o in mine),
-                        key=lambda r: (r.split(" ", 1)[-1], r))
-        tables = sorted({_short_table(t) for p in inside for k in ("defines", "queries")
-                         for t in (bp.get("part_tables") or {}).get(p, {}).get(k, [])})
-        defines = sorted({_short_table(t) for p in inside for t in (bp.get("part_tables") or {}).get(p, {})
-                          .get("defines", [])})
-        settings = sorted({s for p in inside for s in (bp.get("env") or {}).get(p, [])})
-        outs = sorted({t for (s, t) in conns if s in mine and t not in mine})
-        ins = sorted({s for (s, t) in conns if t in mine and s not in mine})
-        ins += sorted({a for a, t, _l in actor_flows if t in mine} - set(ins))
-        return {"routes": routes, "tables": tables, "defines": defines, "settings": settings,
-                "techs": _techs(bp, inside), "outs": outs, "ins": ins}
-
     out: Dict[str, Dict[str, Any]] = {}
     for n in model.get("nodes") or []:
         for box in [n] + list(n.get("items") or []):
             nid = box["id"]
-            title = labels.get(nid, nid)
+            bid = "b:" + nid
+            title = str(box.get("title", nid)).split("  @")[0]
             group = box is n and bool(n.get("items"))
-            inside = [i["id"] for i in n["items"]] if group else [nid]
-            lines: List[str] = []
-            short: List[str] = []
-            more: List[str] = []
-            if nid.startswith("a:"):
-                uses = [(t, lab) for a, t, lab in actor_flows if a == nid]
-                lines.append("Who uses the system" + (f": {box.get('sub')}" if box.get("sub") else ""))
-                said = [name(t) + (f" over {lab}" if lab else "") for t, lab in uses]
-                if said:
-                    lines.append("Uses " + design.and_list(said, 4))
-                    short.append("uses " + design.and_list(said, 3))
-                out["b:" + nid] = {"title": title, "short": " · ".join(short) or "who uses the system",
-                                   "lines": lines, "more": " · ".join(lines)}
-                continue
-            if nid.startswith("f:"):
-                continue   # a module of a zoomed-in part: the pane says what it imports and serves
+            inside = {i["id"] for i in n["items"]} if group else {nid}
             if nid.startswith("x:"):
-                x = nid[2:]
-                e = bp["externals"].get(x) or before["externals"].get(x) or {}
-                conn = (bp.get("connections") or {}).get(x) or {}
-                role = ROLE_WORDS.get(kind.get(nid, ""), "an outside system")
-                lines.append(_cap(role) + (f" · {len(bp['tables'])} tables" if x == bp.get("store") and bp["tables"]
-                                           else ""))
-                conn_lines = connection_lines(conn, name)
-                users = [u for u in e.get("used_by") or []]
-                if not conn_lines:
-                    conn_lines = ["Where it is: not said in the repository (set at deploy time)"]
-                    if users:
-                        conn_lines.append("Used by " + design.and_list([name(u) for u in users], 4))
-                lines += conn_lines
-                short.append(connection_short(conn) or "where: set at deploy time")
-                if conn.get("clients"):
-                    short.append("through " + design.and_list(conn["clients"], 3))
-                if users:
-                    short.append("used by " + design.and_list([name(u) for u in users], 3))
-                if x == bp.get("store") and bp["tables"]:
-                    more.append("Tables: " + ", ".join(_short_table(t) for t in list(bp["tables"])[:12])
-                                + (f" and {len(bp['tables']) - 12} more" if len(bp["tables"]) > 12 else ""))
-                if e.get("found"):
-                    more.append("Known by: " + "; ".join(e["found"]))
-                changed, said = changes({nid} | {f"{u}>{x}" for u in users})
-                lines[1:1] = changed
-                if said:
-                    short.insert(0, said)
-                out["b:" + nid] = {"title": title, "short": " · ".join(short), "lines": lines[:CARD],
-                                   "more": " · ".join(lines + more)}
+                users = (c.after["externals"].get(nid[2:]) or {}).get("used_by") or []
+                inside |= {f"{u}>{nid[2:]}" for u in users}
+            ex = ex_all.get(bid)
+            changed, said = changes(inside)
+            if ex is None:
+                out[bid] = {"title": title, "short": said or "", "lines": changed[:CARD], "changes": changed,
+                            "ex": None}
                 continue
-            f = part_facts(inside)
-            comp = bp["components"].get(nid) or before["components"].get(nid) or {}
-            if group:
-                files = sum((bp["components"].get(p) or {}).get("files", 0) for p in inside)
-                lns = sum((bp["components"].get(p) or {}).get("lines", 0) for p in inside)
-                lines.append(f"A container of {len(inside)} parts: " + design.and_list([name(p) for p in inside], 4))
-            else:
-                files, lns = comp.get("files", 0), comp.get("lines", 0)
-                role = ROLE_WORDS.get(kind.get(nid, ""), "a part")
-                said = about.get(nid) or (cfg_about(cfg, nid))
-                lines.append(_cap(role) + (f": {said}" if said and said != title else "")
-                             + f" · {graph.files_word(files)}" + (f", {lns} lines" if lns else "")
-                             + (f" · {nid}" if nid != title else ""))
-            if f["routes"]:
-                lines.append("Serves " + _routes_words(f["routes"]))
-                short.append("serves " + _routes_words(f["routes"], 2))
-            reach = [o for o in f["outs"] if o.startswith("x:")]
-            inner = [o for o in f["outs"] if not o.startswith("x:")]
-            if reach:
-                said = []
-                for o in reach:
-                    conn = (bp.get("connections") or {}).get(o[2:]) or {}
-                    where = where_it_is(conn)
-                    how = next((via[k] for k in via if k[0] in inside and k[1] == o), "")
-                    said.append(name(o) + (f" over {how}" if how and how.lower() not in name(o).lower().split() else "")
-                                + (f" at {where}" if where else " (where: set at deploy time)"))
-                lines.append("Reaches " + "; ".join(said[:3]) + (f"; {len(said) - 3} more" if len(said) > 3 else ""))
-            if f["ins"]:
-                ins = linked(f["ins"], set(inside))
-                short.append("used by " + design.and_list(ins, 2))
-            if inner or reach:
-                outs = [name(o) for o in inner] + [name(o) + (f" at {host_port(o)}" if host_port(o) else "")
-                                                   for o in reach]
-                short.append("uses " + design.and_list(outs, 3))
-            connects = []
-            if f["ins"]:
-                connects.append("used by " + design.and_list(linked(f["ins"], set(inside)), 3))
-            if inner:
-                connects.append("uses " + design.and_list(linked(inner, set(inside)), 4))
-            if connects:
-                lines.insert(2 if f["routes"] else 1, _cap("; ".join(connects)))
-            elif not group and not reach:
-                lines.append("Connects to nothing else in the system")
-            if f["tables"]:
-                verb = "Keeps" if f["defines"] and set(f["defines"]) == set(f["tables"]) else "Tables"
-                lines.append(f"{verb}: " + design.and_list(f["tables"], 5))
-                short.append("tables " + design.and_list(f["tables"], 2))
-            if f["settings"]:
-                lines.append("Reads settings " + design.and_list(f["settings"], 4))
-                short.append("reads " + design.and_list(f["settings"], 2))
-            if f["techs"]:
-                lines.append("Built with " + design.and_list(f["techs"], 5))
-                short.append("built with " + design.and_list(f["techs"], 2))
-            changed, said = changes(set(inside))
-            if said:
-                short.insert(0, said)
-            for o in reach:
-                conn = (bp.get("connections") or {}).get(o[2:]) or {}
-                if conn:
-                    more.append(f"{name(o)}: " + "; ".join(connection_lines(conn, name)[:3]))
-            if f["routes"] and len(f["routes"]) > 3:
-                more.append("Endpoints: " + ", ".join(f["routes"][:30]))
-            if f["settings"] and len(f["settings"]) > 4:
-                more.append("Settings: " + ", ".join(f["settings"]))
-            if group:
-                more.append("Parts: " + ", ".join(f"{name(p)} ({p})" for p in inside))
-            body = lines[:1] + changed + lines[1:]
-            out["b:" + nid] = {"title": title, "short": " · ".join(short) or "connects to nothing in the system",
-                               "lines": body[:CARD], "more": " · ".join(body + more)}
+            plain = explain.card_lines(ex)
+            lines = plain[:1] + changed + plain[1:]
+            short = (said + " · " if said else "") + explain.pane_text(ex)
+            out[bid] = {"title": title, "short": short, "lines": lines[:CARD], "changes": changed, "ex": ex}
+    root = getattr(c, "root", None)
+    if root is not None:
+        try:
+            explain.ensure(root, c.cfg, ex_all)
+        except Exception:  # noqa: BLE001 - only better words
+            pass
     return out
 
 

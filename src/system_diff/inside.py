@@ -14,8 +14,8 @@ from . import graph
 from .architecture import COLUMNS_FIRST, actors, outside_nodes, protocol, titles
 from .design import kinds
 from .diff import numstat
-from .extract import (ENV_PY, ENV_TS, JS_ROUTE, PREFIX_ARG, PY_ROUTE, ROUTER, Code, import_paths, matches,
-                      path_prefixes, py_imports, settings_fields, ts_imports)
+from .extract import (ENV_PY, ENV_TS, JS_ROUTE, PREFIX_ARG, PY_ROUTE, ROUTER, Code, about_facts, fact_store,
+                      import_paths, matches, path_prefixes, py_imports, settings_fields, ts_imports)
 from .sources import GitSource
 
 LEVELS = 4            # columns of modules at most; deeper ones share the last
@@ -57,6 +57,35 @@ def _settings(f: str, text: str) -> List[str]:
     if f.endswith(".py"):
         return sorted({a or b for a, b in ENV_PY.findall(text)} | set(settings_fields(text)))
     return sorted(set(ENV_TS.findall(text)))
+
+
+def file_about(root: Path, source, texts: Dict[str, str]) -> Dict[str, dict]:
+    """What each file says about itself (extract.about_facts: its docstring's first sentence, what it defines), kept
+    beside its other facts by blob id, so it is worked out once per content."""
+    store = None
+    try:
+        store = fact_store(root)
+    except Exception:  # noqa: BLE001 - no store: worked out each time
+        store = None
+    blobs = getattr(source, "blobs", {}) or {}
+    out: Dict[str, dict] = {}
+    wrote = False
+    for f, text in texts.items():
+        blob = blobs.get(f)
+        got = store.get(blob, f) if store is not None and blob else None
+        if got is not None and isinstance(got.get("about"), dict):
+            out[f] = got["about"]
+            continue
+        out[f] = about_facts(f, text or "")
+        if store is not None and blob:
+            store.put(blob, f, {**(got or {}), "about": out[f]})
+            wrote = True
+    if wrote:
+        try:
+            store.flush()
+        except Exception:  # noqa: BLE001 - only a cache
+            pass
+    return out
 
 
 def internals(c, root: Path, part: str, agent_path: str = "", marks: Optional[dict] = None,
@@ -132,6 +161,13 @@ def internals(c, root: Path, part: str, agent_path: str = "", marks: Optional[di
     shown = sorted(mine, key=lambda f: (level[f], -texts[f].count("\n"), f))[:MOST_FILES]
     short = _short(mine)
 
+    named = titles(c)
+
+    def named_part(pid: str) -> str:
+        if pid.startswith("a:"):
+            return pid[2:]
+        return named.get(pid) or bp["components"].get(pid, {}).get("label") or pid
+
     # what changed in each module since the base, and where the agent is
     changed: Dict[str, str] = {}
     try:
@@ -142,6 +178,17 @@ def internals(c, root: Path, part: str, agent_path: str = "", marks: Optional[di
     except Exception:   # no base to compare with: nothing marked
         pass
 
+    said = file_about(root, source, {f: texts[f] for f in shown})
+    imports = defaultdict(set)
+    importers = defaultdict(set)
+    for (a, b) in inner:
+        imports[a].add(short[b])
+        importers[b].add(short[a])
+    for (f, other) in out:
+        imports[f].add(named_part(other))
+    for (caller, f) in into:
+        importers[f].add(named_part(caller))
+
     nodes: List[dict] = []
     for f in shown:
         lines = [{"text": r, "status": "same"} for r in served[f]] + (
@@ -149,7 +196,10 @@ def internals(c, root: Path, part: str, agent_path: str = "", marks: Optional[di
             if read[f] else [])
         nodes.append({"id": "f:" + f, "col": f"in{level[f]}", "type": "component", "title": short[f],
                       "sub": f"{texts[f].count(chr(10))} lines", "status": changed.get(f, "same"),
-                      "agent": f == agent_path, "lines": lines})
+                      "agent": f == agent_path, "lines": lines,
+                      "facts": {"path": f, "lines": texts[f].count(chr(10)), "routes": served[f], "settings": read[f],
+                                "imports": sorted(imports[f]), "importers": sorted(importers[f]),
+                                "part": part, **(said.get(f) or {})}})
     edges: List[dict] = []
     for (a, b), names in sorted(inner.items()):
         if "f:" + a in {n["id"] for n in nodes} and "f:" + b in {n["id"] for n in nodes}:
@@ -158,7 +208,6 @@ def internals(c, root: Path, part: str, agent_path: str = "", marks: Optional[di
     comps = bp["components"]
     kind = kinds(bp, cfg)
     around: Dict[str, dict] = {}
-    named = titles(c)
 
     def part_node(pid: str, col: str) -> dict:
         return around.setdefault(pid, {"id": pid, "col": col, "type": "component",

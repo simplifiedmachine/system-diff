@@ -128,3 +128,30 @@ def plain_terminal(monkeypatch):
     monkeypatch.setenv("SYSTEM_DIFF_REGROUP", "0")
     # nor starts a real web server from a page (the web tests start theirs themselves)
     monkeypatch.setenv("SYSTEM_DIFF_WEB_START", "0")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def no_engine_outlives_the_tests(tmp_path_factory):
+    """Engines some tests start in the background (system-diff watch, detached) are stopped when the tests end, so none
+    is left holding a port from 8765 for the next run."""
+    base = str(tmp_path_factory.getbasetemp())
+    yield
+    import os
+    import signal
+    import sys
+    if sys.platform.startswith("win"):
+        return   # no /proc; CI's Windows runners are thrown away after the run
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) == os.getpid():
+            continue
+        try:
+            with open(f"/proc/{entry}/cmdline", "rb") as f:
+                argv = f.read().split(b"\0")
+        except OSError:
+            continue
+        line = b" ".join(argv).decode("utf-8", "replace")
+        if "system_diff" in line and " watch" in line and base in line:
+            try:
+                os.kill(int(entry), signal.SIGTERM)
+            except OSError:
+                pass

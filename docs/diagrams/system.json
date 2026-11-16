@@ -17,7 +17,7 @@
    "label": "Agent activity",
    "layer": "",
    "kind": "data",
-   "order": 32,
+   "order": 33,
    "container": "",
    "declared": true,
    "files": 1,
@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 685,
+   "lines": 734,
    "hub": false,
    "quiet": false
   },
@@ -65,7 +65,7 @@
    "label": "Pane pictures",
    "layer": "",
    "kind": "logic",
-   "order": 24,
+   "order": 25,
    "container": "",
    "declared": true,
    "files": 1,
@@ -133,6 +133,18 @@
    "hub": false,
    "quiet": false
   },
+  "explain": {
+   "label": "Explanations",
+   "layer": "",
+   "kind": "logic",
+   "order": 21,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 1277,
+   "hub": false,
+   "quiet": false
+  },
   "extract": {
    "label": "Extraction",
    "layer": "",
@@ -141,7 +153,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2108,
+   "lines": 2143,
    "hub": false,
    "quiet": false
   },
@@ -173,7 +185,7 @@
    "label": "History",
    "layer": "",
    "kind": "logic",
-   "order": 21,
+   "order": 22,
    "container": "",
    "declared": true,
    "files": 1,
@@ -201,7 +213,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 897,
+   "lines": 733,
    "hub": false,
    "quiet": false
   },
@@ -209,7 +221,7 @@
    "label": "Lessons and topics",
    "layer": "",
    "kind": "logic",
-   "order": 28,
+   "order": 29,
    "container": "",
    "declared": true,
    "files": 3,
@@ -225,7 +237,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1430,
+   "lines": 1431,
    "hub": false,
    "quiet": false
   },
@@ -245,7 +257,7 @@
    "label": "Readable names",
    "layer": "",
    "kind": "logic",
-   "order": 22,
+   "order": 23,
    "container": "",
    "declared": true,
    "files": 1,
@@ -257,7 +269,7 @@
    "label": "LLM summary",
    "layer": "",
    "kind": "logic",
-   "order": 26,
+   "order": 27,
    "container": "",
    "declared": true,
    "files": 1,
@@ -269,7 +281,7 @@
    "label": "Objectives",
    "layer": "",
    "kind": "logic",
-   "order": 23,
+   "order": 24,
    "container": "",
    "declared": true,
    "files": 1,
@@ -285,7 +297,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2538,
+   "lines": 2560,
    "hub": false,
    "quiet": false
   },
@@ -305,7 +317,7 @@
    "label": "PNG rendering",
    "layer": "",
    "kind": "logic",
-   "order": 30,
+   "order": 31,
    "container": "",
    "declared": true,
    "files": 1,
@@ -317,7 +329,7 @@
    "label": "src/system_diff",
    "layer": "undeclared",
    "kind": "",
-   "order": 33,
+   "order": 34,
    "container": "",
    "declared": false,
    "files": 1,
@@ -329,7 +341,7 @@
    "label": "README section",
    "layer": "",
    "kind": "logic",
-   "order": 25,
+   "order": 26,
    "container": "",
    "declared": true,
    "files": 1,
@@ -341,7 +353,7 @@
    "label": "LLM regrouping",
    "layer": "",
    "kind": "logic",
-   "order": 27,
+   "order": 28,
    "container": "",
    "declared": true,
    "files": 1,
@@ -353,7 +365,7 @@
    "label": "Git and folder sources",
    "layer": "",
    "kind": "data",
-   "order": 31,
+   "order": 32,
    "container": "",
    "declared": true,
    "files": 1,
@@ -377,7 +389,7 @@
    "label": "Terminal pictures",
    "layer": "",
    "kind": "logic",
-   "order": 29,
+   "order": 30,
    "container": "",
    "declared": true,
    "files": 1,
@@ -405,7 +417,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1858,
+   "lines": 1998,
    "hub": false,
    "quiet": false
   }
@@ -487,6 +499,15 @@
   "doctor>sources": 3,
   "doctor>src/system_diff": 1,
   "doctor>watch": 1,
+  "explain>architecture": 1,
+  "explain>design": 1,
+  "explain>extract": 2,
+  "explain>graph": 1,
+  "explain>human": 4,
+  "explain>learn": 3,
+  "explain>names": 3,
+  "explain>narrate": 3,
+  "explain>sources": 1,
   "extract>config": 1,
   "extract>sources": 1,
   "extract>src/system_diff": 1,
@@ -509,12 +530,9 @@
   "hub>sources": 1,
   "hub>watch": 1,
   "human>activity": 1,
-  "human>architecture": 1,
   "human>design": 1,
-  "human>graph": 1,
+  "human>explain": 1,
   "human>history": 1,
-  "human>learn": 1,
-  "human>names": 1,
   "human>objectives": 1,
   "learn>activity": 1,
   "learn>diff": 1,
@@ -557,6 +575,7 @@
   "panel>compare": 6,
   "panel>config": 4,
   "panel>design": 1,
+  "panel>explain": 2,
   "panel>extract": 4,
   "panel>gitfs": 1,
   "panel>graph": 3,
@@ -599,8 +618,9 @@
   "watch>agent": 1,
   "watch>cli": 4,
   "watch>compare": 1,
+  "watch>config": 1,
   "watch>diff": 1,
-  "watch>extract": 1,
+  "watch>extract": 2,
   "watch>graph": 1,
   "watch>hub": 1,
   "watch>learn": 1,
@@ -937,6 +957,47 @@
   "doctor>watch": [
    "web_url"
   ],
+  "explain>architecture": [
+   "protocol"
+  ],
+  "explain>design": [
+   "and_list",
+   "kinds",
+   "name_of"
+  ],
+  "explain>extract": [
+   "OUTSIDE",
+   "secret_name"
+  ],
+  "explain>graph": [
+   "connections"
+  ],
+  "explain>human": [
+   "where_it_is",
+   "connection_lines",
+   "connection_short",
+   "outside_kind"
+  ],
+  "explain>learn": [
+   "TECH",
+   "BASIC",
+   "STDLIB",
+   "TOP_PACKAGE",
+   "tech_key"
+  ],
+  "explain>names": [
+   "FOLD_TITLE",
+   "WRAPPERS",
+   "about"
+  ],
+  "explain>narrate": [
+   "complete",
+   "configured",
+   "off"
+  ],
+  "explain>sources": [
+   "git_dir"
+  ],
   "extract>config": [
    "segment_rx"
   ],
@@ -1027,31 +1088,22 @@
    "ago",
    "part_of"
   ],
-  "human>architecture": [
-   "protocol"
-  ],
   "human>design": [
    "and_list",
    "Reading",
-   "name_of",
    "STATE_CHANGING",
-   "kinds",
+   "name_of",
    "py"
   ],
-  "human>graph": [
-   "connections",
-   "files_word"
+  "human>explain": [
+   "blocks",
+   "ensure",
+   "card_lines",
+   "pane_text",
+   "py"
   ],
   "human>history": [
    "when"
-  ],
-  "human>learn": [
-   "TECH",
-   "TOP_PACKAGE",
-   "tech_key"
-  ],
-  "human>names": [
-   "about"
   ],
   "human>objectives": [
    "touches"
@@ -1259,6 +1311,11 @@
    "kinds",
    "name_of"
   ],
+  "panel>explain": [
+   "public",
+   "blocks",
+   "py"
+  ],
   "panel>extract": [
    "Code",
    "COLD_BUDGET"
@@ -1284,8 +1341,8 @@
   ],
   "panel>human": [
    "decisions",
-   "block_details",
    "mark_objectives",
+   "block_details",
    "touched_line",
    "change_sentence",
    "intent"
@@ -1451,6 +1508,9 @@
    "turn_sha",
    "worktree_tree"
   ],
+  "watch>config": [
+   "lenient"
+  ],
   "watch>diff": [
    "diff"
   ],
@@ -1516,6 +1576,11 @@
   "cli": [
    "CLAUDE_PROJECT_DIR",
    "NO_COLOR"
+  ],
+  "explain": [
+   "PYTEST_CURRENT_TEST",
+   "SYSTEM_DIFF_EXPLAIN",
+   "SYSTEM_DIFF_EXPLAIN_JOBS"
   ],
   "history": [
    "PYTEST_CURRENT_TEST",
@@ -1651,6 +1716,19 @@
    "shutil": 1,
    "subprocess": 1,
    "sys": 1,
+   "time": 1,
+   "typing": 1
+  },
+  "explain": {
+   "collections": 1,
+   "hashlib": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "subprocess": 1,
+   "sys": 1,
+   "threading": 1,
    "time": 1,
    "typing": 1
   },
@@ -1993,6 +2071,19 @@
    "time": 1,
    "typing": 1
   },
+  "explain": {
+   "collections": 1,
+   "hashlib": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "subprocess": 1,
+   "sys": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1
+  },
   "extract": {
    "collections": 1,
    "json": 1,
@@ -2250,6 +2341,7 @@
   "tests/test_design_and_pane.py": 1,
   "tests/test_details.py": 1,
   "tests/test_doctor.py": 1,
+  "tests/test_explain.py": 1,
   "tests/test_git_calls.py": 1,
   "tests/test_history.py": 1,
   "tests/test_history_compare.py": 1,

@@ -214,3 +214,16 @@ def test_a_long_read_says_where_it_is_and_clears_when_done(tmp_path):
     assert progress.line(tmp_path).startswith("Reading the code at the working tree: 50 of 1,234 files - ")
     progress.end()
     assert progress.line(tmp_path) == ""
+
+
+def test_a_file_box_click_reads_its_code_with_the_token_only(served, repo):
+    req = lambda path, headers: urllib.request.Request(served + "file?path=" + path, headers=headers)  # noqa: E731
+    with urllib.request.urlopen(req("app/api/routes.py", {"X-Token": _token(served)}), timeout=30) as r:
+        got = json.loads(r.read().decode())
+    assert got["path"] == "app/api/routes.py" and "APIRouter" in got["text"] and got["lines"] > 3
+    for path, headers in (("app/api/routes.py", {}), ("app/api/routes.py", {"Origin": "http://evil.example"}),
+                          ("docker-compose.yml", {"X-Token": _token(served)}),
+                          ("../outside.py", {"X-Token": _token(served)})):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req(path, headers), timeout=30)
+        assert e.value.code in (403, 404), path
