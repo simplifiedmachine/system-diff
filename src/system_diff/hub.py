@@ -142,6 +142,12 @@ def _alive(pid: int) -> bool:
 def whoami(port: int, timeout: float = 0.6) -> Any:
     """GET /whoami on this machine: its JSON (a dict); False when nothing answers there or it is not system-diff's;
     None when it did not answer in time (an engine busy reading: still there)."""
+    try:   # nothing listens there: gone, at once (Windows retries a refused connection for seconds, which a short
+        from .watch import _free   # timeout would take for a busy engine, keeping a dead one's tab for ever)
+        if _free(port):
+            return False
+    except Exception:  # noqa: BLE001
+        pass
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)   # no proxy: this machine only
     try:
         conn.request("GET", "/whoami", headers={"Accept": "application/json"})

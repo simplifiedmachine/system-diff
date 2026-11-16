@@ -189,7 +189,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 493,
+   "lines": 499,
    "hub": false,
    "quiet": false
   },
@@ -503,6 +503,7 @@
   "history>sources": 3,
   "hub>gitfs": 2,
   "hub>sources": 1,
+  "hub>watch": 1,
   "human>activity": 1,
   "human>architecture": 1,
   "human>design": 1,
@@ -981,6 +982,9 @@
   ],
   "hub>sources": [
    "git_dir"
+  ],
+  "hub>watch": [
+   "_free"
   ],
   "human>activity": [
    "PROMPT",
