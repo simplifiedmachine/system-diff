@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 469,
+   "lines": 574,
    "hub": false,
    "quiet": false
   },
@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 570,
+   "lines": 838,
    "hub": false,
    "quiet": false
   },
@@ -129,7 +129,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 195,
+   "lines": 277,
    "hub": false,
    "quiet": false
   },
@@ -225,7 +225,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1338,
+   "lines": 1430,
    "hub": false,
    "quiet": false
   },
@@ -237,7 +237,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 317,
+   "lines": 332,
    "hub": false,
    "quiet": false
   },
@@ -405,7 +405,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1665,
+   "lines": 1858,
    "hub": false,
    "quiet": false
   }
@@ -421,9 +421,10 @@
   "agent>config": 1,
   "agent>design": 1,
   "agent>extract": 1,
+  "agent>gitfs": 1,
   "agent>learn": 1,
-  "agent>live": 1,
-  "agent>objectives": 1,
+  "agent>live": 2,
+  "agent>objectives": 2,
   "agent>sources": 1,
   "agent>watch": 1,
   "agents>activity": 1,
@@ -441,7 +442,7 @@
   "architecture>sources": 1,
   "canvas>pictures": 1,
   "cli>activity": 1,
-  "cli>agent": 2,
+  "cli>agent": 4,
   "cli>compare": 1,
   "cli>config": 2,
   "cli>diff": 1,
@@ -451,6 +452,7 @@
   "cli>history": 1,
   "cli>hub": 1,
   "cli>learn": 2,
+  "cli>live": 1,
   "cli>mcp": 1,
   "cli>narrate": 1,
   "cli>objectives": 1,
@@ -476,10 +478,11 @@
   "diff>extract": 1,
   "diff>sources": 2,
   "doctor>activity": 1,
+  "doctor>agent": 1,
   "doctor>cli": 1,
   "doctor>compare": 1,
   "doctor>extract": 1,
-  "doctor>live": 1,
+  "doctor>live": 2,
   "doctor>panel": 1,
   "doctor>sources": 3,
   "doctor>src/system_diff": 1,
@@ -528,6 +531,7 @@
   "live>learn": 1,
   "live>sources": 5,
   "mcp>activity": 1,
+  "mcp>agent": 1,
   "mcp>agents": 1,
   "mcp>compare": 1,
   "mcp>config": 1,
@@ -592,6 +596,7 @@
   "tui>panel": 3,
   "tui>src/system_diff": 1,
   "watch>activity": 1,
+  "watch>agent": 1,
   "watch>cli": 4,
   "watch>compare": 1,
   "watch>diff": 1,
@@ -620,11 +625,11 @@
   ],
   "agent>activity": [
    "record",
-   "EDIT",
    "PROMPT",
-   "part_of",
-   "relative",
-   "write_state"
+   "EDIT",
+   "_replace",
+   "events",
+   "is_system"
   ],
   "agent>agents": [
    "ORCHESTRATE",
@@ -646,6 +651,9 @@
   "agent>extract": [
    "Code"
   ],
+  "agent>gitfs": [
+   "locate"
+  ],
   "agent>learn": [
    "story",
    "and_list",
@@ -653,6 +661,8 @@
    "one_line"
   ],
   "agent>live": [
+   "_older",
+   "engine_info",
    "touch"
   ],
   "agent>objectives": [
@@ -661,10 +671,11 @@
   ],
   "agent>sources": [
    "git",
+   "git_dir",
    "run_hidden"
   ],
   "agent>watch": [
-   "watch"
+   "py"
   ],
   "agents>activity": [
    "EDIT",
@@ -735,6 +746,7 @@
   ],
   "cli>agent": [
    "run_hook",
+   "find_root",
    "setup_claude"
   ],
   "cli>compare": [
@@ -779,8 +791,11 @@
    "to_markdown",
    "toggle"
   ],
+  "cli>live": [
+   "log"
+  ],
   "cli>mcp": [
-   "main"
+   "build"
   ],
   "cli>narrate": [
    "narrate"
@@ -887,6 +902,10 @@
   "doctor>activity": [
    "events"
   ],
+  "doctor>agent": [
+   "hook_runs",
+   "note_hook"
+  ],
   "doctor>cli": [
    "__version__"
   ],
@@ -900,8 +919,9 @@
    "client_progress",
    "client_page",
    "engine_info",
-   "progress_text",
-   "starting"
+   "log_path",
+   "log_tail",
+   "progress_text"
   ],
   "doctor>panel": [
    "main"
@@ -1105,6 +1125,9 @@
   "mcp>activity": [
    "events",
    "now"
+  ],
+  "mcp>agent": [
+   "find_root"
   ],
   "mcp>agents": [
    "claim",
@@ -1413,6 +1436,10 @@
    "feed",
    "label"
   ],
+  "watch>agent": [
+   "hook_work",
+   "say_later"
+  ],
   "watch>cli": [
    "__version__"
   ],
@@ -1449,12 +1476,12 @@
    "one_line"
   ],
   "watch>live": [
+   "log_error",
+   "log",
    "token_ok",
    "Engine",
-   "Pages",
    "FIRST_WAIT",
-   "INTERVAL",
-   "LONG_POLL"
+   "Pages"
   ],
   "watch>panel": [
    "show",
@@ -1487,6 +1514,7 @@
  "internal": {},
  "env": {
   "cli": [
+   "CLAUDE_PROJECT_DIR",
    "NO_COLOR"
   ],
   "history": [
@@ -1536,14 +1564,17 @@
    "typing": 1
   },
   "agent": {
+   "http": 1,
    "json": 1,
    "mcp": 1,
    "os": 1,
    "pathlib": 1,
    "shutil": 1,
+   "socket": 1,
    "subprocess": 1,
    "sys": 1,
    "threading": 1,
+   "time": 1,
    "typing": 1
   },
   "agents": {
@@ -1574,6 +1605,7 @@
    "shlex": 1,
    "shutil": 1,
    "subprocess": 1,
+   "traceback": 1,
    "typing": 1
   },
   "compare": {
@@ -1703,8 +1735,10 @@
    "re": 1,
    "stat": 1,
    "struct": 1,
+   "sys": 1,
    "threading": 1,
    "time": 1,
+   "traceback": 1,
    "typing": 1,
    "urllib": 1
   },
@@ -1844,6 +1878,7 @@
    "json": 1,
    "os": 1,
    "pathlib": 1,
+   "queue": 1,
    "re": 1,
    "secrets": 1,
    "signal": 1,
@@ -1868,14 +1903,17 @@
    "typing": 1
   },
   "agent": {
+   "http.client": 1,
    "json": 1,
    "mcp": 1,
    "os": 1,
    "pathlib": 1,
    "shutil": 1,
+   "socket": 1,
    "subprocess": 1,
    "sys": 1,
    "threading": 1,
+   "time": 1,
    "typing": 1
   },
   "agents": {
@@ -1906,6 +1944,7 @@
    "shlex": 1,
    "shutil": 1,
    "subprocess": 1,
+   "traceback": 1,
    "typing": 1
   },
   "compare": {
@@ -2036,8 +2075,10 @@
    "re": 1,
    "stat": 1,
    "struct": 1,
+   "sys": 1,
    "threading": 1,
    "time": 1,
+   "traceback": 1,
    "typing": 1,
    "urllib.parse": 1
   },
@@ -2181,6 +2222,7 @@
    "json": 1,
    "os": 1,
    "pathlib": 1,
+   "queue": 1,
    "re": 1,
    "secrets": 1,
    "signal": 1,
@@ -2219,6 +2261,7 @@
   "tests/test_objectives.py": 1,
   "tests/test_objectives_ui.py": 1,
   "tests/test_regroup.py": 1,
+  "tests/test_slow_start.py": 1,
   "tests/test_svg.py": 1,
   "tests/test_system_diff.py": 1,
   "tests/test_terminal_and_learning.py": 1,

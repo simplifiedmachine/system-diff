@@ -3,10 +3,10 @@
   "hooks": {
     "SessionStart": [
       { "matcher": "startup|resume",
-        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook", "timeout": 10 }] }
+        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook", "timeout": 20 }] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook", "timeout": 10 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook", "timeout": 20 }] }
     ],
     "PostToolUse": [
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook", "timeout": 15 }] }

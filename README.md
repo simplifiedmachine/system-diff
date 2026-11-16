@@ -87,8 +87,10 @@ setx CLAUDE_CODE_NO_FLICKER 1                                    # Windows (Powe
 echo 'export CLAUDE_CODE_NO_FLICKER=1' >> ~/.bashrc              # macOS and Linux (~/.zshrc for zsh)
 ```
 
-On Windows, `python -m pip install "system-diff[mcp]"` works where `pip` is not on PATH. If anything is slow or quiet,
-`python -m system_diff doctor` says why.
+On Windows, `python -m pip install "system-diff[mcp]"` works where `pip` is not on PATH. The plugin's MCP server is
+started as `system-diff mcp`, directly (no shell), so the `system-diff` command must be on PATH: pip prints where it put
+it (Python's `Scripts` folder) if that is not. If anything is slow or quiet, `python -m system_diff doctor` says why:
+how long starting a program takes there, how long the hooks took, and why the engine last stopped.
 </details>
 
 ## In Claude Code

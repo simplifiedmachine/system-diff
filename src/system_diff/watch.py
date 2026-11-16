@@ -24,6 +24,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import queue
 import secrets
 import signal
 import socket
@@ -748,15 +749,23 @@ async function load(wait) {
     const d = await r.json().catch(() => ({}));
     if (seq !== ui.seq) return false;   // the person moved on while this loaded
     if (!r.ok) throw new Error(d.error || r.status + " " + r.statusText);
-    $("error").textContent = "";
+    $("error").textContent = d.engine_error && /stopping|stopped/.test(d.engine_error) ? "The engine is stopping: " + d.engine_error : "";
+    ui.lastError = d.engine_error || "";
     if (typeof d.version === "number") ui.version = d.version;
     render(d);
     return true;
   } catch (e) {
     if (seq !== ui.seq || (e && e.name === "AbortError")) return false;
-    $("error").textContent = e instanceof TypeError ? "The watcher stopped: start system-diff watch again." : String(e.message || e);
+    $("error").textContent = e instanceof TypeError ? stoppedText() : String(e.message || e);
     throw e;
   } finally { if (polling === ctl) polling = null; }
+}
+// The engine is gone (it stopped, or its machine slept): say why, if it told us, and how it comes back. The pane's next
+// look starts a fresh one; this page keeps asking and follows it when it comes back on the same port.
+function stoppedText() {
+  return "The engine stopped" + (ui.lastError ? " (last error: " + ui.lastError + ")" : "") +
+    ". The pane beside Claude starts it again at its next look, or run `system-diff watch`; this page reconnects " +
+    "by itself. `system-diff doctor` shows why it stopped (engine.log).";
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function follow() {
@@ -882,6 +891,53 @@ class Watcher:
         self.engine: Optional[live.Engine] = None   # the resident engine, when serving: it knows the working tree
         self.pages: Optional[live.Pages] = None
         self.looked = 0                   # the engine's version the web page last showed (the project tabs' dot)
+        self.fatal = ""                   # why this engine is stopping (an engine thread that died): the page says it
+        self.jobs: "queue.Queue[dict]" = queue.Queue()   # the hooks' work (POST /hook), done one at a time, in order
+
+    def hook_job(self, body: Dict[str, Any], wait: float) -> Optional[Dict[str, Any]]:
+        """Queue a hook's work (agent.hook_work) and wait up to `wait` seconds for it: its answer, or None when it
+        is not done by then (it is done all the same, and what it finds is kept for the agent's next hook)."""
+        job = {"body": body, "done": threading.Event(), "result": None, "late": False, "lock": threading.Lock()}
+        self.jobs.put(job)
+        job["done"].wait(max(0.0, min(wait, 5.0)))
+        with job["lock"]:
+            if job["done"].is_set():
+                return job["result"] or {}
+            job["late"] = True
+            return None
+
+    def work(self) -> None:
+        """The hooks' work, one job at a time in the order the hooks sent it (a prompt's turn mark before the edits
+        that follow it), once the engine holds the working tree. An error is logged and the next job goes on."""
+        from . import agent
+        while not self.stop.is_set():
+            try:
+                job = self.jobs.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            result: Dict[str, Any] = {}
+            try:
+                if self.engine is not None:
+                    self.engine.ready.wait(live.FIRST_WAIT)
+                    if job["body"].get("paths"):
+                        self.engine.touch(job["body"]["paths"])
+                result = agent.hook_work(self.root, job["body"]) or {}
+            except Exception as exc:  # noqa: BLE001 - logged; the hook's work is lost, the engine goes on
+                live.log_error(self.root, f"a hook's work ({job['body'].get('event')})", exc)
+            with job["lock"]:
+                job["result"] = result
+                job["done"].set()
+                late = job["late"]
+            if late and job["body"].get("event") == "tool":   # a turn's summary after the turn is stale: not kept
+                try:
+                    agent.say_later(self.root, str(job["body"].get("agent") or ""), result)
+                except Exception as exc:  # noqa: BLE001
+                    live.log_error(self.root, "keeping a hook's answer", exc)
+
+    def last_error(self) -> str:
+        """Why the engine is stopping, or the error it last met ("" when none), for the page."""
+        e = self.engine
+        return self.fatal or (e.error if e is not None else "") or ""
 
     def moved(self) -> Dict[str, Any]:
         """GET /moved (token): for the other projects' tabs, how far this engine's model has moved ("seq") and how far
@@ -1110,7 +1166,7 @@ def handler(w: Watcher):
                 w.looked = max(w.looked, version)   # the page shows this: no dot on this project's tab
             except Exception as exc:  # noqa: BLE001 - the page shows it and keeps polling
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
-            return self._json(200, {**page, "version": version})
+            return self._json(200, {**page, "version": version, "engine_error": w.last_error()})
 
         def _projects(self, path: str):
             """The project tabs (GET /projects: every running engine of this user, from the registry cleaned of
@@ -1272,7 +1328,33 @@ def handler(w: Watcher):
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
             return self._json(200, {"sha": sha})
 
+        def _post_hook(self):
+            """A hook's work ({"event": "prompt"|"tool"|"stop", …, "wait": seconds}): queued for the engine's
+            worker, answered with {"done": true, "message", "context"} when done within `wait` (at most 5 s), else
+            {"done": false} (the work goes on; what it finds comes with the agent's next hook). Token only, never from
+            a browser."""
+            if not live.token_ok(self.headers.get("X-Token"), w.token) or self.headers.get("Origin") is not None:
+                self._drain()
+                return self._json(403, {"error": "forbidden"})
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if n < 0 or n > SEND_BODY_MAX:
+                    return self._json(400, {"error": "the body is too big"})
+                body = json.loads(self.rfile.read(n).decode("utf-8") or "null")
+                wait = float(body.get("wait") or 0) if isinstance(body, dict) else 0.0
+            except (ValueError, UnicodeDecodeError, TypeError, AttributeError):
+                return self._json(400, {"error": "the body is JSON: {\"event\": …}"})
+            if not isinstance(body, dict) or body.get("event") not in ("prompt", "tool", "stop"):
+                return self._json(400, {"error": "event is prompt, tool or stop"})
+            got = w.hook_job(body, wait)
+            if got is None:
+                return self._json(200, {"done": False})
+            return self._json(200, {"done": True, "message": got.get("message") or None,
+                                    "context": got.get("context") or ""})
+
         def do_POST(self):
+            if urlsplit(self.path).path == "/hook":
+                return self._post_hook()
             if urlsplit(self.path).path == "/mark":
                 return self._post_mark()
             if urlsplit(self.path).path == "/send":
@@ -1352,6 +1434,7 @@ def _page_of(w: "Watcher", key: tuple) -> tuple:
     return (w.engine.version if w.engine else 0), _build(w, key)
 WEB = "web.json"   # where a running watcher listens: {"url", "port", "pid", "id"}, under .git/system-diff
 STARTING = "web.starting"   # a watcher being started: {"pid", "port", "at"}, until it has written web.json
+ENGINE_OUT = "engine.out"   # the detached engine's stderr: what it printed before it could log (engine.log has the rest)
 STARTING_FOR = 60.0         # how long a start is waited for (a large repository, a slow disk) before another is tried
 
 
@@ -1552,7 +1635,11 @@ def start_detached(root: Path, port: int = 8765, wait: float = 3.0) -> Optional[
             fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
         except FileExistsError:
             return None
-        kw: Dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
+        try:   # what the engine prints if it fails before it can log (an import error): engine.out, kept per start
+            err: Any = open(git_dir(root) / ENGINE_OUT, "w", encoding="utf-8")
+        except OSError:
+            err = subprocess.DEVNULL
+        kw: Dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": err,
                               "cwd": str(root), "close_fds": True}
         if os.name == "nt":
             # a hidden console, not none: what it runs (git) inherits it, instead of opening a window each time
@@ -1567,6 +1654,9 @@ def start_detached(root: Path, port: int = 8765, wait: float = 3.0) -> Optional[
             os.close(fd)
             marker.unlink()
             raise
+        finally:
+            if err is not subprocess.DEVNULL:
+                err.close()
         os.close(fd)
         deadline = time.time() + wait
         while time.time() < deadline:
@@ -1625,41 +1715,144 @@ def _interrupt(*_: Any) -> None:
     raise KeyboardInterrupt
 
 
+RESTARTS = 5          # an engine thread that fails this many times within RESTART_WINDOW seconds stops the engine
+RESTART_WINDOW = 300.0
+WATCHDOG_EVERY = 2.0  # seconds between two looks of the watchdog at the engine's threads
+FATAL_GRACE = 2.0     # seconds the server still answers (the page learns why) before it stops
+
+
+class _Server(ThreadingHTTPServer):
+    """The HTTP server, logging what a request's handler raised (engine.log) instead of printing it to a stderr no
+    one reads. A browser or a client closing the connection early is not an error."""
+    daemon_threads = True
+    root: Optional[Path] = None
+
+    def handle_error(self, request, client_address) -> None:
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionError, socket.timeout, TimeoutError)):
+            return
+        if self.root is not None:
+            live.log_error(self.root, "a request", exc)
+
+
+def _guarded(root: Path, name: str, fn, fatal) -> Any:
+    """`fn` run in a thread for the engine's life: an exception is logged with its traceback and `fn` run again,
+    unless it failed RESTARTS times within RESTART_WINDOW, when `fatal(reason)` stops the engine cleanly."""
+    def run() -> None:
+        fails: List[float] = []
+        while True:
+            try:
+                fn()
+                return
+            except Exception as exc:  # noqa: BLE001 - logged, then restarted or stopped
+                line = live.log_error(root, f"the {name} thread", exc)
+                now = time.monotonic()
+                fails = [t for t in fails if now - t < RESTART_WINDOW] + [now]
+                if len(fails) >= RESTARTS:
+                    fatal(f"{line} ({len(fails)} times in {int(RESTART_WINDOW / 60)} min)")
+                    return
+                live.log(root, f"restarting the {name} thread")
+                time.sleep(1.0)
+    t = threading.Thread(target=run, name=f"system-diff {name}", daemon=True)
+    t.start()
+    return t
+
+
+def _watchdog(w: "Watcher", server: ThreadingHTTPServer, fatal) -> None:
+    """Every couple of seconds: an engine thread that ended while the engine runs leaves no half-alive server. The
+    engine's reading thread gone: stop (cleanly: web.json removed, so the next look starts a fresh engine); the page
+    painter gone: started again."""
+    while not w.stop.wait(WATCHDOG_EVERY):
+        try:
+            e = w.engine
+            t = getattr(e, "_thread", None) if e is not None else None
+            if t is not None and not t.is_alive() and not e.stopped.is_set():
+                fatal("the engine thread stopped" + (f": {e.error}" if e.error else ""))
+                return
+            p = w.pages
+            painter = getattr(p, "_painter", None) if p is not None else None
+            if painter is not None and not painter.is_alive() and e is not None and not e.stopped.is_set():
+                live.log(w.root, "ERROR in the page painter: it stopped; starting it again")
+                p.start()
+        except Exception as exc:  # noqa: BLE001
+            live.log_error(w.root, "the watchdog", exc)
+
+
 def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: Optional[str] = None,
           interval: float = 2.0, ready=None) -> None:
     """Run until interrupted. `ready(url)` is called once the server listens (tests use port 0). While it runs,
     .git/system-diff/web.json says where (web_url reads it): written as soon as it listens, before the first read of
-    the system, which in a large repository takes long (the page shows "Reading the code…" meanwhile)."""
-    w = Watcher(root, base, config_path, interval)
-    server = ThreadingHTTPServer(("127.0.0.1", port), handler(w))
+    the system, which in a large repository takes long (the page shows "Reading the code…" meanwhile).
+
+    Why it stops is kept in .git/system-diff/engine.log (live.log): its start, its stop and the reason, and every
+    error its threads meet, with the traceback. A thread that keeps failing, or the engine's reading thread ending,
+    stops the whole server cleanly (web.json removed), so the next look starts a fresh one."""
+    from . import __version__
+    try:
+        w = Watcher(root, base, config_path, interval)
+        server = _Server(("127.0.0.1", port), handler(w))
+    except Exception as exc:
+        live.log_error(root, f"starting the engine on port {port}", exc)
+        raise
+    server.root = root
     bound = server.server_address[1]
     url = f"http://127.0.0.1:{bound}/"
     web = _write_web(root, url, bound, w.ident, w.token)
-    from . import __version__
-    entry = hub.register(root, url, bound, w.ident, __version__)   # the other projects' pages show it as a tab
-    if config_path is None:   # the engine reads the repository's own config, as the views do
-        try:
-            w.engine = live.Engine(root, interval=min(interval, live.INTERVAL)).start()
-            w.pages = live.Pages(w.engine, lambda key: _build(w, key),
-                                 placeholder=lambda key: reading_page(w, key)).start()
-        except Exception:  # noqa: BLE001 - no engine: every look reads for itself, as before
-            w.engine, w.pages = None, None
-    thread = threading.Thread(target=w.loop, daemon=True)
-    thread.start()
-    if threading.current_thread() is threading.main_thread() and hasattr(signal, "SIGTERM"):
-        signal.signal(signal.SIGTERM, _interrupt)   # stopped by kill: still forget web.json
+    live.log(root, f"engine {__version__} started on port {bound} (Python {sys.version.split()[0]}, {sys.executable})")
+    entry = None
+    why = ["stopped"]
+
+    def fatal(reason: str) -> None:
+        """Stop this engine for good: the page is told why for a moment, then the server stops."""
+        if w.fatal:
+            return
+        w.fatal = reason
+        why[0] = f"stopping after an error: {reason}"
+        live.log(root, f"ERROR in the engine: {reason}; stopping (the next look of the pane starts a fresh engine)")
+        if w.engine is not None:
+            w.engine.poke()
+
+        def later() -> None:
+            time.sleep(FATAL_GRACE)
+            server.shutdown()
+        threading.Thread(target=later, daemon=True).start()
+
     try:
+        try:
+            entry = hub.register(root, url, bound, w.ident, __version__)   # the other projects' pages show it as a tab
+        except Exception as exc:  # noqa: BLE001 - the tabs are a convenience
+            live.log_error(root, "registering with the other projects", exc)
+        if config_path is None:   # the engine reads the repository's own config, as the views do
+            try:
+                w.engine = live.Engine(root, interval=min(interval, live.INTERVAL)).start()
+                w.pages = live.Pages(w.engine, lambda key: _build(w, key),
+                                     placeholder=lambda key: reading_page(w, key)).start()
+            except Exception as exc:  # noqa: BLE001 - no engine: every look reads for itself, as before
+                live.log_error(root, "starting the resident engine (each look reads for itself)", exc)
+                w.engine, w.pages = None, None
+        _guarded(root, "watcher", w.loop, fatal)
+        _guarded(root, "hook worker", w.work, fatal)
+        w.jobs.put({"body": {"event": "catch-up"}, "done": threading.Event(), "result": None, "late": False,
+                    "lock": threading.Lock()})   # a prompt's turn that no engine marked (none ran then)
+        threading.Thread(target=_watchdog, args=(w, server, fatal), name="system-diff watchdog", daemon=True).start()
+        if threading.current_thread() is threading.main_thread() and hasattr(signal, "SIGTERM"):
+            signal.signal(signal.SIGTERM, _interrupt)   # stopped by kill: still forget web.json
         if ready:
             ready(url, server, w)
         else:
             print(f"system-diff watch: {url} (Ctrl-C to stop)", flush=True)
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
+        why[0] = "stopped (interrupted)"
+    except BaseException as exc:
+        why[0] = "stopped: " + live.log_error(root, "the server", exc)
+        raise
     finally:
         w.stop.set()
         if w.engine is not None:
             w.engine.stop()
         server.server_close()
-        hub.unregister(entry)
+        if entry is not None:
+            hub.unregister(entry)
         _forget_web(web, bound)
+        live.log(root, f"engine on port {bound} {why[0]}")

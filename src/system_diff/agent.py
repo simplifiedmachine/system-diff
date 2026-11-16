@@ -15,13 +15,14 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from . import activity, agents, config, design, learn
 from .compare import compare_worktree, mark_turn, turn_sha
 from .extract import Code
-from .sources import git, run_hidden
+from .sources import git, git_dir, run_hidden
 
 NAME = "system-diff"
 SKILL_MARK = "<!-- written by system-diff setup claude -->"
@@ -69,6 +70,26 @@ def _is_repo(path: Path) -> bool:
         return False
 
 
+def find_root(cwd: Path) -> Optional[Path]:
+    """The repository holding `cwd`, found by looking for .git upwards in Python (no git process: starting one costs
+    seconds on some machines); None outside one."""
+    from . import gitfs
+    try:
+        here = Path(cwd).absolute()
+    except OSError:
+        return None
+    for d in (here, *here.parents):
+        if (d / ".git").exists():
+            r = gitfs.locate(d)
+            if r is None:
+                return None
+            try:
+                return Path(r.top).resolve()
+            except OSError:
+                return Path(r.top)
+    return None
+
+
 def _clip(text: Any, n: int) -> str:
     text = " ".join(str(text or "").split())
     return text if len(text) <= n else text[: n - 1] + "…"
@@ -113,9 +134,269 @@ def edited_this_turn(root: Path, cfg: Dict[str, Any]) -> List[str]:
     return out
 
 
-def start_web(root: Path, wait: float = 3.0) -> None:
-    """Start the local web page (`system-diff watch`) if it is not running, giving it at most `wait` seconds; never
-    raises: a session must start whatever happens here."""
+# ── the hooks hand their work to the engine ──────────────────────────────────
+# Where starting any program costs seconds (endpoint security), a hook can afford one: its own Python. So a hook does
+# only what is local and cheap (it appends to the activity log, reads the agents' bus, builds Claude's context from
+# files) and hands the rest to the repository's resident engine (`system-diff watch`), POST /hook, waiting a moment
+# for its answer: the engine marks the turn from memory, compares from memory, publishes on the bus. No git, no
+# snapshot, no comparison, no background job is started in a hook. With no engine, a hook run by Claude Code starts
+# one, detached (the one process it starts), and skips the work this time: the engine catches up from the activity
+# log (it marks the turn of a prompt it has not marked). Run by hand (no CLAUDE_PROJECT_DIR: a script, the tests), the
+# hook does the work itself, as the engine would.
+
+PROMPT_WAIT = 0.3   # seconds a hook waits for the engine's answer: the work goes on there after it stops waiting
+TOOL_WAIT = 0.4     # an edit's one line, when the engine has it within this; else it comes with a later hook
+STOP_WAIT = 0.5
+CONNECT = 0.5       # seconds to reach the engine at all (Windows retries a refused connection for seconds)
+TURN = "turn.json"  # {"at": the prompt whose turn was last marked}: the engine marks a prompt's turn once
+SAID = "said"       # what the engine found after the hook stopped waiting, per agent: the next hook says it
+HOOKS_LOG = "hooks.jsonl"   # each hook's run: event, seconds, how the engine was reached (doctor shows them)
+CATCH_UP_FOR = 3600.0       # a prompt older than this is not marked late
+RUN: Dict[str, str] = {}    # how the current hook reached the engine: done, sent, started, skipped, here
+
+
+def _under_claude(env) -> bool:
+    return bool(env.get("CLAUDE_PROJECT_DIR"))
+
+
+def _may_start(root: Path, env) -> bool:
+    if env.get("SYSTEM_DIFF_WEB_START", "1") == "0":
+        return False
+    try:
+        return (config.lenient(root).get("web") or {}).get("start", True) is not False
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _nobody_listens(port: int) -> bool:
+    """Whether nothing listens on this port of this machine (a bind would succeed): an engine that is gone, found at
+    once instead of after a refused connection's retries."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if os.name != "nt":
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
+def ask_engine(root: Path, body: Dict[str, Any], wait: float) -> tuple:
+    """POST /hook to the repository's engine: ("done", its answer) when it did the work within `wait` seconds,
+    ("sent", None) when it has the work but did not finish in time (or did not say), ("none", None) when no engine
+    of this version answers. Never raises."""
+    import http.client
+    try:
+        from . import live
+        info = live.engine_info(root)
+        if not info or not info.get("token") or live._older(str(info.get("version") or "")):
+            return "none", None
+        port = int(info["port"])
+        if _nobody_listens(port):
+            return "none", None
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=CONNECT)
+        conn.connect()
+    except Exception:  # noqa: BLE001
+        return "none", None
+    try:
+        conn.sock.settimeout(wait + 1.0)
+        conn.request("POST", "/hook", body=json.dumps({**body, "wait": wait}).encode("utf-8"),
+                     headers={"X-Token": str(info["token"]), "Content-Type": "application/json"})
+        r = conn.getresponse()
+        raw = r.read()
+        if r.status == 404:
+            return "none", None   # an engine from before /hook
+        got = json.loads(raw.decode("utf-8")) if r.status == 200 else None
+        return ("done", got) if isinstance(got, dict) and got.get("done") else ("sent", None)
+    except Exception:  # noqa: BLE001 - sent: the engine may still do it
+        return "sent", None
+    finally:
+        conn.close()
+
+
+def hand_off(root: Path, body: Dict[str, Any], wait: float, env=os.environ) -> Optional[Dict[str, Any]]:
+    """Have the work in `body` done: by the engine (its answer, or None when it answers later); with none, started
+    in the background and skipped (run by Claude Code), or done here (run by hand)."""
+    state, got = ask_engine(root, body, wait)
+    if state == "done":
+        RUN["mode"] = "engine"
+        return got
+    if state == "sent":
+        RUN["mode"] = "engine, answered later"
+        return None
+    if _under_claude(env):
+        if _may_start(root, env):
+            RUN["mode"] = "engine started, work skipped"
+            start_web(root)
+        else:
+            RUN["mode"] = "no engine ([web] start = false), work skipped"
+        return None
+    RUN["mode"] = "done in the hook (run by hand)"
+    if body.get("paths"):
+        touch(root, body["paths"])
+    return hook_work(root, body)
+
+
+def hook_work(root: Path, body: Dict[str, Any]) -> Dict[str, Any]:
+    """What a hook hands over, done: in the engine's process (watch.py, POST /hook, one job at a time, in order) or,
+    run by hand, in the hook's. {"message", "context"}."""
+    event = body.get("event")
+    if event == "prompt":
+        prompt_work(root, body)
+    elif event == "tool":
+        return tool_work(root, body)
+    elif event == "stop":
+        return {"message": stop_work(root, body)}
+    elif event == "catch-up":
+        catch_up(root)
+    return {}
+
+
+def turn_marked_at(root: Path) -> float:
+    try:
+        return float(json.loads((git_dir(root) / TURN).read_text(encoding="utf-8")).get("at") or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 0.0
+
+
+def prompt_work(root: Path, body: Dict[str, Any]) -> None:
+    """A prompt's work: keep the working tree as the turn's start (from the engine's memory: one `git update-ref`
+    in the engine), note which prompt it was for, and start learning the objectives when they are stale."""
+    mark_turn(root)
+    try:
+        activity._replace(git_dir(root) / TURN, json.dumps({"at": float(body.get("at") or time.time())}) + "\n")
+    except (OSError, ValueError, TypeError):
+        pass
+    try:
+        from . import objectives
+        objectives.ensure(root)
+    except Exception:  # noqa: BLE001 - only a head start
+        pass
+
+
+def catch_up(root: Path) -> None:
+    """An engine starting: the latest prompt's turn, if no one marked it (the hook found no engine, started one and
+    went on)."""
+    last = next((e for e in reversed(activity.events(root, 400)) if e.get("event") == activity.PROMPT
+                 and not activity.is_system(e.get("text", ""))), None)
+    if last is None or float(last["at"]) <= turn_marked_at(root) or time.time() - float(last["at"]) > CATCH_UP_FOR:
+        return
+    prompt_work(root, {"at": last["at"]})
+
+
+def tool_work(root: Path, body: Dict[str, Any]) -> Dict[str, Any]:
+    """After a read or an edit of a file in a part: keep a brief of the part for the status line; after an edit to
+    code, look at what the turn has done to the system so far and say what this edit added to it (one at a time)."""
+    out: Dict[str, Any] = {"message": None, "context": ""}
+    cfg = config.lenient(root)
+    part, path, agent_id = body.get("part"), body.get("path") or "", body.get("agent") or ""
+    if not part:
+        return out
+    if body.get("brief") or not activity.load_brief(root, part, max_age=600):
+        activity.save_brief(root, learn.brief(root, cfg, part))
+    if not (body.get("edit") and turn_sha(root)):
+        return out
+    with activity.only_one(root, wait=10) as mine:
+        if not mine:
+            return out
+        last = activity.read_state(root).get("turn") or {}
+        before = last.get("told") or [s["text"] for s in last.get("story") or []]
+        since, turn = compare_worktree(root, ["checkpoint", "turn"])
+        notes = design.Reading(turn).notes()
+        noted = set(last.get("noted") or [])
+        record_step(root, path, part, noted, notes)
+        activity.write_state(root, since.diff, since.base, turn.diff, noted=[n["text"] for n in notes])
+        said = step_message(before, learn.story(turn.diff))
+    team = agents.after_edit(root, agent_id, part, [n for n in notes if n["text"] not in noted], turn.after)
+    message = "; ".join(m for m in (said, f"System diff: {team['warn']}" if team["warn"] else "") if m)
+    return {"message": message or None, "context": team["context"]}
+
+
+def stop_work(root: Path, body: Dict[str, Any]) -> Optional[str]:
+    """The end of a turn: what the turn changed in the system, kept for the status line and said in one line."""
+    turn_known = turn_sha(root) is not None
+    found = compare_worktree(root, ["checkpoint", "turn"] if turn_known else ["checkpoint"])
+    since, turn = found[0], (found[1] if turn_known else None)
+    activity.write_state(root, since.diff, since.base, turn.diff if turn else None)
+    return hook_message(since, turn, edited_this_turn(root, since.cfg))
+
+
+def _said_file(root: Path, agent_id: str) -> Path:
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in (agent_id or "main"))[:80]
+    return git_dir(root, SAID) / f"{safe}.jsonl"
+
+
+def say_later(root: Path, agent_id: str, result: Dict[str, Any]) -> None:
+    """Keep what the engine found after the hook stopped waiting, for the agent's next hook. Never raises."""
+    if not (result.get("message") or result.get("context")):
+        return
+    try:
+        with open(_said_file(root, agent_id), "a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps({"at": round(time.time(), 3), "message": result.get("message") or "",
+                                "context": result.get("context") or ""}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def take_said(root: Path, agent_id: str) -> List[Dict[str, Any]]:
+    """What the engine kept for this agent (say_later), taken: each is said once."""
+    f = _said_file(root, agent_id)
+    if not f.exists():
+        return []
+    taking = f.with_name(f"{f.name}.{os.getpid()}.taking")
+    try:
+        os.replace(f, taking)
+        lines = taking.read_text(encoding="utf-8", errors="replace").splitlines()
+        taking.unlink()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            got = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(got, dict):
+            out.append(got)
+    return out
+
+
+def note_hook(root: Path, event: str, seconds: float, mode: str) -> None:
+    """Keep how long this hook took and how it reached the engine (hooks.jsonl, the newest 200): `system-diff
+    doctor` shows them. Never raises."""
+    try:
+        f = git_dir(root) / HOOKS_LOG
+        with open(f, "a", encoding="utf-8", newline="\n") as out:
+            out.write(json.dumps({"at": round(time.time(), 3), "event": event, "seconds": round(seconds, 3),
+                                  "mode": mode, "pid": os.getpid()}) + "\n")
+        if f.stat().st_size > 64 * 1024:
+            lines = f.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]
+            activity._replace(f, "\n".join(lines) + "\n")
+    except Exception:  # noqa: BLE001 - a record only
+        pass
+
+
+def hook_runs(root: Path, most: int = 200) -> List[Dict[str, Any]]:
+    """The hooks' recent runs (note_hook), oldest first."""
+    try:
+        lines = (git_dir(root) / HOOKS_LOG).read_text(encoding="utf-8", errors="replace").splitlines()[-most:]
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            got = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(got, dict):
+            out.append(got)
+    return out
+
+
+def start_web(root: Path) -> None:
+    """Start the repository's engine (`system-diff watch`, the web page) in the background if it is not running,
+    without waiting for it: the one process a hook may start. Never raises: a session must go on whatever happens."""
     try:
         if (config.lenient(root).get("web") or {}).get("start", True) is False:
             return
@@ -123,24 +404,19 @@ def start_web(root: Path, wait: float = 3.0) -> None:
         start = getattr(watch, "start_detached", None)
         if start is None:
             return
-        import threading
-
-        def go() -> None:
-            try:
-                start(root)
-            except Exception:
-                pass
-        t = threading.Thread(target=go, daemon=True)
-        t.start()
-        t.join(wait)
-    except Exception:
+        try:
+            start(root, wait=0)
+        except TypeError:   # a stand-in that takes no wait
+            start(root)
+    except Exception:  # noqa: BLE001
         pass
 
 
 def on_start(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[str]:
-    """A session has started: started by Claude Code (a hook run, which has CLAUDE_PROJECT_DIR), start the web page
-    with the pane's views in the background, unless the config says `[web] start = false`."""
+    """A session has started: started by Claude Code (a hook run, which has CLAUDE_PROJECT_DIR), start the engine and
+    its web page in the background, unless the config says `[web] start = false`."""
     if env.get("CLAUDE_PROJECT_DIR"):
+        RUN["mode"] = "engine started if none ran"
         start_web(root)
     return None
 
@@ -168,16 +444,17 @@ def _drop_vscode_task(root: Path, out: Callable[[str], None]) -> None:
     out(f"removed the VS Code task from {path}")
 
 
-def on_prompt(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
-    """The person sent a prompt: a new turn starts, and Claude is told to plan the work for a team of agents (unless
-    the config says `[agents] orchestrate = false`). A notice Claude Code sends as a prompt (a background task done)
-    is not one: the turn goes on."""
+def on_prompt(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dict[str, str]]:
+    """The person sent a prompt: a new turn starts (the engine marks it), and Claude is told to plan the work for a
+    team of agents (unless the config says `[agents] orchestrate = false`). A notice Claude Code sends as a prompt (a
+    background task done) is not one: the turn goes on."""
     if activity.is_system(payload.get("prompt") or ""):
         return None
-    mark_turn(root)
+    at = round(time.time(), 3)
     activity.new_turn(root)
-    activity.record(root, {"event": activity.PROMPT, "text": _clip(payload.get("prompt"), 300),
+    activity.record(root, {"at": at, "event": activity.PROMPT, "text": _clip(payload.get("prompt"), 300),
                            "session": payload.get("session_id", ""), "agent": payload.get("agent_id") or ""})
+    hand_off(root, {"event": "prompt", "at": at, "agent": payload.get("agent_id") or ""}, PROMPT_WAIT, env)
     aims = objectives_context(root)
     if (config.lenient(root).get("agents") or {}).get("orchestrate", True) is False or payload.get("agent_id"):
         return {"context": aims} if aims else None
@@ -186,16 +463,11 @@ def on_prompt(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
 
 def objectives_context(root: Path) -> str:
     """What the person has been optimising for, for Claude at each prompt (objectives.context, at most 600
-    characters; "" when none), after starting their distillation in the background when it is stale (never waited
-    for). Never raises."""
+    characters; "" when none), read from its file: learning them is the engine's (prompt_work). Never raises."""
     try:
         from . import objectives
     except Exception:  # noqa: BLE001 - an install without them
         return ""
-    try:
-        objectives.ensure(root)
-    except Exception:  # noqa: BLE001 - only a head start
-        pass
     try:
         return (objectives.context(root) or "")[:600]
     except Exception:  # noqa: BLE001
@@ -244,54 +516,45 @@ def touch(root: Path, paths: List[str]) -> None:
 TOUCH_WAIT = 0.5
 
 
-def on_tool(root: Path, payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
-    """After every tool: hand the agent what other agents published since its last tool. For a read or an edit of
-    a file in a part, also note the file and keep a brief of its part for the status line; after an edit to code,
-    look at what the turn has done to the system so far, and say what this edit added to it (one hook at a time:
-    they can overlap)."""
+def on_tool(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dict[str, str]]:
+    """After every tool: hand the agent what other agents published since its last tool, and what the engine found
+    after an earlier hook stopped waiting. For a read or an edit of a file, note it; hand the engine the edit (it
+    re-reads the file, and says what the edit added to what the turn did to the system) and a stale brief of the
+    part for the status line."""
     tool = payload.get("tool_name", "")
     agent_id = payload.get("agent_id") or ""
-
-    def unread() -> Dict[str, Any]:
-        return {"message": None, "context": agents.deliver(root, agent_id)}
-
     named = (payload.get("tool_input") or {}).get("agent")
     if tool.startswith("mcp__system-diff__") and isinstance(named, str) and agent_id:
         agents.tie(root, agent_id, named)   # a subagent says who it is the first time it claims, publishes or reads
+    messages: List[str] = []
+    context: List[str] = [agents.deliver(root, agent_id)]
+    for late in take_said(root, agent_id):
+        messages.append(late.get("message") or "")
+        context.append(late.get("context") or "")
+
+    def said() -> Dict[str, Any]:
+        return {"message": "; ".join(m for m in messages if m) or None,
+                "context": "\n".join(c for c in context if c)}
 
     if tool not in EDIT_TOOLS + READ_TOOLS:
-        return unread()
+        return said()
     given = payload.get("tool_input") or {}
     path = activity.relative(root, given.get("file_path") or given.get("notebook_path") or "")
     if not path:
-        return unread()
+        return said()
     edit = tool in EDIT_TOOLS
-    if edit:
-        touch(root, edited_paths(root, payload) or [path])   # the engine re-reads the file now: the pane follows within a second
     activity.record(root, {"event": activity.EDIT if edit else activity.READ, "path": path, "tool": tool,
                            "session": payload.get("session_id", ""), "agent": agent_id})
-    cfg = config.lenient(root)
-    part = activity.part_of(path, Code(cfg))
-    if part is None:
-        return unread()
-    if not activity.load_brief(root, part, max_age=600):
-        activity.save_brief(root, learn.brief(root, cfg, part))
-    if not (edit and turn_sha(root)):
-        return unread()
-    with activity.only_one(root, wait=10) as mine:
-        if not mine:
-            return unread()
-        last = activity.read_state(root).get("turn") or {}
-        before = last.get("told") or [s["text"] for s in last.get("story") or []]
-        since, turn = compare_worktree(root, ["checkpoint", "turn"])
-        notes = design.Reading(turn).notes()
-        noted = set(last.get("noted") or [])
-        record_step(root, path, part, noted, notes)
-        activity.write_state(root, since.diff, since.base, turn.diff, noted=[n["text"] for n in notes])
-        said = step_message(before, learn.story(turn.diff))
-    team = agents.after_edit(root, agent_id, part, [n for n in notes if n["text"] not in noted], turn.after)
-    message = "; ".join(m for m in (said, f"System diff: {team['warn']}" if team["warn"] else "") if m)
-    return {"message": message, "context": team["context"]}
+    part = activity.part_of(path, Code(config.lenient(root)))
+    stale = bool(part) and not activity.load_brief(root, part, max_age=600)
+    if not edit and not stale:
+        return said()
+    body = {"event": "tool", "edit": edit, "path": path, "part": part, "brief": stale, "agent": agent_id,
+            "session": payload.get("session_id", ""), "paths": (edited_paths(root, payload) or [path]) if edit else []}
+    got = hand_off(root, body, TOOL_WAIT if edit else 0.0, env) or {}
+    messages.append(got.get("message") or "")
+    context.append(got.get("context") or "")
+    return said()
 
 
 def record_step(root: Path, path: str, part: str, before: Iterable[str], notes: List[Dict[str, Any]]) -> None:
@@ -307,40 +570,43 @@ def record_step(root: Path, path: str, part: str, before: Iterable[str], notes: 
         activity.record(root, {"event": "change", "path": path, "part": part, "items": items, "source": "hook"})
 
 
-def on_stop(root: Path, payload: Dict[str, Any]) -> Optional[str]:
-    turn_known = turn_sha(root) is not None
-    found = compare_worktree(root, ["checkpoint", "turn"] if turn_known else ["checkpoint"])
-    since, turn = found[0], (found[1] if turn_known else None)
-    activity.write_state(root, since.diff, since.base, turn.diff if turn else None)
+def on_stop(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[str]:
+    """The end of a turn: noted, and the engine says what the turn changed in the system (or, when it takes longer
+    than the hook waits, the next hook does)."""
     activity.record(root, {"event": activity.STOP, "text": _clip(payload.get("last_assistant_message"), 400),
                            "session": payload.get("session_id", "")})
-    return hook_message(since, turn, edited_this_turn(root, since.cfg))
+    late = [x.get("message") for x in take_said(root, payload.get("agent_id") or "") if x.get("message")]
+    got = hand_off(root, {"event": "stop", "agent": payload.get("agent_id") or ""}, STOP_WAIT, env) or {}
+    return "; ".join(m for m in [*late[-1:], got.get("message")] if m) or None
 
 
-def run_hook(stdin_text: str, emit: Callable[[str], None] = print) -> int:
+def run_hook(stdin_text: str, emit: Callable[[str], None] = print, env=None) -> int:
     """What Claude Code's hooks run, told apart by the event they name (a hook set up before there were three is a
-    Stop hook). Always exits 0: a hook that fails must not get in the agent's way."""
+    Stop hook). Always exits 0: a hook that fails must not get in the agent's way. No git: the repository is found
+    in Python, and the work that needs git is the engine's (hand_off)."""
+    began = time.monotonic()
+    env = os.environ if env is None else env
     try:
         payload = json.loads(stdin_text) if stdin_text.strip() else {}
     except ValueError:
         payload = {}
     payload = payload if isinstance(payload, dict) else {}
-    cwd = Path(payload.get("cwd") or os.getcwd())
-    if not _is_repo(cwd):
+    root = find_root(Path(payload.get("cwd") or os.getcwd()))
+    if root is None:
         return 0
+    event = payload.get("hook_event_name") or "Stop"
+    RUN.clear()
     try:
-        root = Path(git("rev-parse", "--show-toplevel", cwd=cwd).strip())
-        event = payload.get("hook_event_name") or "Stop"
         message = None
         if event == "SessionStart":
-            message = on_start(root, payload)
+            message = on_start(root, payload, env)
         elif event == "UserPromptSubmit":
-            said = on_prompt(root, payload) or {}
+            said = on_prompt(root, payload, env) or {}
             if said.get("context"):
                 emit(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
                                                         "additionalContext": said["context"]}}))
         elif event == "PostToolUse":
-            said = on_tool(root, payload) or {}
+            said = on_tool(root, payload, env) or {}
             message = said.get("message") or None
             if said.get("context"):   # what other agents published, for this agent to read with its tool result
                 out = {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": said["context"]}}
@@ -349,11 +615,13 @@ def run_hook(stdin_text: str, emit: Callable[[str], None] = print) -> int:
                 emit(json.dumps(out))
                 message = None
         elif event == "Stop":
-            message = on_stop(root, payload)
+            message = on_stop(root, payload, env)
         if message:
             emit(json.dumps({"systemMessage": message}))
-    except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+    except Exception:  # noqa: BLE001 - a hook never fails a turn
         return 0
+    finally:
+        note_hook(root, event, time.monotonic() - began, RUN.get("mode", "local only"))
     return 0
 
 

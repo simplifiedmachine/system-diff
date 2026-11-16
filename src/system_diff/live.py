@@ -64,6 +64,7 @@ import os
 import re
 import stat as stat_mod
 import struct
+import sys
 import threading
 import time
 from pathlib import Path
@@ -89,6 +90,85 @@ def _git_dir(root: Path) -> Optional[Path]:
     from . import gitfs
     r = gitfs.locate(Path(root))
     return r.gitdir if r is not None else None
+
+
+# ── why the engine stopped: engine.log ───────────────────────────────────────
+# Every error the engine's threads meet (and its start and stop) goes to <git dir>/system-diff/engine.log, with its
+# traceback: a detached engine has no terminal, so this is the only record of why it stopped. Small: past LOG_MAX
+# bytes it moves to engine.log.1 (one old file kept). The same message again within LOG_REPEAT seconds is not
+# written twice (a tick failing every second and a half would fill it).
+
+ENGINE_LOG = "engine.log"
+LOG_MAX = 256 * 1024
+LOG_REPEAT = 600.0
+_logged: Dict[str, float] = {}
+_log_lock = threading.Lock()
+
+
+def log_path(root: Path, name: str = ENGINE_LOG) -> Optional[Path]:
+    g = _git_dir(root)
+    return g / "system-diff" / name if g is not None else None
+
+
+def log(root: Path, text: str, name: str = ENGINE_LOG) -> None:
+    """Append a stamped line (or lines) to engine.log (or `name`, e.g. mcp.log). Never raises."""
+    try:
+        f = log_path(root, name)
+        if f is None:
+            return
+        f.parent.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with _log_lock:
+            try:
+                if f.stat().st_size > LOG_MAX:
+                    os.replace(f, f.with_name(f.name + ".1"))
+            except OSError:
+                pass
+            with open(f, "a", encoding="utf-8", errors="replace", newline="\n") as out:
+                out.write(f"{stamp} [{os.getpid()}] {text.rstrip()}\n")
+    except Exception:  # noqa: BLE001 - a record only
+        pass
+
+
+def log_error(root: Path, where: str, exc: Optional[BaseException] = None, name: str = ENGINE_LOG) -> str:
+    """Log an error with its traceback: "ERROR in <where>: <Type>: <message>" then the traceback, indented. The
+    one-line form is returned (for the page and /progress)."""
+    import traceback
+    exc = exc if exc is not None else sys.exc_info()[1]
+    line = f"ERROR in {where}: " + (f"{type(exc).__name__}: {exc}" if exc is not None else "unknown")
+    now = time.monotonic()
+    with _log_lock:
+        seen = _logged.get(line)
+        if seen is not None and now - seen < LOG_REPEAT:
+            return line
+        _logged[line] = now
+        if len(_logged) > 200:
+            _logged.clear()
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)) if exc is not None else ""
+    log(root, line + ("\n" + "\n".join("    " + t for t in tb.rstrip().splitlines()) if tb else ""), name)
+    return line
+
+
+def log_tail(root: Path, lines: int = 20, name: str = ENGINE_LOG) -> List[str]:
+    """The last `lines` lines of engine.log (or `name`); [] when there is none."""
+    f = log_path(root, name)
+    try:
+        with open(f, "rb") as fh:   # type: ignore[arg-type]
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - 64 * 1024))
+            return fh.read().decode("utf-8", "replace").splitlines()[-lines:]
+    except (OSError, TypeError):
+        return []
+
+
+def last_error(root: Path, name: str = ENGINE_LOG) -> str:
+    """The last "ERROR in …" line of engine.log, without its stamp; "" when there is none."""
+    for line in reversed(log_tail(root, 400, name)):
+        at = line.find("ERROR in ")
+        if at >= 0:
+            return line[at:]
+    return ""
 
 
 # ── the pages cache every view shares ────────────────────────────────────────
@@ -519,7 +599,7 @@ class Engine:
         from . import compare
         compare.LIVE[compare.live_key(self.root)] = self.live
         compare.COMMIT[compare.live_key(self.root)] = self.materialize
-        self._thread = threading.Thread(target=self._run, name="system-diff engine", daemon=True)
+        self._thread = threading.Thread(target=self._guarded_run, name="system-diff engine", daemon=True)
         self._thread.start()
         try:   # how the system evolves: each structural change recorded as it happens (history.py), in its own thread
             from . import history
@@ -594,6 +674,16 @@ class Engine:
                 self.cond.wait(min(left, 0.5))
             return self.version
 
+    def _guarded_run(self) -> None:
+        """_run, with whatever ends it logged (engine.log): the server's watchdog (watch.serve) sees the thread gone
+        and stops the server cleanly, so the next look starts a fresh engine."""
+        try:
+            self._run()
+        except BaseException as exc:  # noqa: BLE001 - logged, then the thread ends
+            self.error = log_error(self.root, "the engine thread (it stopped)", exc)
+            self.ready.set()
+            raise
+
     def _run(self) -> None:
         try:
             with self.lock:
@@ -616,12 +706,14 @@ class Engine:
             self._warm_bases()
         except Exception as exc:  # noqa: BLE001 - the views fall back to reading for themselves
             self.error = f"{type(exc).__name__}: {exc}"
+            log_error(self.root, "the engine's first read", exc)
             self.ready.set()
         while not self.stopped.wait(self._pause()):
             try:
                 self.tick()
             except Exception as exc:  # noqa: BLE001 - next time
                 self.error = f"{type(exc).__name__}: {exc}"
+                log_error(self.root, "the engine's look at the files", exc)
 
     def _pause(self) -> float:
         # a scan of a huge tree takes a while: then it runs less often, so it never takes more than its share
@@ -1334,5 +1426,5 @@ class Pages:
                             page = self.build(k)
                             with self.guard:
                                 self.cache[k] = (version, time.monotonic(), page)
-                except Exception:  # noqa: BLE001 - drawn when asked for, then, and the error told there
-                    pass
+                except Exception as exc:  # noqa: BLE001 - drawn when asked for, then, and the error told there
+                    log_error(self.engine.root, f"drawing the page {k[:2]}", exc)

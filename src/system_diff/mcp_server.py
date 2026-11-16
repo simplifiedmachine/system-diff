@@ -119,6 +119,20 @@ class Spec(_Spec):
     steps: Optional[List[Step]] = None
 
 
+_ROOTS: Dict[str, Path] = {}
+
+
+def _root() -> Path:
+    """The repository the client runs in: found in Python (no git process, which costs seconds on some machines),
+    once per working directory; git is asked only when that finds none."""
+    here = str(Path.cwd())
+    got = _ROOTS.get(here)
+    if got is None:
+        from .agent import find_root
+        got = _ROOTS[here] = find_root(Path(here)) or repo_root()
+    return got
+
+
 def _out(root: Path, *parts: str) -> Path:
     """A folder under .git/system-diff (the repository's own git dir, worktrees included)."""
     return git_dir(root, *parts)
@@ -221,7 +235,7 @@ def build() -> Server:
         """The system's structure: its parts by column, the connections between them, how many entry points and
         tables, and its outside systems. `ref`: a commit, or "." for the working tree. Returns the picture's path;
         with `diagram`, also the map as text to show the person in a code block."""
-        return tool_map(repo_root(), ref, diagram)
+        return tool_map(_root(), ref, diagram)
 
     @server.tool()
     def system_diff(base: str = "checkpoint", head: str = ".", diagram: bool = False) -> Dict[str, Any]:
@@ -230,7 +244,7 @@ def build() -> Server:
         `base` "checkpoint" is what the person last marked as seen (HEAD if nothing yet), "turn" the working tree
         when they sent their last prompt; `head` "." is the working tree, uncommitted files included. With
         `diagram`, also the picture as text for a code block. Explain it from the plan, never beyond it."""
-        return tool_diff(repo_root(), base, head, diagram)
+        return tool_diff(_root(), base, head, diagram)
 
     @server.tool()
     def explain(part: str = "", base: str = "checkpoint") -> Dict[str, Any]:
@@ -238,20 +252,20 @@ def build() -> Server:
         changing in it since `base` and why that matters, topics worth knowing (the technologies its code imports
         and the ideas behind it, each with a link), and a diagram of the part zoomed in, to paste in a code block.
         `part`: its name or id, an outside system's name, or a file in it; empty for the part being worked on."""
-        return tool_explain(repo_root(), part, base)
+        return tool_explain(_root(), part, base)
 
     @server.tool()
     def draw(spec: Spec, name: str = "picture") -> Dict[str, Any]:
         """Draw a picture in system-diff's look: a `map` (boxes in columns), `stages` (a process left to right, with
         loops back, exits and where a person comes in) or a `sequence` (who talks to whom, in order). Returns the
         SVG's path, or what is wrong with the spec."""
-        return tool_draw(repo_root(), spec, name)
+        return tool_draw(_root(), spec, name)
 
     @server.tool()
     def checkpoint(ref: str = "") -> Dict[str, Any]:
         """Mark the working tree (or `ref`) as seen by the person, so the next system_diff from "checkpoint" shows
         only what is new to them. Only when the person says they have seen and understood the current state."""
-        sha = cmp.checkpoint(repo_root(), ref or None)
+        sha = cmp.checkpoint(_root(), ref or None)
         return {"checkpoint": sha[:9], "of": ref or "the working tree"}
 
     @server.tool()
@@ -260,7 +274,7 @@ def build() -> Server:
         container, else a part), at most `most`, each with the blocks it owns, the blocks it depends on (it is
         subscribed to them on the bus) and a brief to launch it with. `focus`: block ids to include. Claims the
         blocks. Then launch the agents in parallel as subagents, each with its brief as its prompt."""
-        root = repo_root()
+        root = _root()
         c = cmp.compare(root, "checkpoint", ".")
         return agents.plan(root, c, task, most, focus)
 
@@ -268,31 +282,31 @@ def build() -> Server:
     def claim(agent: str, blocks: List[str]) -> Dict[str, Any]:
         """Take blocks (part ids) for `agent` (its name in the plan), so other agents keep out of them. Returns the
         blocks another agent had."""
-        return {"agent": agent, "taken_from_others": agents.claim(repo_root(), agent, blocks)}
+        return {"agent": agent, "taken_from_others": agents.claim(_root(), agent, blocks)}
 
     @server.tool()
     def publish(agent: str, topic: str, text: str) -> Dict[str, Any]:
         """Tell the other agents something, async: on a block's topic (its id: those working on what depends on it
         read it with their next tool result), "all", or "agent:<name>" for one agent. Changes to a block's structure
         are published by system-diff itself; publish plans, contracts and questions."""
-        return agents.publish(repo_root(), topic, text, sender=agent)
+        return agents.publish(_root(), topic, text, sender=agent)
 
     @server.tool()
     def subscribe(agent: str, topics: List[str]) -> Dict[str, Any]:
         """Follow more topics (block ids). An agent already follows its own blocks and the blocks they depend on."""
-        return {"agent": agent, "topics": agents.subscribe(repo_root(), agent, topics)}
+        return {"agent": agent, "topics": agents.subscribe(_root(), agent, topics)}
 
     @server.tool()
     def inbox(agent: str = "main") -> Dict[str, Any]:
         """`agent`'s unread messages from the other agents (and marks them read)."""
-        return {"agent": agent, "messages": agents.inbox(repo_root(), agent)}
+        return {"agent": agent, "messages": agents.inbox(_root(), agent)}
 
     @server.tool()
     def objectives() -> Dict[str, Any]:
         """What the person has been optimising for in this repository (learned from their repeated requests), each
         with how a change could break it ("check") and the latest check of each agent. Read it before changing or
         reviewing code, and keep these objectives."""
-        return tool_objectives(repo_root())
+        return tool_objectives(_root())
 
     @server.tool()
     def check_objective(agent: str, objective: str, status: str, note: str = "") -> Dict[str, Any]:
@@ -301,12 +315,12 @@ def build() -> Server:
         (you started), "holds", "broken" or "unclear"; note: one short line of evidence (what you ran or saw).
         `agent` is your name in the team plan (or "main"). The person sees it, and the other agents get it on the bus
         (topic "objective:<id>")."""
-        return tool_check_objective(repo_root(), agent, objective, status, note)
+        return tool_check_objective(_root(), agent, objective, status, note)
 
     @server.tool()
     def team() -> Dict[str, Any]:
         """The plan, who claims which block, and the latest messages on the bus."""
-        root = repo_root()
+        root = _root()
         st = agents.state(root)
         return {"plan": st["plan"], "claims": st["claims"], "messages": agents.messages(root)[-20:]}
 
@@ -314,4 +328,5 @@ def build() -> Server:
 
 
 def main() -> None:
+    """Serve over stdio (cli._mcp adds the startup that never exits: logged, and served as an error tool)."""
     build().run("stdio")

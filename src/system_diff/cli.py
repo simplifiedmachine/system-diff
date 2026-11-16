@@ -337,9 +337,119 @@ def _history(args, root: Path) -> int:
     return 0
 
 
+def _project_python(env=os.environ) -> Optional[str]:
+    """The project's own virtualenv Python when it has system-diff (a project that develops or pins it), found by
+    file checks only (no Python is started to ask); None when there is none, it is this one, or it was already
+    used."""
+    if env.get("SYSTEM_DIFF_REEXEC"):
+        return None
+    top = Path(env.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    for py, site in ((top / ".venv" / "bin" / "python", top / ".venv" / "lib"),
+                     (top / ".venv" / "Scripts" / "python.exe", top / ".venv" / "Lib")):
+        if not py.is_file():
+            continue
+        try:
+            if os.path.samefile(os.path.dirname(py), os.path.dirname(sys.executable)):
+                return None
+        except OSError:
+            pass
+        has = any(site.glob("site-packages/*system_diff*")) or any(site.glob("python*/site-packages/*system_diff*"))
+        return str(py) if has else None
+    return None
+
+
+def _mcp() -> int:
+    """`system-diff mcp`: answer the client at once, whatever happens. No git before the first request (the tools
+    find the repository in Python), the project's own virtualenv's system-diff when it has one, and a startup that
+    fails is logged (.git/system-diff/mcp.log) and served as a tool that says so, never an exit at launch (which
+    Claude Code shows as "Connection closed")."""
+    import subprocess
+    py = _project_python()
+    if py:
+        env = {**os.environ, "SYSTEM_DIFF_REEXEC": "1"}
+        if os.name == "nt":   # no exec there: the client's pipes stay with this process, which waits for the other
+            return subprocess.run([py, "-m", "system_diff", "mcp"], env=env).returncode
+        try:
+            os.execve(py, [py, "-m", "system_diff", "mcp"], env)
+        except OSError as exc:
+            _mcp_log(f"could not start the project's Python {py}: {exc}; serving with this one")
+    try:
+        from . import mcp_server
+        server = mcp_server.build()
+    except Exception as exc:  # noqa: BLE001 - ImportError (no [mcp] extra) or anything else: said, not exited
+        import traceback
+        hint = ' (pip install "system-diff[mcp]")' if isinstance(exc, ImportError) else ""
+        error = f"the system-diff MCP server could not start: {type(exc).__name__}: {exc}{hint}"
+        _mcp_log("ERROR at startup: " + error + "\n" + traceback.format_exc())
+        print("system-diff: " + error, file=sys.stderr)
+        return _mcp_fallback(error)
+    try:
+        server.run("stdio")
+    except Exception:  # noqa: BLE001
+        import traceback
+        _mcp_log("ERROR while serving:\n" + traceback.format_exc())
+        return 1
+    return 0
+
+
+def _mcp_log(text: str) -> None:
+    try:
+        from . import agent, live
+        root = agent.find_root(Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()))
+        if root is not None:
+            live.log(root, text, "mcp.log")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _mcp_fallback(error: str, stdin=None, stdout=None) -> int:
+    """A minimal MCP server over stdio (standard library only) for when the real one cannot start: it answers
+    initialize and lists one tool, system_diff_status, whose result is the error and how to fix it, so the person
+    sees why instead of "Connection closed"."""
+    stdin = stdin or sys.stdin
+    stdout = stdout or sys.stdout
+    tool = {"name": "system_diff_status", "description": "Why system-diff's MCP tools are not available here.",
+            "inputSchema": {"type": "object", "properties": {}}}
+
+    def answer(mid, result=None, err=None) -> None:
+        msg = {"jsonrpc": "2.0", "id": mid}
+        msg.update({"error": err} if err else {"result": result})
+        stdout.write(json.dumps(msg) + "\n")
+        stdout.flush()
+    for line in stdin:
+        try:
+            req = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(req, dict) or "id" not in req:
+            continue   # a notification
+        method, mid = req.get("method"), req.get("id")
+        if method == "initialize":
+            asked = (req.get("params") or {}).get("protocolVersion") or "2025-06-18"
+            answer(mid, {"protocolVersion": asked, "capabilities": {"tools": {}},
+                         "serverInfo": {"name": "system-diff", "version": __version__},
+                         "instructions": error})
+        elif method == "tools/list":
+            answer(mid, {"tools": [tool]})
+        elif method == "tools/call":
+            answer(mid, {"content": [{"type": "text", "text": error + ". `system-diff doctor` says more; "
+                                                                  ".git/system-diff/mcp.log has the details."}],
+                         "isError": True})
+        elif method == "ping":
+            answer(mid, {})
+        else:
+            answer(mid, err={"code": -32601, "message": f"{method}: {error}"})
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     _utf8()
     args = parser().parse_args(argv)
+    if args.cmd == "mcp" and not args.repo:   # before anything that runs git: the client waits for its answer
+        return _mcp()
+    if args.cmd == "hook":   # no git: the hook finds the repository in Python (a git start costs seconds on some machines)
+        from . import agent
+        return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
     if args.cmd == "hub":   # every repository's, not one: no repository needed
         from . import hub
         return hub.main(open_it=args.open, serve=not args.no_serve)
@@ -406,13 +516,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         from . import agent
         return agent.setup_claude(root, args.scope, args.undo, status_line=not args.no_status_line)
     if args.cmd == "mcp":
-        try:
-            from . import mcp_server
-        except ImportError:
-            print('system-diff: the MCP server needs its extra: pip install "system-diff[mcp]"', file=sys.stderr)
-            return 1
-        mcp_server.main()
-        return 0
+        os.chdir(root)
+        return _mcp()
     if args.cmd == "draw":
         try:
             for out in pictures.draw_files([Path(x) for x in args.specs]):

@@ -86,6 +86,86 @@ def engine_report(root: Path, say, doing) -> None:
         say(f"(could not ask the engine: {exc})")
 
 
+def git_sh() -> Optional[str]:
+    """Git for Windows' own sh (usr\\bin\\sh.exe beside git's cmd folder), which Claude Code runs hooks through when
+    no sh is on PATH; None elsewhere or when not found."""
+    g = shutil.which("git")
+    if os.name != "nt" or not g:
+        return None
+    top = Path(g).resolve().parent.parent   # ...\Git\cmd\git.exe -> ...\Git
+    for p in (top / "usr" / "bin" / "sh.exe", top / "bin" / "sh.exe"):
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def shell_line() -> str:
+    """Where the sh the plugin's hooks run through is: on PATH, or (Windows) Git's own, which Claude Code finds by
+    itself."""
+    on_path = shutil.which("sh")
+    if on_path:
+        return f"sh: {on_path}"
+    own = git_sh()
+    if own:
+        return f"sh (in this shell): not on PATH · Git's own: {own} (Claude Code runs the hooks through it)"
+    return "sh (in this shell): not found · Claude Code uses its own shell for the hooks"
+
+
+def launch_line() -> str:
+    """Whether the plugin's MCP server can be started: .mcp.json starts `system-diff mcp` directly (no shell), so
+    `system-diff` must be on PATH."""
+    found = shutil.which("system-diff")
+    if found:
+        return f"MCP server: `system-diff mcp` starts from {found}"
+    return ("MCP server: ! `system-diff` is not on PATH, so the plugin's MCP server cannot start (\"Connection "
+            "closed\"): pip install \"system-diff[mcp]\" (or pipx) puts it there")
+
+
+def hooks_report(root: Path, say) -> None:
+    """Whether the hooks ran lately, how long they took and how they reached the engine (agent.note_hook)."""
+    from . import agent
+    runs = agent.hook_runs(root)
+    if not runs:
+        say("hooks: no run recorded (hooks.jsonl) · the plugin's hooks may not run here, or ran before 0.9")
+        return
+    last = runs[-1]
+    say(f"hooks: {len(runs)} recent runs · last {last.get('event')} {_ago(last.get('at'))}, "
+        f"{float(last.get('seconds') or 0):.2f}s ({last.get('mode')})")
+    by: dict = {}
+    for r in runs:
+        by.setdefault(r.get("event") or "?", []).append(float(r.get("seconds") or 0))
+    for event, took in sorted(by.items()):
+        took.sort()
+        say(f"  {event}: {len(took)} runs · median {took[len(took) // 2]:.2f}s · slowest {took[-1]:.2f}s"
+            + ("  ! near Claude Code's timeout" if took[-1] > 8 else ""))
+    say("  (each is the hook's own time, in its Python; starting that Python and run.sh come on top)")
+
+
+def _ago(at) -> str:
+    try:
+        s = max(0, int(time.time() - float(at)))
+    except (TypeError, ValueError):
+        return "?"
+    return f"{s}s ago" if s < 120 else f"{s // 60} min ago" if s < 7200 else f"{s // 3600} h ago"
+
+
+def log_report(root: Path, say, lines: int = 12) -> None:
+    """The last lines of engine.log (why an engine stopped), engine.out (what it printed before it could log) and
+    mcp.log (the MCP server's start)."""
+    from . import live
+    for name, what in (("engine.log", "the engine's log"), ("engine.out", "what the last engine started printed"),
+                       ("mcp.log", "the MCP server's log")):
+        tail = [x for x in live.log_tail(root, lines, name) if x.strip()]
+        f = live.log_path(root, name)
+        if not tail:
+            if name == "engine.log":
+                say(f"{what}: empty ({f})")
+            continue
+        say(f"{what} ({f}), last {len(tail)} lines:")
+        for x in tail:
+            say("    " + x[:300])
+
+
 def main(root: Path) -> int:
     from . import __version__
     terminal = sys.stdout   # the person's, even while a look's page is captured
@@ -96,8 +176,8 @@ def main(root: Path) -> int:
     def doing(what: str) -> None:
         print(f"  … {what}", file=terminal, flush=True)
     say(f"system-diff {__version__} · Python {platform.python_version()} · {platform.system()} {platform.release()}")
-    say(f"git: {_git(root, '--version').strip() or 'not found'} · sh: {shutil.which('sh') or 'not found'}"
-        f" · bash: {shutil.which('bash') or 'not found'}")
+    say(f"git: {_git(root, '--version').strip() or 'not found'} · {shell_line()}")
+    say(launch_line())
     say(f"repository: {root}")
 
     doing("timing how long starting a program takes here (git --version ×3, python ×2)")
@@ -178,13 +258,15 @@ def main(root: Path) -> int:
     say(f"cold-start budget per look: {extract.COLD_BUDGET:.0f}s")
 
     engine_report(root, say, doing)
+    log_report(root, say)
+    hooks_report(root, say)
 
     try:
         from . import activity, watch
         from .sources import git_dir
         doing("checking the hooks, the web page and the caches")
         events = activity.events(root, 5)
-        say(f"hooks: {len(events)} recent events recorded" + ("" if events else
+        say(f"activity log: {len(events)} recent events recorded by the hooks" + ("" if events else
             " · none: the plugin's hooks may not run here (they run through sh)"))
         say(f"web page: {watch.web_url(root) or 'no server running'}")
         cache = git_dir(root)
