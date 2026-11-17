@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 574,
+   "lines": 573,
    "hub": false,
    "quiet": false
   },
@@ -157,6 +157,18 @@
    "hub": false,
    "quiet": false
   },
+  "src/system_diff": {
+   "label": "src/system_diff",
+   "layer": "undeclared",
+   "kind": "",
+   "order": 36,
+   "container": "",
+   "declared": false,
+   "files": 2,
+   "lines": 236,
+   "hub": false,
+   "quiet": false
+  },
   "extract": {
    "label": "Extraction",
    "layer": "",
@@ -261,7 +273,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1431,
+   "lines": 1436,
    "hub": false,
    "quiet": false
   },
@@ -273,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 384,
+   "lines": 392,
    "hub": false,
    "quiet": false
   },
@@ -321,7 +333,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2580,
+   "lines": 2603,
    "hub": false,
    "quiet": false
   },
@@ -346,18 +358,6 @@
    "declared": true,
    "files": 1,
    "lines": 123,
-   "hub": false,
-   "quiet": false
-  },
-  "src/system_diff": {
-   "label": "src/system_diff",
-   "layer": "undeclared",
-   "kind": "",
-   "order": 36,
-   "container": "",
-   "declared": false,
-   "files": 1,
-   "lines": 84,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2538,
+   "lines": 2587,
    "hub": false,
    "quiet": false
   }
@@ -581,6 +581,7 @@
   "live>history": 1,
   "live>learn": 1,
   "live>sources": 5,
+  "live>src/system_diff": 1,
   "mcp>activity": 1,
   "mcp>agent": 1,
   "mcp>agents": 1,
@@ -593,6 +594,7 @@
   "mcp>objectives": 2,
   "mcp>pictures": 1,
   "mcp>sources": 1,
+  "mcp>src/system_diff": 1,
   "mcp>textmap": 1,
   "names>graph": 1,
   "narrate>sources": 1,
@@ -622,7 +624,7 @@
   "panel>pictures": 1,
   "panel>regroup": 1,
   "panel>sources": 3,
-  "panel>src/system_diff": 1,
+  "panel>src/system_diff": 5,
   "panel>textmap": 1,
   "panel>watch": 2,
   "png>sources": 1,
@@ -635,6 +637,7 @@
   "regroup>narrate": 1,
   "regroup>sources": 1,
   "sources>gitfs": 3,
+  "src/system_diff>compare": 1,
   "src/system_diff>gitfs": 1,
   "src/system_diff>live": 1,
   "src/system_diff>sources": 1,
@@ -664,7 +667,8 @@
   "watch>live": 1,
   "watch>panel": 3,
   "watch>pictures": 1,
-  "watch>sources": 1
+  "watch>sources": 1,
+  "watch>src/system_diff": 1
  },
  "api": {},
  "uses": {
@@ -1244,6 +1248,9 @@
    "git_dir",
    "run_hidden"
   ],
+  "live>src/system_diff": [
+   "watched"
+  ],
   "mcp>activity": [
    "events",
    "now"
@@ -1303,6 +1310,10 @@
    "GitSource",
    "git_dir",
    "repo_root"
+  ],
+  "mcp>src/system_diff": [
+   "failed",
+   "load"
   ],
   "mcp>textmap": [
    "plain",
@@ -1461,6 +1472,10 @@
    "git_dir"
   ],
   "panel>src/system_diff": [
+   "owner",
+   "context",
+   "failed",
+   "views",
    "begin",
    "end"
   ],
@@ -1509,6 +1524,10 @@
    "catfile",
    "git_dir",
    "locate"
+  ],
+  "src/system_diff>compare": [
+   "Live",
+   "live"
   ],
   "src/system_diff>gitfs": [
    "locate"
@@ -1614,9 +1633,9 @@
    "neighbourhood"
   ],
   "watch>hub": [
+   "host_ok",
    "HREF_JS",
    "branch",
-   "host_ok",
    "hub_page",
    "project_name",
    "projects"
@@ -1649,6 +1668,14 @@
    "git",
    "git_dir",
    "is_live"
+  ],
+  "watch>src/system_diff": [
+   "owner",
+   "by_name",
+   "context",
+   "failed",
+   "file_ok",
+   "views"
   ]
  },
  "routes": {},
@@ -1709,6 +1736,9 @@
   ],
   "regroup": [
    "SYSTEM_DIFF_REGROUP"
+  ],
+  "src/system_diff": [
+   "SYSTEM_DIFF_EXTENSIONS"
   ]
  },
  "configured": [],
@@ -2030,11 +2060,15 @@
    "typing": 1
   },
   "src/system_diff": {
+   "os": 2,
+   "pathlib": 2,
+   "typing": 2,
+   "dataclasses": 1,
+   "importlib": 1,
    "json": 1,
-   "os": 1,
-   "pathlib": 1,
-   "time": 1,
-   "typing": 1
+   "sys": 1,
+   "threading": 1,
+   "time": 1
   },
   "statusline": {
    "json": 1,
@@ -2068,6 +2102,7 @@
   },
   "watch": {
    "dataclasses": 1,
+   "html": 1,
    "http": 1,
    "json": 1,
    "os": 1,
@@ -2409,11 +2444,15 @@
    "typing": 1
   },
   "src/system_diff": {
+   "os": 2,
+   "pathlib": 2,
+   "typing": 2,
+   "dataclasses": 1,
+   "importlib.metadata": 1,
    "json": 1,
-   "os": 1,
-   "pathlib": 1,
-   "time": 1,
-   "typing": 1
+   "sys": 1,
+   "threading": 1,
+   "time": 1
   },
   "statusline": {
    "json": 1,
@@ -2447,6 +2486,7 @@
   },
   "watch": {
    "dataclasses": 1,
+   "html": 1,
    "http.client": 1,
    "http.server": 1,
    "json": 1,
@@ -2481,6 +2521,7 @@
   "tests/test_details.py": 1,
   "tests/test_doctor.py": 1,
   "tests/test_explain.py": 1,
+  "tests/test_extensions.py": 1,
   "tests/test_git_calls.py": 1,
   "tests/test_history.py": 1,
   "tests/test_history_compare.py": 1,

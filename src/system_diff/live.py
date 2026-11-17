@@ -769,7 +769,12 @@ class Engine:
                  listing(self._sd / "regroup"), listing(self._sd / "parts"), st(self._sd / "explain" / "cache.json"), listing(self._sd / "explain" / "files"),
                  prof)
         rules = (st(c / "info" / "exclude"), st(c / "info" / "attributes"), st(g / "index"))
-        return git_state, views, rules
+        try:
+            from . import extensions
+            ext = extensions.watched(g)          # what extensions keep beside system-diff's own state
+        except Exception:  # noqa: BLE001
+            ext = ()
+        return git_state, views, rules, ext
 
     def _head(self) -> Optional[str]:
         from . import gitfs

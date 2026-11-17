@@ -1068,6 +1068,8 @@ def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = N
     global ZOOM
     ZOOM = (1 if width < 110 else 0) if zoom < 0 else max(0, min(2, zoom))
     out = _show(root, width, view, part)
+    from . import extensions
+    out["views"] = [list(v) for v in extensions.views()]   # the extensions' tabs, for the pane to add
     out["zoom"] = ZOOM
     out["web"] = web_url(root)
     out["send"] = take_outbox(root) if take else []
@@ -1157,6 +1159,15 @@ def unread_count(root: Path, name: str) -> int:
 
 
 def _show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None) -> Dict[str, Any]:
+    from . import extensions
+    ext = extensions.owner(view)
+    if ext is not None and getattr(ext, "pane", None):      # a view of an extension (research-diff's Evidence, …)
+        try:
+            return ext.pane(extensions.context(root, view, part or "", width, ZOOM))
+        except Exception as exc:  # noqa: BLE001 - the pane shows the error, never a broken page
+            page = canvas.Page(width)
+            page.para(extensions.failed(view, exc)["text"], "removed")
+            return page.json(view=view, part=part or "")
     if view == "agents":
         return view_agents(root, width)
     if view in ("review", "map", "changes"):   # Map and Changes were one review in two tabs: now one
@@ -1636,7 +1647,17 @@ def web_view(root: Path, view: str = "now", part: str = "", zoom: int = 0) -> Di
     area, live, doing, progress, unread, marks [{pos, kind}], blocks}; chips {key, title, learning, stdlib, layer,
     parts, role, what, link}; lines {text, style}. Never takes the outbox: "send" is always []."""
     root = Path(root)
-    if view == "agents":
+    from . import extensions
+    ext = extensions.owner(view)
+    if ext is not None and getattr(ext, "web", None):
+        try:
+            out = ext.web(extensions.context(root, view, part or "", 160, zoom))
+        except Exception as exc:  # noqa: BLE001
+            out = {"view": view, "part": part or "", "title": view, "headline": extensions.failed(view, exc)["text"],
+                   "diagram": {}, "sections": []}
+        out.setdefault("view", view)
+        out.setdefault("part", part or "")
+    elif view == "agents":
         out = _web_agents(root, zoom)
     elif view in ("review", "map", "changes"):
         out = _web_review(root, zoom)

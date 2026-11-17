@@ -21,6 +21,7 @@ to each engine's own page; GET /projects/page lists them all, at the first engin
 """
 from __future__ import annotations
 
+import html
 import http.client
 import json
 import os
@@ -39,7 +40,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import activity, chat, graph, hub, learn, live, pictures
+from . import activity, chat, extensions, graph, hub, learn, live, pictures
 from .compare import Comparison, checkpoint, checkpoint_sha, compare_worktree, turn_sha, worktree_tree
 from .diff import diff
 from .extract import Code
@@ -349,6 +350,7 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
     <button role="tab" data-view="agents">Agents<kbd>a</kbd></button>
     <button role="tab" data-view="topics">Topics<kbd>t</kbd></button>
     <button role="tab" data-view="history">History<kbd>h</kbd></button>
+    __EXT_TABS__
   </div>
   <button id="follow" type="button" title="Go to what Claude is working on (f)">Follow Claude</button>
   <button id="back" type="button" title="Back (b)">Back</button>
@@ -380,7 +382,8 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
 <script>
 const TOKEN = "__TOKEN__";
 const $ = id => document.getElementById(id);
-const VIEWS = ["now", "review", "agents", "topics", "history"];
+const VIEWS = ["now", "review", "agents", "topics", "history"].concat(__EXT_VIEWS__);
+const EXT_KEYS = __EXT_KEYS__;   // an extension's tab keys: {key: view}
 const ui = { view:"now", part:"", zoom:-1, history:[], data:null, last:{}, pick:"", mine:false, hover:null, seq:0, cmp:[] };
 const projects = { list:[] };
 // the conversation with Claude: the panel, what Claude points at, what the person is looking at (sent with a question)
@@ -671,6 +674,18 @@ document.addEventListener("mouseover", e => { const n = tipTarget(e.target); if 
 document.addEventListener("focusin", e => { const n = tipTarget(e.target); if (n) showTipSoon(n); else hideTip(); });
 document.addEventListener("focusout", () => hideTip());
 addEventListener("scroll", () => hideTip(), { passive:true });
+// An extension's page of its own (research-diff's interactive evidence graph, its Auto-research controls), in a frame:
+// only from this server's /x/ routes.
+function frame(s) {
+  const c = card(s.title, s.aside), src = String((s.items && s.items[0] && s.items[0].src) || "");
+  if (!src.startsWith("/x/")) return c;
+  const f = el("iframe", null, "ext-frame");
+  f.src = src; f.loading = "lazy"; f.style.width = "100%"; f.style.border = "0";
+  f.style.height = ((s.items[0].height | 0) || 720) + "px";
+  c.append(f);
+  return c;
+}
+RENDER.frame = frame;
 function section(s) { return (RENDER[s.kind] || notes)(s); }
 function goesBefore(s) {
   return s.kind === "lanes" || s.kind === "chips" || s.kind === "compare" || (s.kind === "history" && !!s.pick) || isAttention(s);
@@ -790,7 +805,8 @@ $("dia").addEventListener("focusin", e => {
 $("dia").addEventListener("focusout", () => { ui.over = false; applyPick(); });
 $("dia").addEventListener("click", e => {
   const d = pickAt(e.target), g = (ui.data && ui.data.diagram) || {}, t = d && keyed(g.enter, d);
-  if (t) go(ui.view === "history" ? "history" : "now", t);
+  if (t && typeof t === "object") go(t.view || ui.view, t.part || "");   // an extension's: {view, part}
+  else if (t) go(ui.view === "history" ? "history" : "now", t);
   else if (d && keyed(g.files, d)) showCode(keyed(g.files, d));
 });
 // the send box stays pinned to the bottom of the window, over the page; the page keeps room for it as it grows
@@ -1377,7 +1393,7 @@ document.addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
   if (t && (t.isContentEditable || /^(TEXTAREA|INPUT|SELECT)$/.test(t.tagName))) return;   // typing, not a shortcut
-  const tab = { n:"now", r:"review", a:"agents", t:"topics" }[e.key];
+  const tab = { n:"now", r:"review", a:"agents", t:"topics", ...EXT_KEYS }[e.key];
   if (tab) go(tab, "");
   else if (e.key === "h") go("history", ui.mine && ui.pick && ui.pick.startsWith("b:") ? rawId(ui.pick) : "");
   else if (e.key === "b" || e.key === "Backspace") back();
@@ -1649,7 +1665,7 @@ def read_code_file(root: Path, rel: str) -> Dict[str, Any]:
         return {**bad, "error": "not a path in the repository"}
     try:
         code = Code(lenient(root))
-        if not code.is_code(rel) or code.skip.search(rel):
+        if (not code.is_code(rel) or code.skip.search(rel)) and not extensions.file_ok(rel):
             return {**bad, "error": "not a code file of the system"}
         base = Path(root).resolve()
         f = (base / rel).resolve()
@@ -1680,7 +1696,11 @@ def handler(w: Watcher):
         def do_GET(self):
             path = urlsplit(self.path).path
             if path in ("/", "/index.html"):
-                return self._send(200, PAGE.replace("__TOKEN__", w.token).encode(), "text/html; charset=utf-8")
+                return self._send(200, page_html().replace("__TOKEN__", w.token).encode(), "text/html; charset=utf-8")
+            if path.startswith("/x/"):   # an extension's own pages: the repository's content, so as /file guards it
+                if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                    return self._json(403, {"error": "forbidden"})
+                return self._ext("GET", path, b"")
             if path == "/web":
                 return self._web()
             if path == "/page":
@@ -1750,7 +1770,7 @@ def handler(w: Watcher):
             which submits what was sent to Claude, does)."""
             q = self._query()
             view = q.get("view", "now")
-            if view not in VIEWS:
+            if view not in VIEWS and extensions.owner(view) is None:
                 return self._json(400, {"error": f"no view {view!r}"})
             try:
                 zoom = int(q.get("zoom") or -1)
@@ -1792,6 +1812,21 @@ def handler(w: Watcher):
                                "started": 0, "current": True, "changed": False, "busy": False})
             return self._json(200, {"projects": got, "self": w.ident})
 
+        def _ext(self, method: str, path: str, body: bytes):
+            """GET or POST /x/<extension>/<path>: the extension answers (status, content type, bytes)."""
+            name, _, rest = path[3:].partition("/")
+            ext = extensions.by_name(name)
+            route = getattr(ext, "route", None) if ext is not None else None
+            if route is None:
+                return self._json(404, {"error": f"no extension {name!r}"})
+            try:
+                status, ctype, data = route(extensions.context(w.root, "", "", 160, 0), method, rest, self._query(),
+                                            body)
+            except Exception as exc:  # noqa: BLE001
+                extensions.failed(name, exc)
+                return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+            return self._send(int(status), data if isinstance(data, bytes) else str(data).encode(), ctype)
+
         def _authorized(self) -> bool:
             """The token (the pane and the hooks read it from web.json), or this server's own page."""
             return live.token_ok(self.headers.get("X-Token"), w.token) or self._same_origin()
@@ -1804,7 +1839,7 @@ def handler(w: Watcher):
                 return self._json(403, {"error": "forbidden"})
             q = self._query()
             view = q.get("view", "now")
-            if view not in VIEWS:
+            if view not in VIEWS and extensions.owner(view) is None:
                 return self._json(400, {"error": f"no view {view!r}"})
             try:
                 width, zoom = int(q.get("width") or 80), int(q.get("zoom") or -1)
@@ -1979,6 +2014,11 @@ def handler(w: Watcher):
                                     "context": got.get("context") or ""})
 
         def do_POST(self):
+            if urlsplit(self.path).path.startswith("/x/"):
+                if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                    return self._json(403, {"error": "forbidden"})
+                n = int(self.headers.get("Content-Length") or 0)
+                return self._ext("POST", urlsplit(self.path).path, self.rfile.read(min(n, 1_000_000)) if n else b"")
             if urlsplit(self.path).path == "/hook":
                 return self._post_hook()
             if urlsplit(self.path).path == "/mark":
@@ -2001,6 +2041,15 @@ def handler(w: Watcher):
 
 VIEWS = ("now", "review", "agents", "topics", "history")
 PAGE = PAGE.replace("__PROJECT_HREF__", hub.HREF_JS)
+
+
+def page_html() -> str:
+    """The page, with the extensions' tabs (and keys) beside system-diff's own."""
+    ext = extensions.views()
+    tabs = "".join(f'<button role="tab" data-view="{html.escape(v)}">{html.escape(label)}'
+                   + (f"<kbd>{html.escape(k)}</kbd>" if k else "") + "</button>" for v, label, k in ext)
+    return (PAGE.replace("__EXT_TABS__", tabs).replace("__EXT_VIEWS__", json.dumps([v for v, _l, _k in ext]))
+            .replace("__EXT_KEYS__", json.dumps({k: v for v, _l, k in ext if k})))
 PANE_LOCK = threading.Lock()
 
 

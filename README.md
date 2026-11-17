@@ -198,6 +198,22 @@ that did not change keeps its place.
 - **Web page by hand** (`system-diff watch`): the pane's views in a browser, at http://localhost:8765/, without
   Claude Code.
 
+## Extensions
+
+Other packages can add views to system-diff's own engine, web page and pane, so one engine, one port, one page and one
+pane serve them all, cached the same way and drawn with the same diagrams: research-diff's Evidence, Paper and
+Auto-research tabs sit beside Now, Review, Agents, Topics and History. An extension declares itself in its
+pyproject.toml:
+
+```toml
+[project.entry-points."system_diff.extensions"]
+research = "research_diff.system_diff_ext"
+```
+
+and its module defines its views (`VIEWS`, `pane(ctx)`, `web(ctx)`), optionally routes of its own under `/x/<name>/`
+(`route`), what it watches (`WATCH`), the files the page may show (`file_ok`) and MCP tools (`mcp`). The contract is in
+[src/system_diff/extensions.py](src/system_diff/extensions.py). `SYSTEM_DIFF_EXTENSIONS=off` loads none.
+
 ## Roadmap
 
 Where system-diff is going, also as a board: **[system-diff roadmap](https://github.com/users/simplifiedmachine/projects/1)**. Every item is an issue: comment on

@@ -163,6 +163,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,52 C536.7,52 536.7,248 484,248" marker-end="url(#ar-call-same)"><title>live → extract</title></path>
 <path class="be k-call s-same" d="M478,52 C544,52 544,908 484,908" marker-end="url(#ar-call-same)"><title>live → history</title></path>
 <path class="be k-call s-same" d="M478,52 C544,52 544,1328 484,1328" marker-end="url(#ar-call-same)"><title>live → learn</title></path>
+<path class="be k-call s-same" d="M478,52 C544,52 544,1508 484,1508" marker-end="url(#ar-call-same)"><title>live → src/system_diff</title></path>
 <path class="be k-call s-same" d="M214,112 C243,112 243,788 272,788" marker-end="url(#ar-call-same)"><title>mcp → chat</title></path>
 <path class="be k-call s-same" d="M214,112 C243,112 243,248 272,248" marker-end="url(#ar-call-same)"><title>mcp → extract</title></path>
 <path class="be k-call s-same" d="M214,112 C243,112 243,1028 272,1028" marker-end="url(#ar-call-same)"><title>mcp → objectives</title></path>
@@ -184,13 +185,13 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,368 C243,368 243,908 272,908" marker-end="url(#ar-call-same)"><title>panel → history</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,112 272,112" marker-end="url(#ar-call-same)"><title>panel → compare</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,1328 272,1328" marker-end="url(#ar-call-same)"><title>panel → learn</title></path>
+<path class="be k-call s-same" d="M214,368 C243,368 243,1508 272,1508" marker-end="url(#ar-call-same)"><title>panel → src/system_diff</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,188 272,188" marker-end="url(#ar-call-same)"><title>panel → config</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,248 272,248" marker-end="url(#ar-call-same)"><title>panel → extract</title></path>
 <path class="be k-call s-same" d="M214,368 C246,368 246,279 278,279 L478,279 C507,279 507,172 536,172" marker-end="url(#ar-call-same)"><title>panel → activity</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,368 272,368" marker-end="url(#ar-call-same)"><title>panel → graph</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,668 272,668" marker-end="url(#ar-call-same)"><title>panel → human</title></path>
 <path class="be k-call s-same" d="M214,368 C243,368 243,52 272,52" marker-end="url(#ar-call-same)"><title>panel → live</title></path>
-<path class="be k-call s-same" d="M214,368 C246,368 246,219 278,219 L478,219 C507,219 507,112 536,112" marker-end="url(#ar-call-same)"><title>panel → sources</title></path>
 <path class="be k-call s-same" d="M478,1448 C507,1448 507,112 536,112" marker-end="url(#ar-call-same)"><title>png → sources</title></path>
 <path class="be k-call s-same" d="M478,1268 C544,1268 544,188 484,188" marker-end="url(#ar-call-same)"><title>regroup → config</title></path>
 <path class="be k-call s-same" d="M478,1268 C544,1268 544,608 484,608" marker-end="url(#ar-call-same)"><title>regroup → design</title></path>
@@ -200,6 +201,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,1268 C514,1268 514,1208 484,1208" marker-end="url(#ar-call-same)"><title>regroup → narrate</title></path>
 <path class="be k-call s-same" d="M478,1268 C507,1268 507,112 536,112" marker-end="url(#ar-call-same)"><title>regroup → sources</title></path>
 <path class="be k-call s-same" d="M742,112 C778,112 778,52 748,52" marker-end="url(#ar-call-same)"><title>sources → gitfs</title></path>
+<path class="be k-call s-same" d="M478,1508 C544,1508 544,112 484,112" marker-end="url(#ar-call-same)"><title>src/system_diff → compare</title></path>
 <path class="be k-call s-same" d="M478,1508 C507,1508 507,52 536,52" marker-end="url(#ar-call-same)"><title>src/system_diff → gitfs</title></path>
 <path class="be k-call s-same" d="M478,1508 C544,1508 544,52 484,52" marker-end="url(#ar-call-same)"><title>src/system_diff → live</title></path>
 <path class="be k-call s-same" d="M478,1508 C507,1508 507,112 536,112" marker-end="url(#ar-call-same)"><title>src/system_diff → sources</title></path>
@@ -259,7 +261,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <g class="bn t-component s-same" transform="translate(278,1426)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">PNG rendering</text><text x="12" y="35" class="bn-s">1 file</text><title>PNG rendering</title></g>
 <g class="bn t-component s-same" transform="translate(542,90)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Git and folder sources</text><text x="12" y="35" class="bn-s">1 file</text><title>Git and folder sources</title></g>
 <g class="bn t-component s-same" transform="translate(542,150)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Agent activity</text><text x="12" y="35" class="bn-s">1 file</text><title>Agent activity</title></g>
-<g class="bn t-component s-same undeclared" transform="translate(278,1486)"><rect class="box" width="200" height="46" rx="8"/><rect class="band" width="5" height="46" rx="2"/><text x="12" y="19" class="bn-t">src/system_diff</text><text x="12" y="35" class="bn-s">1 file</text><title>src/system_diff</title></g>
+<g class="bn t-component s-same undeclared" transform="translate(278,1486)"><rect class="box" width="200" height="46" rx="8"/><rect class="band" width="5" height="46" rx="2"/><text x="12" y="19" class="bn-t">src/system_diff</text><text x="12" y="35" class="bn-s">2 files</text><title>src/system_diff</title></g>
 <rect x="16" y="1566" width="14" height="12" rx="2" fill="#ffffff" stroke="#e1e5eb"/><rect x="16" y="1566" width="4" height="12" rx="1" fill="#9a5600"/>
 <text x="36" y="1576" class="lg">not named in system-diff.toml</text>
 <path class="be k-call" d="M234.1,1572 L254.1,1572" style="opacity:1"/>

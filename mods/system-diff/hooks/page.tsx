@@ -153,6 +153,8 @@ const PageView: ClientModule<JsonValue, State> = (raw, surface) => {
       surface.post({ follow: true })
     } else if (e.key === 'h') { // History: of the picked box (a part, a container), else of the whole system
       surface.post({ history: sel.startsWith('b:') ? sel.slice(2) : '' })
+    } else if ((page.views ?? []).some(v => v[2] === e.key && e.key !== '')) { // an extension's tab (research-diff's)
+      surface.post({ view: (page.views ?? []).find(v => v[2] === e.key)?.[0] ?? 'now' })
     } else if (['n', 'r', 'm', 'c', 'a', 't'].includes(e.key)) { // m and c: what Map and Changes were
       surface.post({ view: { n: 'now', r: 'review', m: 'review', c: 'review', a: 'agents', t: 'topics' }[e.key] ?? 'now' })
     }

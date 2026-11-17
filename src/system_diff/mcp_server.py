@@ -364,6 +364,14 @@ def build() -> Server:
         st = agents.state(root)
         return {"plan": st["plan"], "claims": st["claims"], "messages": agents.messages(root)[-20:]}
 
+    from . import extensions
+    for ext in extensions.load():                  # the extensions' own tools (research-diff's, …)
+        add = getattr(ext, "mcp", None)
+        if add is not None:
+            try:
+                add(server)
+            except Exception as exc:  # noqa: BLE001
+                extensions.failed(getattr(ext, "NAME", "extension") + " tools", exc)
     return server
 
 

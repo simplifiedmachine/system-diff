@@ -273,8 +273,7 @@ def parser() -> argparse.ArgumentParser:
     pg.add_argument("--wait", type=float, default=0, help="seconds to wait first (the pane's pace)")
     pn = sub.add_parser("panel", help="what a pane beside the agent shows, as JSON (for the Claude Code mod)")
     pn.add_argument("--width", type=int, default=80)
-    pn.add_argument("--view", default="now", choices=["now", "review", "map", "changes", "topics", "agents",
-                                                      "history"])
+    pn.add_argument("--view", default="now", help="now, review, agents, topics, history, or an extension's view")
     pn.add_argument("--part", default="", help="the part to zoom in on (default: the one the agent works on)")
     pn.add_argument("--zoom", type=int, default=-1, help="diagrams 0 full, 1 compact, 2 tiny; -1 by the width")
     pn.add_argument("--protocol", type=int, default=1, help="2: a page of runs and pickable blocks (the mod's painter)")

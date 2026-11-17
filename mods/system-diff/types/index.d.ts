@@ -20,6 +20,7 @@ export type PageBlock = {
 }
 export type Page = {
   protocol: 2
+  views?: [string, string, string][] // the tabs of extensions installed beside system-diff: [view, label, key]
   view: string
   part: string
   width: number // laid out for this many columns

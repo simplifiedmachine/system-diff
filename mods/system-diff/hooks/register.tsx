@@ -15,7 +15,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.9.0' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.10.0.dev1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't'],
@@ -412,11 +412,19 @@ async function compare($: EngineInterface, id: string): Promise<void> {
   await refresh($)
 }
 
+// The tabs: system-diff's own, then those of extensions installed beside it (research-diff's), as the page lists them.
+function tabs(drawn: Page | null): ReadonlyArray<readonly [string, string, string]> {
+  const extra = (drawn?.views ?? []).filter(v => Array.isArray(v) && v.length >= 2 && !VIEWS.some(b => b[0] === v[0]))
+  return [...VIEWS, ...extra.map(v => [String(v[0]), String(v[1]), String(v[2] ?? '')] as const)]
+}
+
 async function zoom($: EngineInterface, id: string): Promise<void> {
   const from = await read($, part)
   if (from !== id) await update($, back, list => [...list, from].slice(-20))
   await update($, part, () => id)
-  await update($, view, () => 'now')
+  // within an extension's view, zooming stays in it (its blocks are its own); system-diff's views zoom into Now
+  const shown = await read($, view)
+  await update($, view, () => (VIEWS.some(b => b[0] === shown) ? 'now' : shown))
   await refresh($)
 }
 
@@ -686,7 +694,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" gap={2}>
-          {VIEWS.map(([id, label, key]) => (
+          {tabs(drawn).map(([id, label, key]) => (
             <Button key={`view-${id}`} hotkey={key} plain onPress={() => void choose($, id)}>
               {now === id ? <Text color="blue" bold underline>{label}</Text> : <Text dimColor>{label}</Text>}
             </Button>
