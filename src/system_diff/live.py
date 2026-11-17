@@ -765,7 +765,7 @@ class Engine:
                  st(g / "refs" / "worktree" / "system-diff" / "checkpoint"),
                  st(g / "refs" / "worktree" / "system-diff" / "turn"), st(c / "refs" / "system-diff" / "checkpoint"),
                  st(self._sd / "activity.jsonl"), st(self._sd / "agents.json"), st(self._sd / "bus.jsonl"),
-                 st(self._sd / "history.jsonl"),
+                 st(self._sd / "history.jsonl"), st(self._sd / "notes.json"),
                  listing(self._sd / "regroup"), listing(self._sd / "parts"), st(self._sd / "explain" / "cache.json"),
                  prof)
         rules = (st(c / "info" / "exclude"), st(c / "info" / "attributes"), st(g / "index"))

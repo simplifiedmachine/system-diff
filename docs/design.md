@@ -21,7 +21,9 @@ system-diff exists to close that gap. These are the principles it is built on, a
    controls between them and Claude: no approve, ask or undo buttons. It makes the changes plain enough that the
    person can say what they want in the chat, in their own words, knowing what changed and why it matters. The
    loop between the person and Claude stays in Claude Code; the pane, the web page and the terminal view only show.
-   (The web page's Send to Claude box is the one exception, and it only types the person's own words into the chat.)
+   (The web page's Send to Claude box is the one exception: it only types the person's own words into the chat, and
+   the page shows Claude's answers beside the diagram. Its other controls, such as hiding the conversation or
+   clearing a note Claude left on a block, change only system-diff's own notes, never the code.)
 6. **Understanding is tracked.** The person's checkpoint is what they have seen and understood; everything since is
    highlighted until they mark it seen. Nothing changes silently behind them.
 7. **One picture everywhere.** The pane beside the chat, the web page and the terminal view show the same live model

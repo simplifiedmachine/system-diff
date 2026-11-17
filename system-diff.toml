@@ -202,6 +202,22 @@ group = "Explaining"
 paths = ["src/system_diff/explain.py"]
 
 [[components]]
+id = "chat"
+label = "Conversation"
+kind = "logic"
+about = "questions from the page, Claude's answers, what it points at"
+group = "Explaining"
+paths = ["src/system_diff/chat.py"]
+
+[[components]]
+id = "fileview"
+label = "File view"
+kind = "logic"
+about = "a file's outline and Claude's description of it"
+group = "Explaining"
+paths = ["src/system_diff/fileview.py"]
+
+[[components]]
 id = "history"
 label = "History"
 kind = "logic"

@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import activity, graph, hub, learn, live, pictures
+from . import activity, chat, graph, hub, learn, live, pictures
 from .compare import Comparison, checkpoint, checkpoint_sha, compare_worktree, turn_sha, worktree_tree
 from .diff import diff
 from .extract import Code
@@ -257,8 +257,84 @@ nav.projects .nm { overflow:hidden; text-overflow:ellipsis; }
 nav.projects .br { font:11.5px var(--mono); color:var(--muted); font-weight:400; overflow:hidden; text-overflow:ellipsis; }
 nav.projects .dot { width:7px; height:7px; border-radius:50%; background:var(--c3); align-self:center; flex:none; }
 nav.projects a.all { margin-left:auto; font-size:12.5px; padding:5px 4px 6px 12px; }
+/* the conversation with Claude: pinned on the right (a bottom sheet on narrow screens) */
+#chatbtn[aria-pressed="true"] { border-color:var(--work); color:var(--work); background:var(--work-bg); }
+#chatbtn .count { font-size:11px; margin-left:4px; color:var(--muted); }
+aside.chat { position:fixed; z-index:25; right:0; top:0; bottom:var(--sendh, 76px); width:min(400px, 34vw); display:flex;
+             flex-direction:column; background:var(--card); border-left:1px solid var(--line); box-shadow:-4px 0 16px rgba(0,0,0,.05); }
+body.chat-open { padding-right:min(400px, 34vw); }
+aside.chat > header { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); }
+aside.chat > header h2 { font-size:13px; margin:0; flex:1; color:var(--muted); font-weight:600; letter-spacing:.04em;
+                         text-transform:uppercase; }
+aside.chat > header button { padding:2px 9px; }
+#pointing { margin:8px 12px 0; padding:7px 10px; border-radius:8px; background:var(--work-bg); border:1px solid var(--work);
+            font-size:12.5px; display:flex; gap:6px; align-items:flex-start; }
+#pointing .what { flex:1; overflow-wrap:anywhere; }
+#pointing .x, .note-x { border:0; background:transparent; padding:0 4px; color:var(--muted); font-size:14px; line-height:1; }
+#chatlist { list-style:none; margin:0; padding:10px 12px 16px; overflow:auto; flex:1; display:grid; gap:12px; align-content:start; }
+#chatlist .empty-note { padding:4px 2px; }
+.q { display:grid; gap:5px; }
+.q .ask { justify-self:end; max-width:92%; background:var(--work-bg); border-radius:10px 10px 2px 10px; padding:7px 10px;
+          overflow-wrap:anywhere; white-space:pre-wrap; }
+.q .meta { justify-self:end; color:var(--muted); font-size:11.5px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.q .about-tag { font-size:11.5px; color:var(--muted); justify-self:end; }
+.q .st { display:inline-flex; gap:5px; align-items:center; }
+.q .st::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--muted); }
+.q.st-answering .st::before { background:var(--work); animation:pulse 1.6s ease-in-out infinite; }
+.q.st-delivered .st::before, .q.st-queued .st::before { background:var(--warn); }
+.q.st-answered .st::before { background:var(--ok); }
+.q .ans { border:1px solid var(--line); border-radius:10px 10px 10px 2px; padding:8px 11px; font-size:13.5px; overflow-wrap:anywhere; }
+.md p, .md ul, .md ol, .md pre, .md h4 { margin:0 0 7px; } .md > :last-child { margin-bottom:0; }
+.md ul, .md ol { padding-left:20px; } .md li + li { margin-top:2px; }
+.md h4 { font-size:13.5px; }
+.md code { font:12px var(--mono); background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:0 3px; }
+.md pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 9px; overflow:auto;
+          font:12px/1.45 var(--mono); white-space:pre; }
+.md pre code { border:0; padding:0; background:none; }
+a.ref { color:var(--work); text-decoration:underline dotted; text-underline-offset:2px; cursor:pointer; }
+a.ref:hover { text-decoration-style:solid; }
+#dia [data-id].flash { animation:flash 1.2s ease-in-out 2; }
+@keyframes flash { 50% { opacity:.35; } }
+.found { margin-top:6px; border-top:1px dashed var(--line); padding-top:5px; }
+.found .fh { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:650; }
+.found .fn { display:flex; gap:4px; align-items:flex-start; color:var(--ink2); }
+.found .fn .q { color:var(--muted); font-size:12px; }
+form.send .about { display:flex; gap:4px; align-items:center; font-size:12px; color:var(--work); background:var(--work-bg);
+                   border:1px solid var(--work); border-radius:999px; padding:1px 4px 1px 10px; max-width:28vw; align-self:center; }
+form.send .about span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+form.send .about button { border:0; background:transparent; padding:0 5px; color:var(--work); }
+/* the code viewer: the outline beside the code (above it when narrow), a card over a chunk with what it does */
+#code .cv { display:grid; grid-template-columns:minmax(200px, 280px) 1fr; gap:12px; align-items:start; }
+#code nav.outline { max-height:520px; overflow:auto; font-size:12.5px; border:1px solid var(--line); border-radius:8px;
+                    padding:8px; background:var(--bg); }
+#code .inshort { color:var(--ink2); margin-bottom:8px; }
+#code .inshort .wait { color:var(--muted); }
+#code nav.outline ol { list-style:none; margin:0; padding:0; display:grid; gap:2px; }
+#code nav.outline li { padding:3px 6px; border-radius:6px; cursor:pointer; }
+#code nav.outline li:hover, #code nav.outline li:focus-visible { background:var(--card); }
+#code nav.outline li.here { background:var(--work-bg); box-shadow:inset 2px 0 0 var(--work); }
+#code nav.outline .nm { font:600 12px var(--mono); color:var(--ink); overflow-wrap:anywhere; }
+#code nav.outline .k { color:var(--muted); font-size:11px; margin-left:4px; }
+#code nav.outline .said { color:var(--muted); display:block; }
+#code pre span.hl { background:var(--work-bg); }
+#codecard { position:fixed; z-index:41; max-width:min(420px, calc(100vw - 16px)); padding:10px 12px; border-radius:10px;
+            background:var(--card); border:1px solid var(--line); box-shadow:0 6px 24px rgba(0,0,0,.18); font-size:13px;
+            line-height:1.45; pointer-events:none; overflow-wrap:anywhere; }
+#codecard .t { font:600 12.5px var(--mono); margin-bottom:4px; }
+#codecard .l + .l { margin-top:4px; } #codecard .l b { color:var(--muted); font-weight:600; }
+.spin { display:inline-block; width:10px; height:10px; border:2px solid var(--line); border-top-color:var(--work);
+        border-radius:50%; animation:spin .8s linear infinite; vertical-align:-1px; margin-right:6px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin, .q.st-answering .st::before, #dia [data-id].flash { animation:none; } }
+@media (max-width:1000px) {
+  aside.chat { left:0; width:auto; top:auto; height:min(48vh, 460px); border-left:0; border-top:1px solid var(--line);
+               border-radius:14px 14px 0 0; box-shadow:0 -6px 20px rgba(0,0,0,.10); }
+  body.chat-open { padding-right:0; padding-bottom:calc(var(--sendh, 76px) + min(48vh, 460px)); }
+  #code .cv { grid-template-columns:1fr; } #code nav.outline { max-height:200px; }
+}
 @media (max-width:720px) {
   header.top, main, form.send, nav.projects { padding-left:16px; padding-right:16px; }
+  form.send .about { max-width:40vw; }
   .swim { grid-template-columns:1fr; }
   .timeline li { grid-template-columns:56px 20px 1fr; } .timeline li::before { left:75px; }
   form.send label, #sendnote { display:none; }
@@ -280,6 +356,7 @@ nav.projects a.all { margin-left:auto; font-size:12.5px; padding:5px 4px 6px 12p
     <button id="in" type="button" aria-label="Zoom in">+</button><span id="zoomlabel">auto</span>
     <button id="out" type="button" aria-label="Zoom out">−</button></div>
   <span class="spacer"></span>
+  <button id="chatbtn" type="button" aria-pressed="false" aria-controls="chat" title="Show or hide the conversation with Claude (c)">Conversation<span class="count" id="chatcount"></span></button>
   <button id="theme" type="button" title="Light, dark, or as your system is">◐ auto</button>
 </header>
 <main>
@@ -290,16 +367,24 @@ nav.projects a.all { margin-left:auto; font-size:12.5px; padding:5px 4px 6px 12p
     <div class="diawrap" id="diawrap"><div id="dia" role="img"></div><div id="detail" aria-live="polite"></div><div id="code" hidden></div></div></section>
   <div id="after" style="display:grid;gap:16px"></div>
 </main>
-<div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · tick two changes in History to compare them · <kbd>f</kbd> follow Claude · <kbd>[</kbd> <kbd>]</kbd> projects · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
+<div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · tick two changes in History to compare them · <kbd>f</kbd> follow Claude · <kbd>c</kbd> conversation · <kbd>[</kbd> <kbd>]</kbd> projects · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
+<aside class="chat" id="chat" aria-label="Conversation with Claude" hidden>
+  <header><h2>Conversation with Claude</h2><button id="chatclose" type="button" aria-label="Hide the conversation">Hide</button></header>
+  <div id="pointing" hidden aria-live="polite"></div>
+  <ol id="chatlist" aria-live="polite"></ol>
+</aside>
 <form class="send" id="send"><label for="say">Send to Claude</label>
-  <textarea id="say" placeholder="Ask or tell Claude something about this change (Ctrl+Enter sends)"></textarea>
+  <div class="about" id="about" hidden><span id="abouttext"></span><button type="button" id="aboutx" aria-label="Do not send what you are looking at">×</button></div>
+  <textarea id="say" placeholder="Ask or tell Claude something about the system (Enter sends, Shift+Enter for a new line)"></textarea>
   <span id="sendnote" aria-live="polite"></span><button id="sendbtn" class="primary" type="submit">Send</button></form>
 <script>
 const TOKEN = "__TOKEN__";
 const $ = id => document.getElementById(id);
 const VIEWS = ["now", "review", "agents", "topics", "history"];
 const ui = { view:"now", part:"", zoom:-1, history:[], data:null, last:{}, pick:"", mine:false, hover:null, seq:0, cmp:[] };
-const projects = { list:[] };   // every running project of this user (GET /projects), this one "current"
+const projects = { list:[] };
+// the conversation with Claude: the panel, what Claude points at, what the person is looking at (sent with a question)
+const talk = { open:false, data:null, stamp:null, point:[], pointAt:0, dismissed:0, aboutOff:"", file:"", seen:0 };   // every running project of this user (GET /projects), this one "current"
 (function fromHash() {
   const h = new URLSearchParams(location.hash.slice(1));
   if (VIEWS.includes(h.get("view"))) ui.view = h.get("view");
@@ -571,6 +656,8 @@ function showTipSoon(n) {
       if (ins.length) { const ul = el("ul"); for (const i of ins) ul.append(el("li", String(i))); box.append(ul); }
       for (const n of notes) box.append(el("div", String(n), "n"));
     } else for (const line of Array.isArray(card.lines) ? card.lines : []) box.append(el("div", String(line), "l"));
+    const found = foundBox(hoverId(n), false);
+    if (found) box.append(found);
     box.hidden = false;
     const r = n.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight, vw = innerWidth, vh = innerHeight;
     let x = Math.min(Math.max(8, r.left), vw - w - 8), y = r.bottom + 8;
@@ -615,6 +702,7 @@ function applyPick() {
   else if (ui.pick) { picked = ui.pick; ids = keyed(g.lights, picked) || []; }
   const lit = new Set();
   for (const x of ids) { lit.add(x); lit.add("b:" + x); }
+  if (!ui.hover) for (const x of talk.point) { lit.add("b:" + x); }   // what Claude is pointing at
   const active = !!ui.hover || (!!picked && ui.over);   // dim the rest only while the mouse is on the diagram
   for (const n of nodes) {
     const d = n.getAttribute("data-id");
@@ -633,7 +721,8 @@ function applyPick() {
   }
   const det = $("detail");
   // the strip is drawn again only when what it shows changes: a "show all" someone opened stays open
-  const shows = picked ? [picked, keyed(g.details, picked), keyed(g.enter, picked)] : ["", g.aside || ""];
+  paintAbout();
+  const shows = picked ? [picked, keyed(g.details, picked), keyed(g.enter, picked), notesOf(picked)] : ["", g.aside || ""];
   const said = JSON.stringify(shows);
   if (det.dataset.shows === said) return;
   det.dataset.shows = said; det.replaceChildren();
@@ -646,6 +735,8 @@ function applyPick() {
     if (target && !(text && typeof text === "object" && text.inside))
       det.append(el("div", "Click to look inside " + ((text && text.title) || "it") + ".", "what"));
     if (!text && !target) det.append(el("span", rawId(picked), "what"));
+    const found = foundBox(picked, true);
+    if (found) det.append(found);
   } else det.append(el("span", g.aside || "Hover a part to see what it is and what it connects to.", "what"));
 }
 // the details strip for a block: What it is · How it works · Worth knowing · Facts, long lists behind "show all (N)"
@@ -689,6 +780,8 @@ $("dia").addEventListener("mouseleave", () => { ui.over = false; applyPick(); })
 $("dia").addEventListener("mouseover", e => {
   const d = pickAt(e.target);
   if (d && d !== ui.pick) { ui.pick = d; ui.mine = true; applyPick(); }
+  const f = d && keyed(((ui.data && ui.data.diagram) || {}).files, d);
+  if (f) prefetch([f], true);
 });
 $("dia").addEventListener("focusin", e => {
   const d = pickAt(e.target);
@@ -707,27 +800,361 @@ $("dia").addEventListener("click", e => {
   room();
   if (window.ResizeObserver) new ResizeObserver(room).observe(f); else addEventListener("resize", room);
 })();
-// a file box's click: its code, read-only, below the diagram (lines of code one click away, never the first thing)
-async function showCode(path) {
+// a file box's click: its code, read-only, below the diagram (lines of code one click away, never the first thing),
+// with an outline beside it to skim: one chunk per class and function, each with what Claude says it does (made in
+// the background when a file is opened, kept per version of the file); hovering a chunk of the code shows that.
+const cv = { path:"", chunks:[], summary:null, timer:0, card:null, spans:[], here:null, pinned:false };
+async function showCode(path, pinned) {
+  cv.pinned = !!pinned;
   const box = $("code");
   box.hidden = false; box.replaceChildren(el("div", "Reading " + path + "…", "sub"));
+  clearTimeout(cv.timer); cv.path = path; cv.chunks = []; cv.summary = null; cv.spans = []; cv.here = null;
   let got = null;
   try {
     const r = await fetch("file?path=" + encodeURIComponent(path), { cache:"no-store", headers:{ "X-Token":TOKEN } });
     got = await r.json();
   } catch (err) { got = { error: String(err) }; }
+  if (cv.path !== path) return;
   box.replaceChildren();
   const head = el("div", null, "head"), close = el("button", "Close");
-  close.type = "button"; close.addEventListener("click", () => { box.hidden = true; box.replaceChildren(); });
+  close.type = "button"; close.addEventListener("click", closeCode);
   head.append(el("b", path), el("span", got && got.text != null ? (got.lines + " lines" + (got.cut ? ", cut" : "")
                                                                + " · as it is on disk now") : "", "sub"), close);
   box.append(head);
   if (!got || got.text == null) { box.append(el("div", "Could not show it: " + ((got && got.error) || "no answer"), "error")); return; }
-  const pre = el("pre");
-  for (const line of got.text.replace(/\n$/, "").split("\n")) pre.append(el("span", line || " "));
-  box.append(pre);
+  talk.file = path; paintAbout();
+  cv.chunks = ((got.outline || {}).chunks || []).filter(c => c && c.line > 0);
+  cv.summary = got.summary || null;
+  const wrap = el("div", null, "cv"), nav = el("nav", null, "outline"), pre = el("pre");
+  nav.setAttribute("aria-label", "Outline of " + path);
+  pre.tabIndex = 0;
+  for (const [i, line] of got.text.replace(/\n$/, "").split("\n").entries()) {
+    const sp = el("span", line || " "); sp.dataset.ln = String(i + 1); pre.append(sp); cv.spans.push(sp);
+  }
+  wrap.append(nav, pre); box.append(wrap);
+  paintOutline();
+  pre.addEventListener("mouseover", e => { const sp = e.target.closest && e.target.closest("span[data-ln]");
+                                            if (sp) showCodeCard(+sp.dataset.ln, sp); });
+  pre.addEventListener("mouseleave", hideCodeCard);
+  pre.addEventListener("scroll", () => { hideCodeCard(); markHere(firstVisibleLine(pre)); }, { passive:true });
   box.scrollIntoView({ block:"nearest", behavior:"smooth" });
+  pollSummary(path);
 }
+function closeCode() {
+  clearTimeout(cv.timer); cv.path = ""; hideCodeCard();
+  $("code").hidden = true; $("code").replaceChildren(); talk.file = ""; paintAbout();
+}
+function chunkAt(line) {   // the innermost class, function or method holding a line
+  let best = null;
+  for (const c of cv.chunks) if (c.line <= line && line <= c.end && (!best || c.depth >= best.depth)) best = c;
+  return best;
+}
+function saidOf(c) { const s = cv.summary; return s && s.state === "done" && s.chunks ? s.chunks[c.qual] || null : null; }
+function waitLine(s) {
+  const d = el("div", null, "wait");
+  if (!s || s.state === "summarizing" || s.state === "later") { d.append(el("span", null, "spin"), "Claude is reading this file…"); }
+  else d.append(s.why || "No summary for this file.");
+  return d;
+}
+function paintOutline() {
+  const nav = $("code").querySelector("nav.outline");
+  if (!nav) return;
+  nav.replaceChildren();
+  const s = cv.summary, top = el("div", null, "inshort");
+  if (s && s.state === "done" && s.file) { top.append(el("b", "In short "), s.file); const m = el("span", "✦", "llm");
+    m.title = "written by " + (s.by || "your LLM") + " from this file's code"; top.append(m); }
+  else if (!s || s.state !== "done") top.append(waitLine(s));
+  nav.append(top);
+  if (!cv.chunks.length) { nav.append(el("div", "No classes or functions to outline.", "empty-note")); return; }
+  const ol = el("ol");
+  for (const c of cv.chunks) {
+    const li = el("li"), said = saidOf(c);
+    li.tabIndex = 0; li.dataset.line = c.line; li.dataset.end = c.end; li.style.paddingLeft = (6 + 14 * (c.depth || 0)) + "px";
+    li.append(el("span", c.name, "nm"), el("span", c.kind + " · " + c.line + "–" + c.end, "k"));
+    if (said && said.what) li.append(el("span", said.what, "said"));
+    const go = () => jumpTo(c);
+    li.addEventListener("click", go);
+    li.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); go(); } });
+    ol.append(li);
+  }
+  nav.append(ol);
+  markHere(cv.here ? cv.here.line : 0);
+}
+function jumpTo(c) {
+  const pre = $("code").querySelector("pre"), sp = cv.spans[c.line - 1];
+  if (!pre || !sp) return;
+  for (const x of pre.querySelectorAll("span.hl")) x.classList.remove("hl");
+  for (let i = c.line - 1; i < Math.min(c.end, cv.spans.length); i++) cv.spans[i].classList.add("hl");
+  pre.scrollTop = sp.offsetTop - pre.offsetTop - 8;
+  markHere(c.line);
+}
+function firstVisibleLine(pre) {
+  const top = pre.scrollTop + pre.offsetTop + 8;
+  let lo = 0, hi = cv.spans.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (cv.spans[mid].offsetTop < top) lo = mid + 1; else hi = mid; }
+  return lo + 1;
+}
+function markHere(line) {
+  const c = line ? chunkAt(line) : null; cv.here = c;
+  for (const li of $("code").querySelectorAll("nav.outline li"))
+    li.classList.toggle("here", !!c && +li.dataset.line === c.line && +li.dataset.end === c.end);
+}
+function hideCodeCard() { if (cv.card) cv.card.hidden = true; }
+function showCodeCard(line, sp) {
+  const c = chunkAt(line);
+  if (!c) { hideCodeCard(); return; }
+  if (!cv.card) { cv.card = el("div"); cv.card.id = "codecard"; cv.card.setAttribute("role", "tooltip"); document.body.append(cv.card); }
+  const box = cv.card, said = saidOf(c);
+  box.replaceChildren(el("div", c.qual, "t"));
+  if (said) {
+    for (const [k, label] of [["what", ""], ["how", "How: "], ["watch", "Watch: "]]) {
+      if (!said[k]) continue;
+      const l = el("div", null, "l"); if (label) l.append(el("b", label)); l.append(said[k]);
+      if (k === "what") { const m = el("span", "✦", "llm"); m.title = "written by " + ((cv.summary || {}).by || "your LLM"); l.append(m); }
+      box.append(l);
+    }
+  } else if (cv.summary && cv.summary.state === "done") box.append(el("div", "Claude said nothing about this one.", "l"));
+  else box.append(waitLine(cv.summary));
+  box.hidden = false;
+  const r = sp.getBoundingClientRect(), pre = sp.parentElement.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
+  let x = Math.min(pre.right - w - 12, innerWidth - w - 8), y = r.bottom + 6;
+  if (y + h > innerHeight - 8) y = r.top - h - 6;
+  box.style.left = Math.max(8, x) + "px"; box.style.top = Math.max(8, y) + "px";
+  markHere(line);
+}
+document.addEventListener("selectionchange", () => {   // the keyboard's cursor in the code: the chunk it is in
+  const sel = document.getSelection(), n = sel && sel.anchorNode;
+  const sp = n && (n.nodeType === 1 ? n : n.parentElement);
+  const span = sp && sp.closest && sp.closest("#code pre span[data-ln]");
+  if (span) showCodeCard(+span.dataset.ln, span);
+});
+async function pollSummary(path) {
+  const s = cv.summary;
+  if (cv.path !== path || (s && !["summarizing", "later"].includes(s.state))) return;
+  cv.timer = setTimeout(async () => {
+    try {
+      const r = await fetch("summary?path=" + encodeURIComponent(path), { cache:"no-store", headers:{ "X-Token":TOKEN } });
+      const d = await r.json();
+      if (cv.path !== path) return;
+      if (r.ok && d.summary) { cv.summary = d.summary; if (d.summary.state !== "summarizing") { paintOutline(); hideCodeCard(); } }
+    } catch (e) { /* the engine is away: try again */ }
+    pollSummary(path);
+  }, 2500);
+}
+// files the person is about to open (a file box hovered, a part zoomed into): summarised ahead, a few at a time
+const fetched = new Set(), ahead = [];
+let aheadBusy = false;
+function prefetch(paths, now) {
+  for (const p of paths) if (p && !fetched.has(p)) { fetched.add(p); now ? ahead.unshift(p) : ahead.push(p); }
+  if (!aheadBusy) nextAhead();
+}
+async function nextAhead() {
+  const p = ahead.shift();
+  if (!p) { aheadBusy = false; return; }
+  aheadBusy = true;
+  try { await fetch("summary?prefetch=1&path=" + encodeURIComponent(p), { cache:"no-store", headers:{ "X-Token":TOKEN } }); }
+  catch (e) { /* no matter */ }
+  setTimeout(nextAhead, 700);
+}
+
+// ---- the conversation with Claude ----
+function setTalk(open) {
+  talk.open = !!open;
+  $("chat").hidden = !talk.open; document.body.classList.toggle("chat-open", talk.open);
+  $("chatbtn").setAttribute("aria-pressed", String(talk.open));
+  try { localStorage.setItem("sd-chat", talk.open ? "1" : "0"); } catch (e) {}
+  if (talk.open) { const l = $("chatlist"); l.scrollTop = l.scrollHeight; }
+}
+(function () { let o = "0"; try { o = localStorage.getItem("sd-chat") || "0"; } catch (e) {} setTalk(o === "1"); })();
+$("chatbtn").addEventListener("click", () => setTalk(!talk.open));
+$("chatclose").addEventListener("click", () => setTalk(false));
+const STATUS = { queued:"Queued: the pane beside Claude picks it up within a few seconds",
+                 delivered:"Delivered to the Claude Code session", answering:"Claude is answering…",
+                 answered:"Answered", "no answer":"No answer recorded" };
+function renderTalk(c) {
+  talk.data = c;
+  const list = $("chatlist"), atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  list.replaceChildren();
+  const items = Array.isArray(c.items) ? c.items : [];
+  if (!items.length) list.append(el("li", "What you send to Claude below shows here with its answer, and the parts it names light up in the diagram.", "empty-note"));
+  for (const it of items) {
+    const li = el("li", null, "q st-" + String(it.status || "").replace(/\s+/g, "-"));
+    if (it.about) li.append(el("div", "About: " + it.about, "about-tag"));
+    li.append(el("div", it.question || "(a prompt)", "ask"));
+    const meta = el("div", null, "meta");
+    meta.append(el("span", it.from === "web" ? "from this page" : "typed in Claude Code"), el("span", "·"),
+                el("span", ago(it.at)), el("span", "·"), el("span", STATUS[it.status] || it.status || "", "st"));
+    li.append(meta);
+    if (it.answer) { const a = el("div", null, "ans md"); a.append(...markdown(it.answer)); linkify(a, it.links || []); li.append(a); }
+    list.append(li);
+  }
+  const n = items.filter(i => i.status !== "answered" && i.status !== "no answer").length;
+  $("chatcount").textContent = n ? "· " + n : "";
+  if (atEnd || items.length !== talk.seen) list.scrollTop = list.scrollHeight;
+  talk.seen = items.length;
+  paintPointing(c.pointing);
+}
+// what Claude points at (the point_to tool): lit in the diagram, named in a chip the person can clear
+function paintPointing(p) {
+  const box = $("pointing");
+  const live = p && p.at && p.at !== talk.dismissed ? p : null;
+  const ids = live ? (p.parts || []).map(x => x.id).filter(Boolean) : [];
+  const fresh = live && p.at !== talk.pointAt;
+  talk.point = ids; talk.pointAt = live ? p.at : 0;
+  box.hidden = !live;
+  box.replaceChildren();
+  if (live) {
+    const what = el("div", null, "what");
+    what.append(el("b", "Claude is pointing at: "));
+    (p.parts || []).forEach((x, i) => { if (i) what.append(", "); what.append(refLink(x.text, x.id, x.file)); });
+    if (p.note) what.append(el("div", p.note, "sub"));
+    const x = el("button", "×", "x"); x.type = "button"; x.setAttribute("aria-label", "Stop lighting these");
+    x.addEventListener("click", () => { talk.dismissed = p.at; paintPointing(p); applyPick(); });
+    box.append(what, x);
+  }
+  if (fresh && ids.length) { ui.last.dia = ""; applyPick(); const n = nodeOf(ids[0]); if (n) n.scrollIntoView({ block:"nearest", behavior:"smooth" }); }
+}
+function nodeOf(id) {
+  const want = "b:" + id;
+  for (const n of $("dia").querySelectorAll("[data-id]")) if (n.getAttribute("data-id") === want) return n;
+  return null;
+}
+// a name of the system in an answer: hover shows its card, a click picks and lights it (or opens the part it is in)
+function refLink(text, id, file) {
+  const a = el("a", text, "ref"); a.href = "#";
+  if (id) a.dataset.hid = "b:" + id;
+  a.title = file ? "Show " + file + " in the diagram and read it" : "Show it in the diagram";
+  a.addEventListener("click", e => { e.preventDefault(); pointAt(id, file); });
+  return a;
+}
+function pointAt(id, file) {
+  const n = id ? nodeOf(id) : null;
+  if (n) {
+    ui.pick = "b:" + id; ui.mine = true; ui.last.dia = ""; applyPick();
+    n.scrollIntoView({ block:"center", behavior:"smooth" });
+    n.classList.remove("flash"); void n.getBoundingClientRect(); n.classList.add("flash");
+    if (file) showCode(file, true);
+  } else if (id) { ui.openAfter = file || ""; go("now", id); }
+  else if (file) showCode(file, true);
+}
+// the answer's text as DOM nodes, never as HTML: paragraphs, lists, headings, code blocks, `code` and **bold**
+function inline(text) {
+  const out = [], re = /`([^`\n]+)`|\*\*([^*\n]+)\*\*/g;
+  let at = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > at) out.push(document.createTextNode(text.slice(at, m.index)));
+    out.push(m[1] !== undefined ? el("code", m[1]) : el("strong", m[2]));
+    at = re.lastIndex;
+  }
+  if (at < text.length) out.push(document.createTextNode(text.slice(at)));
+  return out;
+}
+function markdown(src) {
+  const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n"), out = [];
+  let para = [], list = null;
+  const flush = () => {
+    if (para.length) { const p = el("p"); p.append(...inline(para.join(" "))); out.push(p); para = []; }
+    if (list) { out.push(list); list = null; }
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flush();
+      const code = [];
+      for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) code.push(lines[i]);
+      const pre = el("pre"); pre.append(el("code", code.join("\n"))); out.push(pre);
+      continue;
+    }
+    const h = /^\s{0,3}#{1,6}\s+(.*)$/.exec(line), li = /^\s*(?:[-*+]|(\d+)[.)])\s+(.*)$/.exec(line);
+    if (!line.trim()) { flush(); continue; }
+    if (h) { flush(); const e = el("h4"); e.append(...inline(h[1])); out.push(e); continue; }
+    if (li) {
+      if (para.length) { const p = el("p"); p.append(...inline(para.join(" "))); out.push(p); para = []; }
+      const kind = li[1] ? "ol" : "ul";
+      if (!list || list.tagName.toLowerCase() !== kind) { if (list) out.push(list); list = el(kind); }
+      const item = el("li"); item.append(...inline(li[2])); list.append(item);
+      continue;
+    }
+    if (list && /^\s+\S/.test(line)) { list.lastChild.append(" ", ...inline(line.trim())); continue; }
+    if (list) { out.push(list); list = null; }
+    para.push(line.trim());
+  }
+  flush();
+  return out;
+}
+function escapeRe(t) { return t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function linkify(box, links) {
+  const whole = new Map(), plain = [];
+  for (const l of links) { if (!l || !l.text) continue; whole.set(l.text, l); if (!l.code) plain.push(l); }
+  for (const c of [...box.querySelectorAll("code")]) {   // `name` as inline code: the whole of it
+    if (c.parentElement && c.parentElement.tagName === "PRE") continue;
+    const l = whole.get(c.textContent.trim());
+    if (l) { const a = refLink("", l.id, l.file); a.append(c.cloneNode(true)); c.replaceWith(a); }
+  }
+  if (!plain.length) return;
+  plain.sort((a, b) => b.text.length - a.text.length);
+  const re = new RegExp("(?<![\\w/])(" + plain.map(l => escapeRe(l.text)).join("|") + ")(?![\\w])", "g");
+  const by = new Map(plain.map(l => [l.text, l]));
+  const walk = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), nodes = [];
+  while (walk.nextNode()) { const t = walk.currentNode; if (!t.parentElement.closest("code, pre, a")) nodes.push(t); }
+  for (const t of nodes) {
+    const text = t.nodeValue, parts = []; let at = 0, m; re.lastIndex = 0;
+    while ((m = re.exec(text))) {
+      if (m.index > at) parts.push(document.createTextNode(text.slice(at, m.index)));
+      const l = by.get(m[1]); parts.push(refLink(m[1], l.id, l.file)); at = re.lastIndex;
+    }
+    if (!parts.length) continue;
+    if (at < text.length) parts.push(document.createTextNode(text.slice(at)));
+    t.replaceWith(...parts);
+  }
+}
+// what Claude found about a block while answering (the note tool): in its hover card and its details, newest first
+function notesOf(id) {
+  const n = talk.data && talk.data.notes;
+  if (!n || !id || typeof n !== "object") return [];
+  const got = Object.prototype.hasOwnProperty.call(n, id) ? n[id] : n["b:" + rawId(id)];
+  return Array.isArray(got) ? got : [];
+}
+function foundBox(id, canClear) {
+  const ns = notesOf(id);
+  if (!ns.length) return null;
+  const box = el("div", null, "found");
+  box.append(el("div", "Found while answering", "fh"));
+  for (const n of ns) {
+    const row = el("div", null, "fn"), t = el("div");
+    t.append(String(n.text || ""));
+    if (n.question) t.append(el("div", "asked: " + n.question + " · " + ago(n.at), "q"));
+    row.append(t);
+    if (canClear) {
+      const x = el("button", "×", "note-x"); x.type = "button"; x.title = "Clear this note";
+      x.addEventListener("click", () => clearNote(n.nid));
+      row.append(x);
+    }
+    box.append(row);
+  }
+  return box;
+}
+async function clearNote(nid) {
+  try { await fetch("note/clear", { method:"POST", headers:{ "X-Token":TOKEN, "Content-Type":"application/json" },
+                                    body:JSON.stringify({ nid }) }); } catch (e) { /* the next look shows it still */ }
+}
+// what the person is looking at goes with the question: "About: <block › file>", removable
+function aboutText() {
+  const parts = [];
+  if (ui.mine && ui.pick && ui.pick.startsWith("b:")) {
+    const card = hoverOf(ui.pick), g = (ui.data && ui.data.diagram) || {}, x = keyed(g.details, ui.pick);
+    parts.push(String((card && card.title) || (x && x.title) || rawId(ui.pick)).split("  @")[0]);
+  }
+  if (talk.file && !parts.includes(talk.file)) parts.push(talk.file);
+  return parts.join(" › ");
+}
+function paintAbout() {
+  const t = aboutText(), box = $("about");
+  box.hidden = !t || talk.aboutOff === t;
+  $("abouttext").textContent = t ? "About: " + t : "";
+  box.title = t ? "Sent with your question, so Claude knows what you are looking at" : "";
+}
+$("aboutx").addEventListener("click", () => { talk.aboutOff = aboutText(); paintAbout(); });
 function drawDiagram(g) {
   const box = $("dia");
   box.innerHTML = g.svg || "";
@@ -749,7 +1176,7 @@ function drawDiagram(g) {
   }
   box.classList.toggle("enterable", !!(g.enter && Object.keys(g.enter).length) || !!(g.files && Object.keys(g.files).length));
   const shown = $("code").querySelector(".head b");      // a file shown that this diagram no longer has: closed
-  if (shown && !Object.values(g.files || {}).includes(shown.textContent)) { $("code").hidden = true; $("code").replaceChildren(); }
+  if (shown && !Object.values(g.files || {}).includes(shown.textContent) && !ui.openAfter && !cv.pinned) closeCode();
 }
 
 // ---- the page: re-render only what changed ----
@@ -795,7 +1222,10 @@ function render(d) {
   if (!ui.mine) ui.pick = g.pick ? (g.pick.includes(":") ? g.pick : "b:" + g.pick) : "";
   if (changed("after", after)) { $("after").replaceChildren(...after.map(section)); redrawn = true; }
   if (ui.hover && !ui.hover.from.isConnected) ui.hover = null;   // its lane or chip was just redrawn
+  if (d.chat && changed("chat", d.chat)) { renderTalk(d.chat); redrawn = true; }
   if (redrawn || !ui.mine) applyPick();
+  if (ui.openAfter && g.svg) { const f = ui.openAfter; ui.openAfter = ""; showCode(f, true); }
+  if (changed("files", g.files || {})) prefetch(Object.values(g.files || {}).slice(0, 8), false);
 }
 function paintChrome() {
   for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.view === ui.view));
@@ -855,6 +1285,7 @@ async function load(wait) {
   if (polling) { polling.abort(); polling = null; }
   const q = new URLSearchParams({ view:ui.view, part:ui.part, zoom:String(ui.zoom) });
   if (wait && typeof ui.version === "number") q.set("since", String(ui.version));
+  if (wait && typeof talk.stamp === "string") q.set("chat", talk.stamp);
   const ctl = new AbortController(); polling = ctl;
   try {
     const r = await fetch("web?" + q, { cache:"no-store", signal:ctl.signal, headers:{ "X-Token":TOKEN } });
@@ -864,6 +1295,7 @@ async function load(wait) {
     $("error").textContent = d.engine_error && /stopping|stopped/.test(d.engine_error) ? "The engine is stopping: " + d.engine_error : "";
     ui.lastError = d.engine_error || "";
     if (typeof d.version === "number") ui.version = d.version;
+    if (d.chat && typeof d.chat.stamp === "string") talk.stamp = d.chat.stamp;
     render(d);
     return true;
   } catch (e) {
@@ -923,18 +1355,23 @@ async function send() {
   if (!text) { note("type something to send", true); return; }
   $("sendbtn").disabled = true;
   try {
+    const about = aboutText();
     const r = await fetch("send", { method:"POST", headers:{ "X-Token":TOKEN, "Content-Type":"application/json" },
-                                    body:JSON.stringify({ text }) });
+                                    body:JSON.stringify({ text, about:about && talk.aboutOff !== about ? about : "" }) });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.error || r.status + " " + r.statusText);
     $("say").value = "";
     note("sent: it reaches Claude through the pane within a few seconds");
+    setTalk(true);
   } catch (e) { note("not sent: " + e.message, true); }
   finally { $("sendbtn").disabled = false; }
 }
 $("send").addEventListener("submit", e => { e.preventDefault(); send(); });
+// Enter sends; Shift+Enter is a new line (Ctrl/Cmd+Enter sends too); never while an IME is composing a word
 $("say").addEventListener("keydown", e => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+  if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
+  if (e.shiftKey && !(e.ctrlKey || e.metaKey)) return;
+  e.preventDefault(); send();
 });
 document.addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -945,11 +1382,12 @@ document.addEventListener("keydown", e => {
   else if (e.key === "h") go("history", ui.mine && ui.pick && ui.pick.startsWith("b:") ? rawId(ui.pick) : "");
   else if (e.key === "b" || e.key === "Backspace") back();
   else if (e.key === "f") go("now", "");
+  else if (e.key === "c") setTalk(!talk.open);
   else if (e.key === "[") switchProject(-1);
   else if (e.key === "]") switchProject(1);
   else if (e.key === "-") zoomBy(1);
   else if (e.key === "+" || e.key === "=") zoomBy(-1);
-  else if (e.key === "Escape") { hideTip(); ui.mine = false; ui.pick = ""; ui.last.dia = ""; ui.hover = null; render(ui.data || {}); }
+  else if (e.key === "Escape") { hideTip(); hideCodeCard(); ui.mine = false; ui.pick = ""; ui.last.dia = ""; ui.hover = null; render(ui.data || {}); }
 });
 paintChrome();
 follow();
@@ -1259,7 +1697,18 @@ def handler(w: Watcher):
                 if not self._authorized():
                     return self._json(403, {"error": "forbidden"})
                 got = read_code_file(w.root, self._query().get("path", ""))
+                if got.get("text") is not None:
+                    got.update(file_extras(w, got["path"], got["text"]))
                 return self._json(200 if got.get("text") is not None else 404, got)
+            if path == "/summary":    # a file's LLM summary as it is now (started if not yet: prefetch=1 when hovered)
+                if not self._authorized():
+                    return self._json(403, {"error": "forbidden"})
+                q = self._query()
+                got = read_code_file(w.root, q.get("path", ""))
+                if got.get("text") is None:
+                    return self._json(404, got)
+                extra = file_extras(w, got["path"], got["text"], prefetch=q.get("prefetch") == "1")
+                return self._json(200, {"path": got["path"], "summary": extra["summary"]})
             if path == "/progress":   # where the engine is, at once however busy it is (the pane shows it meanwhile)
                 if not self._authorized():
                     return self._json(403, {"error": "forbidden"})
@@ -1281,15 +1730,19 @@ def handler(w: Watcher):
             except ValueError:
                 raise ValueError("since is a version number") from None
 
-        def _wait(self, since: Optional[int], key: tuple, take: bool = False) -> None:
+        def _wait(self, since: Optional[int], key: tuple, take: bool = False, also=None) -> None:
             """A long poll: while the engine's version is still `since` and this very page is drawn at it, wait for
             the next version (at most LONG_POLL). A page not drawn at it yet (another width, say) is answered at
-            once; with `take`, also as soon as the web page sends something to Claude."""
+            once; with `take`, also as soon as the web page sends something to Claude; with `also`, as soon as it
+            says so (the conversation panel changed)."""
             e = w.engine
             if e is None or since is None or since != e.version or w.pages is None or not w.pages.current(key):
                 return
+            if also is not None and also():
+                return
             box = e._sd / OUTBOX
-            e.wait(since, live.LONG_POLL, (lambda: box.exists()) if take else None)
+            took = (lambda: box.exists()) if take else None
+            e.wait(since, live.LONG_POLL, (lambda: (took is not None and took()) or also()) if also else took)
 
         def _web(self):
             """One view of the pane as data for the page: pane.web_view's JSON, with the engine's "version" it was
@@ -1307,14 +1760,16 @@ def handler(w: Watcher):
             if not -1 <= zoom <= 2:
                 return self._json(400, {"error": "zoom is -1 (auto), 0, 1 or 2"})
             part = q.get("part", "")[:200]
+            had = q.get("chat")   # the conversation panel's stamp the page has: a change to it answers the poll too
             try:
                 key = ("web", view, zoom, part)
-                self._wait(since, key)
+                self._wait(since, key, also=(lambda: chat.stamp(w.root) != had) if had is not None else None)
                 version, page = _page_of(w, key)
                 w.looked = max(w.looked, version)   # the page shows this: no dot on this project's tab
             except Exception as exc:  # noqa: BLE001 - the page shows it and keeps polling
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
-            return self._json(200, {**page, "version": version, "engine_error": w.last_error()})
+            return self._json(200, {**page, "version": version, "engine_error": w.last_error(),
+                                    "chat": chat_view(w, page)})
 
         def _projects(self, path: str):
             """The project tabs (GET /projects: every running engine of this user, from the registry cleaned of
@@ -1445,6 +1900,8 @@ def handler(w: Watcher):
             text = text.strip() if isinstance(text, str) else ""
             if not 1 <= len(text) <= SEND_MAX:
                 return self._json(400, {"error": f"text is 1 to {SEND_MAX} characters"})
+            about = body.get("about") if isinstance(body.get("about"), str) else ""
+            text = chat.with_about(about, text)   # what the person is looking at, as a short first line
             try:
                 line = outbox_put(w.root, text)
             except OSError as exc:
@@ -1452,6 +1909,27 @@ def handler(w: Watcher):
             if w.engine is not None:
                 w.engine.poke()   # the pane's long poll takes it now
             return self._json(200, {"id": line["id"], "queued": True})
+
+        def _post_clear_note(self):
+            """The person clears a note Claude kept about a block ({"nid"}): the page's token and origin only."""
+            if self.headers.get("X-Token") != w.token or not self._same_origin():
+                self._drain()
+                return self._json(403, {"error": "forbidden"})
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(max(0, min(n, SEND_BODY_MAX))).decode("utf-8") or "null")
+            except (ValueError, UnicodeDecodeError):
+                return self._json(400, {"error": "the body is JSON: {\"nid\": \"...\"}"})
+            nid = body.get("nid") if isinstance(body, dict) else None
+            if not isinstance(nid, str) or not nid:
+                return self._json(400, {"error": "nid names a note"})
+            try:
+                gone = chat.clear_note(w.root, nid)
+            except OSError as exc:
+                return self._json(500, {"error": str(exc)})
+            if w.engine is not None:
+                w.engine.poke()
+            return self._json(200 if gone else 404, {"cleared": gone})
 
         def _post_mark(self):
             """Point one of system-diff's refs ({"ref": "refs/worktree/system-diff/…"}: the turn, a checkpoint) at
@@ -1507,6 +1985,8 @@ def handler(w: Watcher):
                 return self._post_mark()
             if urlsplit(self.path).path == "/send":
                 return self._post_send()
+            if urlsplit(self.path).path == "/note/clear":
+                return self._post_clear_note()
             if urlsplit(self.path).path == "/touch":
                 return self._post_touch()
             if urlsplit(self.path).path == "/quit":
@@ -1573,6 +2053,58 @@ def reading_page(w: "Watcher", key: tuple) -> Dict[str, Any]:
 
 def progress_line(got: Dict[str, Any]) -> str:
     return live.progress_text(got)
+
+
+_CHAT_CACHE: Dict[str, Any] = {}
+
+
+def chat_index(w: "Watcher", page: Optional[Dict[str, Any]] = None) -> "chat.Index":
+    """The system's names → blocks, from the engine's blueprint and the boxes this page's diagram names."""
+    held = w.engine.held if w.engine is not None else None
+    titles = {}
+    for bid, card in ((page or {}).get("hover") or {}).items():
+        if bid.startswith("b:") and isinstance(card, dict) and card.get("title"):
+            titles[bid] = str(card["title"]).split("  @")[0]
+    try:
+        code = Code(held.cfg) if held is not None else None
+    except Exception:  # noqa: BLE001
+        code = None
+    if code is None:
+        try:
+            from .config import lenient
+            code = Code(lenient(w.root))
+        except Exception:  # noqa: BLE001
+            code = None
+    return chat.Index(held.blueprint if held is not None else None, code, w.root, titles)
+
+
+def chat_view(w: "Watcher", page: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The conversation panel's data (chat.view), kept while nothing it is made of changed."""
+    try:
+        held = w.engine.held if w.engine is not None else None
+        titles = sorted(k for k in ((page or {}).get("hover") or {}) if k.startswith("b:"))
+        key = json.dumps([chat.stamp(w.root), id(held.blueprint) if held is not None else 0, titles])
+        if _CHAT_CACHE.get("key") != key:
+            _CHAT_CACHE["value"] = chat.view(w.root, chat_index(w, page))
+            _CHAT_CACHE["key"] = key
+        return _CHAT_CACHE["value"]
+    except Exception as exc:  # noqa: BLE001 - the panel is extra; the page goes on
+        return {"stamp": "", "items": [], "pointing": None, "notes": {}, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def file_extras(w: "Watcher", path: str, text: str, prefetch: bool = False) -> Dict[str, Any]:
+    """A file's outline (one chunk per class and function, for the viewer's skim column) and its LLM summary (made in
+    the background the first time a version of the file is opened or prefetched)."""
+    from . import fileview
+    data = text.encode("utf-8")
+    blob = fileview.blob_id(data)
+    try:
+        index = chat_index(w)
+    except Exception:  # noqa: BLE001
+        index = None
+    out = fileview.outline(path, text, w.root, index, blob)
+    return {"blob": blob, "outline": out,
+            "summary": fileview.summarize(w.root, path, text, blob, out.get("chunks") or [], prefetch=prefetch)}
 
 
 def _page_of(w: "Watcher", key: tuple) -> tuple:

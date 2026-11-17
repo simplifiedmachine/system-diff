@@ -17,7 +17,7 @@
    "label": "Agent activity",
    "layer": "",
    "kind": "data",
-   "order": 33,
+   "order": 35,
    "container": "",
    "declared": true,
    "files": 1,
@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 838,
+   "lines": 844,
    "hub": false,
    "quiet": false
   },
@@ -65,11 +65,23 @@
    "label": "Pane pictures",
    "layer": "",
    "kind": "logic",
-   "order": 25,
+   "order": 27,
    "container": "",
    "declared": true,
    "files": 1,
    "lines": 542,
+   "hub": false,
+   "quiet": false
+  },
+  "chat": {
+   "label": "Conversation",
+   "layer": "",
+   "kind": "logic",
+   "order": 22,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 558,
    "hub": false,
    "quiet": false
   },
@@ -157,6 +169,18 @@
    "hub": false,
    "quiet": false
   },
+  "fileview": {
+   "label": "File view",
+   "layer": "",
+   "kind": "logic",
+   "order": 23,
+   "container": "",
+   "declared": true,
+   "files": 1,
+   "lines": 548,
+   "hub": false,
+   "quiet": false
+  },
   "gitfs": {
    "label": "Git reader",
    "layer": "",
@@ -185,7 +209,7 @@
    "label": "History",
    "layer": "",
    "kind": "logic",
-   "order": 22,
+   "order": 24,
    "container": "",
    "declared": true,
    "files": 1,
@@ -221,7 +245,7 @@
    "label": "Lessons and topics",
    "layer": "",
    "kind": "logic",
-   "order": 29,
+   "order": 31,
    "container": "",
    "declared": true,
    "files": 3,
@@ -249,7 +273,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 332,
+   "lines": 372,
    "hub": false,
    "quiet": false
   },
@@ -257,7 +281,7 @@
    "label": "Readable names",
    "layer": "",
    "kind": "logic",
-   "order": 23,
+   "order": 25,
    "container": "",
    "declared": true,
    "files": 1,
@@ -269,7 +293,7 @@
    "label": "LLM summary",
    "layer": "",
    "kind": "logic",
-   "order": 27,
+   "order": 29,
    "container": "",
    "declared": true,
    "files": 1,
@@ -281,7 +305,7 @@
    "label": "Objectives",
    "layer": "",
    "kind": "logic",
-   "order": 24,
+   "order": 26,
    "container": "",
    "declared": true,
    "files": 1,
@@ -297,7 +321,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2560,
+   "lines": 2580,
    "hub": false,
    "quiet": false
   },
@@ -317,7 +341,7 @@
    "label": "PNG rendering",
    "layer": "",
    "kind": "logic",
-   "order": 31,
+   "order": 33,
    "container": "",
    "declared": true,
    "files": 1,
@@ -329,7 +353,7 @@
    "label": "src/system_diff",
    "layer": "undeclared",
    "kind": "",
-   "order": 34,
+   "order": 36,
    "container": "",
    "declared": false,
    "files": 1,
@@ -341,7 +365,7 @@
    "label": "README section",
    "layer": "",
    "kind": "logic",
-   "order": 26,
+   "order": 28,
    "container": "",
    "declared": true,
    "files": 1,
@@ -353,7 +377,7 @@
    "label": "LLM regrouping",
    "layer": "",
    "kind": "logic",
-   "order": 28,
+   "order": 30,
    "container": "",
    "declared": true,
    "files": 1,
@@ -365,7 +389,7 @@
    "label": "Git and folder sources",
    "layer": "",
    "kind": "data",
-   "order": 32,
+   "order": 34,
    "container": "",
    "declared": true,
    "files": 1,
@@ -389,7 +413,7 @@
    "label": "Terminal pictures",
    "layer": "",
    "kind": "logic",
-   "order": 30,
+   "order": 32,
    "container": "",
    "declared": true,
    "files": 1,
@@ -417,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2006,
+   "lines": 2538,
    "hub": false,
    "quiet": false
   }
@@ -429,6 +453,7 @@
   "activity>sources": 1,
   "agent>activity": 1,
   "agent>agents": 1,
+  "agent>chat": 1,
   "agent>compare": 1,
   "agent>config": 1,
   "agent>design": 1,
@@ -453,6 +478,9 @@
   "architecture>names": 1,
   "architecture>sources": 1,
   "canvas>pictures": 1,
+  "chat>activity": 1,
+  "chat>extract": 2,
+  "chat>sources": 1,
   "cli>activity": 1,
   "cli>agent": 4,
   "cli>compare": 1,
@@ -511,6 +539,11 @@
   "extract>config": 1,
   "extract>sources": 1,
   "extract>src/system_diff": 1,
+  "fileview>activity": 2,
+  "fileview>config": 1,
+  "fileview>extract": 2,
+  "fileview>narrate": 2,
+  "fileview>sources": 1,
   "gitfs>sources": 2,
   "graph>diff": 1,
   "graph>pictures": 1,
@@ -551,6 +584,7 @@
   "mcp>activity": 1,
   "mcp>agent": 1,
   "mcp>agents": 1,
+  "mcp>chat": 2,
   "mcp>compare": 1,
   "mcp>config": 1,
   "mcp>extract": 2,
@@ -572,6 +606,7 @@
   "panel>agents": 1,
   "panel>architecture": 2,
   "panel>canvas": 1,
+  "panel>chat": 2,
   "panel>compare": 6,
   "panel>config": 4,
   "panel>design": 1,
@@ -616,11 +651,13 @@
   "tui>src/system_diff": 1,
   "watch>activity": 1,
   "watch>agent": 1,
+  "watch>chat": 1,
   "watch>cli": 4,
   "watch>compare": 1,
-  "watch>config": 1,
+  "watch>config": 2,
   "watch>diff": 1,
   "watch>extract": 2,
+  "watch>fileview": 1,
   "watch>graph": 1,
   "watch>hub": 1,
   "watch>learn": 1,
@@ -656,6 +693,11 @@
    "after_edit",
    "deliver",
    "tie"
+  ],
+  "agent>chat": [
+   "WEB_HINT",
+   "answered",
+   "asked"
   ],
   "agent>compare": [
    "compare_worktree",
@@ -760,6 +802,15 @@
   ],
   "canvas>pictures": [
    "OP"
+  ],
+  "chat>activity": [
+   "part_of"
+  ],
+  "chat>extract": [
+   "redact"
+  ],
+  "chat>sources": [
+   "git_dir"
   ],
   "cli>activity": [
    "after_checkpoint"
@@ -1008,6 +1059,25 @@
    "stage",
    "_stage"
   ],
+  "fileview>activity": [
+   "part_of"
+  ],
+  "fileview>config": [
+   "lenient"
+  ],
+  "fileview>extract": [
+   "ENV_PY",
+   "ENV_TS",
+   "redact"
+  ],
+  "fileview>narrate": [
+   "complete",
+   "configured",
+   "off"
+  ],
+  "fileview>sources": [
+   "git_dir"
+  ],
   "gitfs>sources": [
    "SPAWNS",
    "run_hidden"
@@ -1189,6 +1259,10 @@
    "publish",
    "state"
   ],
+  "mcp>chat": [
+   "add_note",
+   "point"
+  ],
   "mcp>compare": [
    "compare",
    "checkpoint",
@@ -1292,6 +1366,11 @@
    "detail_rows",
    "layered",
    "chips"
+  ],
+  "panel>chat": [
+   "delivered",
+   "notes",
+   "notes_by_block"
   ],
   "panel>compare": [
    "compare",
@@ -1497,6 +1576,13 @@
    "hook_work",
    "say_later"
   ],
+  "watch>chat": [
+   "Index",
+   "stamp",
+   "view",
+   "clear_note",
+   "with_about"
+  ],
   "watch>cli": [
    "__version__"
   ],
@@ -1516,6 +1602,11 @@
   ],
   "watch>extract": [
    "Code"
+  ],
+  "watch>fileview": [
+   "blob_id",
+   "outline",
+   "summarize"
   ],
   "watch>graph": [
    "change_marks",
@@ -1581,6 +1672,9 @@
    "PYTEST_CURRENT_TEST",
    "SYSTEM_DIFF_EXPLAIN",
    "SYSTEM_DIFF_EXPLAIN_JOBS"
+  ],
+  "fileview": [
+   "PYTEST_CURRENT_TEST"
   ],
   "history": [
    "PYTEST_CURRENT_TEST",
@@ -1659,6 +1753,15 @@
    "collections": 1,
    "textwrap": 1,
    "typing": 1
+  },
+  "chat": {
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "time": 1,
+   "typing": 1,
+   "uuid": 1
   },
   "cli": {
    "pathlib": 2,
@@ -1740,6 +1843,19 @@
    "paths": 1,
    "re": 1,
    "shutil": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1
+  },
+  "fileview": {
+   "ast": 1,
+   "collections": 1,
+   "hashlib": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "posixpath": 1,
+   "re": 1,
    "threading": 1,
    "time": 1,
    "typing": 1
@@ -2012,6 +2128,15 @@
    "textwrap": 1,
    "typing": 1
   },
+  "chat": {
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "re": 1,
+   "time": 1,
+   "typing": 1,
+   "uuid": 1
+  },
   "cli": {
    "pathlib": 2,
    "sys": 2,
@@ -2092,6 +2217,19 @@
    "paths": 1,
    "re": 1,
    "shutil": 1,
+   "threading": 1,
+   "time": 1,
+   "typing": 1
+  },
+  "fileview": {
+   "ast": 1,
+   "collections": 1,
+   "hashlib": 1,
+   "json": 1,
+   "os": 1,
+   "pathlib": 1,
+   "posixpath": 1,
+   "re": 1,
    "threading": 1,
    "time": 1,
    "typing": 1
@@ -2359,7 +2497,8 @@
   "tests/test_terminal_and_learning.py": 1,
   "tests/test_topics_and_link.py": 1,
   "tests/test_tui.py": 1,
-  "tests/test_web.py": 1
+  "tests/test_web.py": 1,
+  "tests/test_web_chat.py": 1
  },
  "connections": {},
  "part_tables": {}

@@ -33,7 +33,9 @@ INSTRUCTIONS = (
     "plan_agents and launch its agents in parallel as subagents; agents claim their blocks with claim, tell others "
     "about changes with publish (topics are block ids), and read what others published with inbox. objectives lists what "
     "the person has been optimising for (learned from their requests); when you evaluate or test one, report it with "
-    "check_objective."
+    "check_objective. When the person asks from the system-diff web page (their prompt says so, or starts with '[About: '), "
+    "call point_to with the parts you are explaining so the page lights them in its diagram, and note to keep a "
+    "short finding about a part beside it."
 )
 WIDTH = 100  # the columns a diagram is drawn for
 
@@ -227,6 +229,25 @@ def tool_check_objective(root: Path, agent: str, objective: str, status: str, no
         return {"error": str(exc)}
 
 
+def tool_point_to(root: Path, parts: List[str], note: str = "") -> Dict[str, Any]:
+    from . import chat
+    if not isinstance(parts, list) or not any(isinstance(p, str) and p.strip() for p in parts):
+        return {"error": "name at least one part, file, entry point or table"}
+    rec = chat.point(root, parts, note)
+    return {"pointing_at": rec["parts"], "note": rec["note"],
+            "shown": "the system-diff web page lights these in its diagram now"}
+
+
+def tool_note(root: Path, part: str, text: str) -> Dict[str, Any]:
+    from . import chat
+    try:
+        rec = chat.add_note(root, part, text)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return {"noted": rec["text"], "part": rec["part"],
+            "shown": "in the block's hover card and details on the web page, under Found while answering"}
+
+
 def build() -> Server:
     server = Server("system-diff", instructions=INSTRUCTIONS)
 
@@ -316,6 +337,25 @@ def build() -> Server:
         `agent` is your name in the team plan (or "main"). The person sees it, and the other agents get it on the bus
         (topic "objective:<id>")."""
         return tool_check_objective(_root(), agent, objective, status, note)
+
+    @server.tool()
+    def point_to(parts: List[str], note: str = "") -> Dict[str, Any]:
+        """Point at parts of the system on the person's system-diff web page: it lights them in its diagram at once,
+        scrolls to them and shows "Claude is pointing at: …" beside your answer. Use it whenever you explain parts
+        of the system to the person (above all when the question came from the web page), as you name each part.
+        `parts`: blocks by their readable names or ids (parts, containers, outside systems, actors), files of the
+        system (paths), entry points ("POST /chat") or table names; at most 12. `note`: one short line on why
+        (optional). Each call replaces the last pointing."""
+        return tool_point_to(_root(), parts, note)
+
+    @server.tool()
+    def note(part: str, text: str) -> Dict[str, Any]:
+        """Keep a short finding (at most ~300 characters) about one block of the system, discovered while answering
+        the person: something not obvious from the structure (a hidden coupling, a surprising behaviour, a risk). It
+        shows on the web page in the block's hover card and details under "Found while answering", with the
+        question it came from; the person can clear it. `part`: the block's name or id, or a file in it. Never put
+        secrets in it (they are masked anyway)."""
+        return tool_note(_root(), part, text)
 
     @server.tool()
     def team() -> Dict[str, Any]:

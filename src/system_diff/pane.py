@@ -1071,7 +1071,25 @@ def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = N
     out["zoom"] = ZOOM
     out["web"] = web_url(root)
     out["send"] = take_outbox(root) if take else []
+    _found_notes(root, out, width)
     return out
+
+
+def _found_notes(root: Path, page: Dict[str, Any], width: int) -> None:
+    """What Claude found about a block while answering (the note tool), in the block's detail slot: only for a block
+    that has nothing better there. Never raises."""
+    try:
+        from . import chat
+        by = chat.notes_by_block(chat.notes(root), 1)
+        if not by:
+            return
+        details = page.setdefault("details", {})
+        for b in page.get("blocks") or []:
+            bid = b.get("id") if isinstance(b, dict) else None
+            if bid in by and not details.get(bid):
+                details[bid] = canvas.detail_rows(by[bid][0]["text"], width, "muted", ("Found while answering: ", "bold"))
+    except Exception:  # noqa: BLE001 - a note is extra
+        pass
 
 
 OUTBOX = "outbox.jsonl"   # what the web page's Send to Claude box wrote, for the pane to submit to the session
@@ -1106,6 +1124,8 @@ def take_outbox(root: Path) -> List[Dict[str, str]]:
         taken.unlink()
     except Exception:
         pass
+    from . import chat
+    chat.delivered(root, out)   # the web page's panel: delivered to the session
     return out
 
 

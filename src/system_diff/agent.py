@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from . import activity, agents, config, design, learn
+from . import activity, agents, chat, config, design, learn
 from .compare import compare_worktree, mark_turn, turn_sha
 from .extract import Code
 from .sources import git, git_dir, run_hidden
@@ -454,8 +454,12 @@ def on_prompt(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[D
     activity.new_turn(root)
     activity.record(root, {"at": at, "event": activity.PROMPT, "text": _clip(payload.get("prompt"), 300),
                            "session": payload.get("session_id", ""), "agent": payload.get("agent_id") or ""})
+    asked = None if payload.get("agent_id") else chat.asked(root, payload.get("prompt") or "",
+                                                              payload.get("session_id", ""), at)
     hand_off(root, {"event": "prompt", "at": at, "agent": payload.get("agent_id") or ""}, PROMPT_WAIT, env)
     aims = objectives_context(root)
+    if asked and asked.get("web"):   # sent from the web page: Claude may point at the diagram as it answers
+        aims = chat.WEB_HINT + ("\n\n" + aims if aims else "")
     if (config.lenient(root).get("agents") or {}).get("orchestrate", True) is False or payload.get("agent_id"):
         return {"context": aims} if aims else None
     return {"context": agents.ORCHESTRATE + ("\n\n" + aims if aims else "")}
@@ -575,6 +579,8 @@ def on_stop(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[str
     than the hook waits, the next hook does)."""
     activity.record(root, {"event": activity.STOP, "text": _clip(payload.get("last_assistant_message"), 400),
                            "session": payload.get("session_id", "")})
+    if not payload.get("agent_id"):
+        chat.answered(root, payload)   # the answer, for the web page's conversation panel
     late = [x.get("message") for x in take_said(root, payload.get("agent_id") or "") if x.get("message")]
     got = hand_off(root, {"event": "stop", "agent": payload.get("agent_id") or ""}, STOP_WAIT, env) or {}
     return "; ".join(m for m in [*late[-1:], got.get("message")] if m) or None
