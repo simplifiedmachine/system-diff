@@ -159,7 +159,8 @@ def test_an_engine_that_starts_later_marks_the_turn_it_missed(repo, monkeypatch)
     t.start()
     try:
         deadline = time.time() + 30
-        while time.time() < deadline and not compare.turn_sha(repo):
+        # the engine marks the turn, then notes which prompt it was for: wait for both (a slow runner can look between)
+        while time.time() < deadline and not (compare.turn_sha(repo) and agent.turn_marked_at(repo) == prompt_at):
             time.sleep(0.1)
         assert compare.turn_sha(repo) and agent.turn_marked_at(repo) == prompt_at
     finally:
