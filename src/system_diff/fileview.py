@@ -442,6 +442,8 @@ def _summary_file(root: Path, blob: str) -> Path:
 
 _JOBS: Dict[str, float] = {}       # blob → when its job started (running) or failed (negative)
 _JOBS_LOCK = threading.Lock()
+_OPENED: set = set()                # blobs of files the person opened, waiting or being summarised: they go first
+_WHY: Dict[str, str] = {}           # blob → why its last try failed
 
 
 def summary(root: Path, blob: str) -> Optional[Dict[str, Any]]:
@@ -500,17 +502,28 @@ def summarize(root: Path, path: str, text: str, blob: str, chunks: List[Dict[str
         if was is not None and was > 0:
             return {"state": "summarizing"}
         if was is not None and now + was < RETRY_AFTER:   # failed lately
-            return {"state": "failed", "why": "the LLM gave no usable answer; tried again in a few minutes"}
+            return {"state": "failed", "why": (_WHY.get(blob) or "the LLM gave no usable answer") +
+                    "; tried again in a few minutes"}
         if prefetch and sum(1 for v in _JOBS.values() if v > 0) >= PREFETCH_MOST:
             return {"state": "later"}
         _JOBS[blob] = now
-    threading.Thread(target=_job, args=(Path(root), path, text, blob, list(chunks)), daemon=True,
+    threading.Thread(target=_job, args=(Path(root), path, text, blob, list(chunks), prefetch), daemon=True,
                      name="system-diff-summary").start()
     return {"state": "summarizing"}
 
 
-def _job(root: Path, path: str, text: str, blob: str, chunks: List[Dict[str, Any]]) -> None:
+def _job(root: Path, path: str, text: str, blob: str, chunks: List[Dict[str, Any]], prefetch: bool = False) -> None:
     ok = False
+    # a file the person opened goes before files read ahead: prefetches wait while an opened one waits or runs
+    if prefetch:
+        while True:
+            with _JOBS_LOCK:
+                if not _OPENED:
+                    break
+            time.sleep(0.2)
+    else:
+        with _JOBS_LOCK:
+            _OPENED.add(blob)
     _RUN.acquire()
     try:
         from . import config, narrate
@@ -527,11 +540,17 @@ def _job(root: Path, path: str, text: str, blob: str, chunks: List[Dict[str, Any
                 tmp.write_text(json.dumps({"path": path, **parsed}, ensure_ascii=False), encoding="utf-8")
                 os.replace(tmp, f)
                 ok = True
-    except Exception:  # noqa: BLE001 - a summary is a convenience
+            else:
+                _WHY[blob] = "the LLM's answer did not fit this file's outline"
+        else:
+            _WHY[blob] = getattr(narrate, "LAST_ERROR", [""])[0].removeprefix("system-diff: ") or "no LLM answered"
+    except Exception as exc:  # noqa: BLE001 - a summary is a convenience: say why it failed, try again later
         ok = False
+        _WHY[blob] = f"{type(exc).__name__}: {str(exc)[:160]}"
     finally:
         _RUN.release()
         with _JOBS_LOCK:
+            _OPENED.discard(blob)
             if ok:
                 _JOBS.pop(blob, None)
             else:

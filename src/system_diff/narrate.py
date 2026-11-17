@@ -118,9 +118,21 @@ def cli_command(s: Dict[str, Any]) -> List[str]:
     """`claude -p` asked once: JSON out, the prompt on stdin (never on the command line: Windows' .cmd wrappers mangle
     quotes and new lines), no tools, no MCP servers, no slash commands, no session kept on disk (so no transcript
     lands among the person's own, where the objectives would read it as their request)."""
-    return [s["path"], "-p", "--output-format", "json", "--model", s["model"], "--tools", "",
-            "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence",
+    return [s["path"], "-p", *(["--bare"] if bare_ok() else []), "--output-format", "json", "--model", s["model"],
+            "--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence",
             "--system-prompt", CLI_SYSTEM]
+
+
+def bare_ok(env=os.environ) -> bool:
+    """Whether `claude -p --bare` can sign in here: it skips hooks, plugins and the rest of a session's start (seconds
+    on a slow machine), but reads no OAuth login, so only a cloud provider's own credentials (Bedrock, Vertex, Foundry)
+    or an API key will do. SYSTEM_DIFF_CLAUDE_BARE=0/1 overrides."""
+    forced = env.get("SYSTEM_DIFF_CLAUDE_BARE", "").strip()
+    if forced in ("0", "1"):
+        return forced == "1"
+    on = lambda k: env.get(k, "").strip().lower() not in ("", "0", "false", "no", "off")
+    return (on("CLAUDE_CODE_USE_BEDROCK") or on("CLAUDE_CODE_USE_VERTEX") or on("CLAUDE_CODE_USE_FOUNDRY")
+            or bool(env.get("ANTHROPIC_API_KEY", "").strip()))
 
 
 def _cli_env() -> Dict[str, str]:
@@ -188,12 +200,16 @@ def narrate(d: dict, commits: str, root: Path, cfg: Dict[str, Any], timeout: int
     return f"{got[0]}\n\n_Summary written by {got[1]} from the exact diff below._" if got else None
 
 
+LAST_ERROR = [""]   # why the last ask failed, for the page to say
+
+
 def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: int = 120,
              limit: int = 1500) -> Optional[Tuple[str, str]]:
     """The first answer an LLM gives from here, and who gave it: (text, "model (where it is set)"); else None.
     Asks Claude Code's gateway, else one set in the shell, else the `claude` CLI; none with SYSTEM_DIFF_LLM=off."""
     if off():
         return None
+    LAST_ERROR[0] = ""
     claude = claude_llm(root, cfg.get("narrate", {}).get("settings", []))
     if claude:
         # With a thinking budget first (some gateways' reasoning models need one); without it if refused.
@@ -203,9 +219,11 @@ def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: i
             except urllib.error.HTTPError as exc:
                 if exc.code == 400 and attempt.get("thinking"):
                     continue  # this model or gateway takes no thinking parameter
+                LAST_ERROR[0] = f"system-diff: {claude['model']} via {claude['source']}: HTTP {exc.code}"
                 print(f"system-diff: {claude['model']} via {claude['source']}: HTTP {exc.code}", file=sys.stderr)
                 break
             except (OSError, ValueError) as exc:  # not reachable from here, or not JSON
+                LAST_ERROR[0] = f"system-diff: {claude['model']} via {claude['source']}: {type(exc).__name__}: {str(exc)[:120]}"
                 print(f"system-diff: {claude['model']} via {claude['source']}: {type(exc).__name__}: {str(exc)[:120]}",
                       file=sys.stderr)
                 break
@@ -217,6 +235,7 @@ def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: i
             try:
                 text = ask(shell, user, tokens, timeout, system)
             except (OSError, ValueError) as exc:
+                LAST_ERROR[0] = f"system-diff: {shell['model']} via {shell['base_url']}: {type(exc).__name__}: {str(exc)[:120]}"
                 print(f"system-diff: {shell['model']} via {shell['base_url']}: {type(exc).__name__}: {str(exc)[:120]}",
                       file=sys.stderr)
                 break
@@ -229,6 +248,7 @@ def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: i
         try:
             text, model = ask_cli(cli, user, timeout, system)
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            LAST_ERROR[0] = f"system-diff: claude -p --model {cli['model']}: {type(exc).__name__}: {str(exc)[:160]}"
             print(f"system-diff: claude -p --model {cli['model']}: {type(exc).__name__}: {str(exc)[:160]}",
                   file=sys.stderr)
             return None

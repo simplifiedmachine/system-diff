@@ -394,3 +394,11 @@ def test_nothing_is_sent_with_the_llm_off(served, repo, monkeypatch):
     monkeypatch.setenv("SYSTEM_DIFF_LLM", "off")
     s, d = _call(url + "file?path=app/core/rules.py", headers={"X-Token": w.token})
     assert s == 200 and d["summary"]["state"] == "off" and "No LLM available" in d["summary"]["why"]
+
+
+def test_a_lean_claude_call_only_where_its_sign_in_works():
+    from system_diff import narrate
+    assert narrate.bare_ok({"CLAUDE_CODE_USE_BEDROCK": "1"}) and narrate.bare_ok({"ANTHROPIC_API_KEY": "sk-x"})
+    assert not narrate.bare_ok({}) and not narrate.bare_ok({"CLAUDE_CODE_USE_BEDROCK": "0"})   # a subscription: OAuth
+    assert narrate.bare_ok({"SYSTEM_DIFF_CLAUDE_BARE": "1"}) and not narrate.bare_ok({"ANTHROPIC_API_KEY": "k",
+                                                                                     "SYSTEM_DIFF_CLAUDE_BARE": "0"})
