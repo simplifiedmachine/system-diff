@@ -136,7 +136,7 @@ def test_the_stop_hook_keeps_the_answer_from_the_payload_matched_to_the_web_ques
     item = v["items"][-1]
     assert item["status"] == "answered" and item["key"] == line["id"] and item["question"] == "What does approve do?"
     assert item["answer"].startswith("It approves") and item["from"] == "web"
-    rec = json.loads((git_dir(repo) / chat.ANSWERS).read_text().splitlines()[-1])
+    rec = json.loads((git_dir(repo) / chat.ANSWERS).read_text(encoding="utf-8").splitlines()[-1])
     assert rec["id"] == line["id"]
 
 
@@ -269,7 +269,7 @@ def test_the_server_serves_chat_with_auth_and_wakes_the_long_poll(served, repo):
     assert _call(url + "send", "POST", {"X-Token": w.token, "Content-Type": "application/json"}, {"text": "hi"})[0] == 403
     s, got = _call(url + "send", "POST", own, {"text": "what is Core?", "about": "Core › app/core/rules.py"})
     assert s == 200
-    line = (git_dir(repo) / "outbox.jsonl").read_text().splitlines()[-1]
+    line = (git_dir(repo) / "outbox.jsonl").read_text(encoding="utf-8").splitlines()[-1]
     assert json.loads(line)["text"] == "[About: Core › app/core/rules.py]\nwhat is Core?"
     assert _call(url + "web?view=now")[0] == 200   # same-origin rules as before: the token, or the page itself
     s, d = _call(url + "web?view=now", headers={"X-Token": w.token})

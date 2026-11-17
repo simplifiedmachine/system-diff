@@ -290,7 +290,7 @@ def launcher(tmp_path):
                "CLAUDE_PROJECT_DIR": str(project), "LOG": str(log)}
         got = subprocess.run([SH, str(PLUGIN / "scripts" / "run.sh"), *args], input=stdin, capture_output=True,
                              text=True, env=env, cwd=project, timeout=30)
-        starts = log.read_text().splitlines() if log.exists() else []
+        starts = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
         if log.exists():
             log.unlink()
         return got, starts
@@ -308,7 +308,7 @@ def test_run_sh_starts_system_diff_on_path_and_nothing_else(launcher):
     for _ in range(2):
         got, starts = launcher["call"]("hook", stdin='{"hook_event_name": "Stop"}')
         assert got.returncode == 0 and starts == ["system-diff hook", 'stdin {"hook_event_name": "Stop"}']
-    assert (launcher["data"] / "runner").read_text().split() == ["exe", "system-diff"]
+    assert (launcher["data"] / "runner").read_text(encoding="utf-8").split() == ["exe", "system-diff"]
 
 
 @pytest.mark.skipif(SH is None, reason="no sh")
@@ -323,7 +323,7 @@ def test_run_sh_asks_the_pythons_once_and_keeps_the_answer(launcher):
     _fake(launcher["bin"], "python3", RECORD + 'echo "No module named system_diff" >&2; exit 1\n')
     got, starts = launcher["call"]("hook")
     assert got.returncode == 0 and starts == ["python3 -m system_diff hook"]
-    assert (launcher["data"] / "runner").read_text() == ""
+    assert (launcher["data"] / "runner").read_text(encoding="utf-8") == ""
     _fake(launcher["bin"], "system-diff", RECORD)
     got, starts = launcher["call"]("hook")
     assert starts == ["system-diff hook"]

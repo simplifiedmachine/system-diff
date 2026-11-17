@@ -195,7 +195,7 @@ THIRD = {   # the mail server is deployed beside the API now: Core, which reads 
 def three(repo):
     """The fixture's two commits and a third: the worker gone, Core sending mail, a health endpoint."""
     write(repo, THIRD)
-    write(repo, {"app/api/routes.py": (repo / "app/api/routes.py").read_text()
+    write(repo, {"app/api/routes.py": (repo / "app/api/routes.py").read_text(encoding="utf-8")
                  + '\n\n@router.get("/health")\ndef health():\n    return 1\n'})
     (repo / "app/jobs/worker.py").unlink()
     git_(repo, "add", "-A")
@@ -243,7 +243,7 @@ def test_two_entries_compared_from_just_after_the_first_to_just_after_the_second
 
 def test_an_entry_compared_with_now(three, files):
     repo, first, second, third = three
-    files(repo, {"app/api/routes.py": (repo / "app/api/routes.py").read_text()
+    files(repo, {"app/api/routes.py": (repo / "app/api/routes.py").read_text(encoding="utf-8")
                  + '\n\n@router.get("/ready")\ndef ready():\n    return 1\n'})
     now = pane._history_now(repo)[0].after
     got = history.compare(repo, third["id"], history.NOW, now=now)

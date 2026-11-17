@@ -68,9 +68,9 @@ def test_an_entry_is_written_read_and_removed_without_a_token(registry, tmp_path
     root = _repo(tmp_path / "shop", {"a.py": "x = 1\n"})
     f = hub.register(root, "http://127.0.0.1:9/", 9, "ab" * 16, "1.2.3")
     assert f is not None and f.parent == registry and f.name == "ab" * 16 + ".json"
-    e = json.loads(f.read_text())
+    e = json.loads(f.read_text(encoding="utf-8"))
     assert set(e) == {"root", "name", "branch", "url", "port", "pid", "id", "version", "started"}
-    assert e["name"] == "shop" and e["branch"] == "main" and e["pid"] == os.getpid() and "token" not in f.read_text()
+    assert e["name"] == "shop" and e["branch"] == "main" and e["pid"] == os.getpid() and "token" not in f.read_text(encoding="utf-8")
     if os.name != "nt":
         assert (f.stat().st_mode & 0o077) == 0
     hub.unregister(f)
@@ -83,7 +83,7 @@ def test_stale_entries_are_dropped_by_whoever_reads(registry, tmp_path):
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
     dead.wait()
     gone = hub.register(root, "http://127.0.0.1:9/", 9, "aa" * 16, "1")
-    gone.write_text(gone.read_text().replace(f'"pid": {os.getpid()}', f'"pid": {dead.pid}'))
+    gone.write_text(gone.read_text(encoding="utf-8").replace(f'"pid": {os.getpid()}', f'"pid": {dead.pid}'))
 
     class Foreign(BaseHTTPRequestHandler):   # something answering /whoami as another engine
         def log_message(self, *a):

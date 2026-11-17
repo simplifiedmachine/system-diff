@@ -238,7 +238,7 @@ def test_an_answer_naming_what_the_block_does_not_have_is_not_believed(orch, mon
     c, model, ex = _system(orch)
     explain.now(orch, c, model)
     first = json.loads(calls[0].split("Blocks:\n", 1)[1])[0]["id"]
-    cache = json.loads((git_dir(orch, "explain") / "cache.json").read_text())
+    cache = json.loads((git_dir(orch, "explain") / "cache.json").read_text(encoding="utf-8"))
     assert first not in cache and len(cache) >= 2
     bad = [{"id": "k", "key": "k", "ask": {"name": "Search"}, "draft": {}}]
     assert explain.validate({"k": {"headline": "Uses g:Logic.", "how": "x."}}, bad) == {}           # an id
@@ -257,7 +257,7 @@ def test_off_means_the_rules_words_and_no_job(orch, monkeypatch):
     monkeypatch.setenv("SYSTEM_DIFF_EXPLAIN_JOBS", "1")                     # a job, when asked for, is detached
     monkeypatch.setattr(narrate, "configured", lambda root, extra=(): True)
     started = []
-    monkeypatch.setattr(explain, "_spawn", lambda root, job: started.append(json.loads(job.read_text())))
+    monkeypatch.setattr(explain, "_spawn", lambda root, job: started.append(json.loads(job.read_text(encoding="utf-8"))))
     assert explain.ensure(orch, c.cfg, ex) is True
     import time
     for _ in range(50):
