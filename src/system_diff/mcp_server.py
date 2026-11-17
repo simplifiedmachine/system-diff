@@ -267,7 +267,7 @@ def build() -> Server:
         `diagram`, also the picture as text for a code block. Explain it from the plan, never beyond it."""
         return tool_diff(_root(), base, head, diagram)
 
-    @server.tool()
+    @_read_only(server)
     def explain(part: str = "", base: str = "checkpoint") -> Dict[str, Any]:
         """Facts to teach the person one part of their system from: what it is and does, how it connects, what is
         changing in it since `base` and why that matters, topics worth knowing (the technologies its code imports
@@ -322,7 +322,7 @@ def build() -> Server:
         """`agent`'s unread messages from the other agents (and marks them read)."""
         return {"agent": agent, "messages": agents.inbox(_root(), agent)}
 
-    @server.tool()
+    @_read_only(server)
     def objectives() -> Dict[str, Any]:
         """What the person has been optimising for in this repository (learned from their repeated requests), each
         with how a change could break it ("check") and the latest check of each agent. Read it before changing or
@@ -357,7 +357,7 @@ def build() -> Server:
         secrets in it (they are masked anyway)."""
         return tool_note(_root(), part, text)
 
-    @server.tool()
+    @_read_only(server)
     def team() -> Dict[str, Any]:
         """The plan, who claims which block, and the latest messages on the bus."""
         root = _root()
@@ -365,6 +365,18 @@ def build() -> Server:
         return {"plan": st["plan"], "claims": st["claims"], "messages": agents.messages(root)[-20:]}
 
     return server
+
+
+def _read_only(server):
+    """@server.tool(), marked as a tool that only reads (it changes nothing, here or elsewhere): permission modes can
+    run it without asking. Plain @server.tool() with an MCP SDK too old for annotations."""
+    try:
+        from mcp.types import ToolAnnotations
+        hints = ToolAnnotations.model_validate({"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True,
+                                                "openWorldHint": False})   # the wire names: 1.x and 2.x take them
+        return server.tool(annotations=hints)
+    except (ImportError, TypeError):
+        return server.tool()
 
 
 def main() -> None:

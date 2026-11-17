@@ -402,3 +402,13 @@ def test_a_lean_claude_call_only_where_its_sign_in_works():
     assert not narrate.bare_ok({}) and not narrate.bare_ok({"CLAUDE_CODE_USE_BEDROCK": "0"})   # a subscription: OAuth
     assert narrate.bare_ok({"SYSTEM_DIFF_CLAUDE_BARE": "1"}) and not narrate.bare_ok({"ANTHROPIC_API_KEY": "k",
                                                                                      "SYSTEM_DIFF_CLAUDE_BARE": "0"})
+
+
+def test_the_tools_that_only_read_say_so():
+    """Permission modes may run a tool marked read-only without a check; only tools that change nothing are marked."""
+    import asyncio
+    from system_diff import mcp_server
+    tools = asyncio.run(mcp_server.build().list_tools())
+    marked = {t.name for t in tools
+              if (t.model_dump(by_alias=True, exclude_none=True).get("annotations") or {}).get("readOnlyHint")}
+    assert marked == {"explain", "objectives", "team"}
