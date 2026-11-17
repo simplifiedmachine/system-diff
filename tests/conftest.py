@@ -155,3 +155,13 @@ def no_engine_outlives_the_tests(tmp_path_factory):
                 os.kill(int(entry), signal.SIGTERM)
             except OSError:
                 pass
+
+
+@pytest.fixture(autouse=True)
+def no_time_box_left_over():
+    """A test that time-boxes reads (as the pane does) must not leave the box on this thread for the next test: its
+    reads would stop early and later ones read again (a test of that failed now and then)."""
+    from system_diff import compare
+    compare.time_box(None)
+    yield
+    compare.time_box(None)
