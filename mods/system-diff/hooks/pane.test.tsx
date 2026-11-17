@@ -169,7 +169,7 @@ test('/system-diff and /system-diff-pane both open it, as wide as a dock goes', 
   expect(registered).toEqual(['system-diff', 'system-diff-pane'])
   for (const command of ['system-diff', 'system-diff-pane']) {
     const got = await $.command.run({ ...RUN, command })
-    expect((got as { text?: string }).text).toBe('System diff pane opened.')
+    expect((got as { text?: string }).text).toMatch(/^System diff pane opened\. The web page with the same views/)
   }
   expect(opened.every(o => (o.columns ?? 0) >= 200)).toBe(true) // as wide as a dock goes
 })
@@ -464,4 +464,10 @@ test('/system-diff autostart says how it is, and how to change it', async ($, on
   expect(String((got as { text?: string }).text)).toMatch(/does not open with each session.*autostart on\|off/)
   const changed = await $.command.run({ ...RUN, args: 'autostart on' })
   expect(String((changed as { text?: string }).text)).toMatch(/will open with each session|set .* in \/config/)
+})
+
+test('/system-diff says where the same views are in a browser', async ($, on) => {
+  answer(on, [], 0, '', [], { web: 'http://localhost:8766/' })
+  const got = await $.command.run(RUN)
+  expect((got as { text?: string }).text).toBe('System diff pane opened. The same views in your browser: http://localhost:8766/')
 })

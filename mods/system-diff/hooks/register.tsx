@@ -15,7 +15,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.9.0.dev5' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.9.0.dev6' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't'],
@@ -592,7 +592,11 @@ export const register: Register = (on, options) => {
       if (e.args.trim().toLowerCase() === 'tui') return { text: await terminal($) }
       await refresh($)
       await open($)
-      return { text: 'System diff pane opened.' }
+      // the same views in a browser, for a small screen where the pane is cramped
+      const web = (await read($, page))?.web
+      return { text: web ? `System diff pane opened. The same views in your browser: ${web}`
+                         : 'System diff pane opened. The web page with the same views is starting: its link shows ' +
+                           "in the pane's top row (🌐) in a moment." }
     })
   }
 
