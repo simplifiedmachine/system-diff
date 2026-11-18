@@ -178,6 +178,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,112 C243,112 243,368 272,368" marker-end="url(#ar-call-same)"><title>mcp → graph</title></path>
 <path class="be k-call s-same" d="M478,968 C544,968 544,368 484,368" marker-end="url(#ar-call-same)"><title>names → graph</title></path>
 <path class="be k-call s-same" d="M478,1208 C507,1208 507,112 536,112" marker-end="url(#ar-call-same)"><title>narrate → sources</title></path>
+<path class="be k-call s-same" d="M478,1208 C544,1208 544,1508 484,1508" marker-end="url(#ar-call-same)"><title>narrate → src/system_diff</title></path>
 <path class="be k-call s-same" d="M478,1208 C544,1208 544,52 484,52" marker-end="url(#ar-call-same)"><title>narrate → live</title></path>
 <path class="be k-call s-same" d="M478,1028 C507,1028 507,172 536,172" marker-end="url(#ar-call-same)"><title>objectives → activity</title></path>
 <path class="be k-call s-same" d="M478,1028 C544,1028 544,548 484,548" marker-end="url(#ar-call-same)"><title>objectives → agents</title></path>

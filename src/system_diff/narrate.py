@@ -115,11 +115,65 @@ def configured(root: Path, extra: List[str] = ()) -> bool:
     return bool(claude_llm(root, list(extra)) or shell_llm() or claude_cli())
 
 
+def chosen(root: Path, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """The model and settings the person chose for this project: system-diff.toml's [narrate] model and settings,
+    else the Studio's session choices for it ("these choices": the project's, else all projects'), so system-diff's
+    own LLM features use the gateway and model the person's sessions use, not Claude Code's defaults (which may sign
+    in another way, or not at all). {"settings": a settings file or "", "model": a model or ""}."""
+    out = {"settings": "", "model": ""}
+    said = (cfg or {}).get("narrate") or {}
+    if said.get("model"):
+        out["model"] = str(said["model"])
+    try:
+        from .app import DEFAULTS, _read, state_dir
+        folder = state_dir()
+        got = _read(folder / DEFAULTS) if folder is not None else None
+    except Exception:  # noqa: BLE001
+        got = None
+    if isinstance(got, dict):
+        mine = dict(got["*"]) if isinstance(got.get("*"), dict) else {}
+        here = _same_path(root)
+        for key, val in got.items():   # the project's own over all projects' (its path as the Studio wrote it)
+            if key != "*" and isinstance(val, dict) and _same_path(key) == here:
+                mine.update(val)
+        profile = str(mine.get("settings_profile") or "")
+        if profile:
+            try:
+                from .profiles import OWN, discover
+                hit = None if profile == OWN else next((p for p in discover(Path(root)) if p["id"] == profile), None)
+            except Exception:  # noqa: BLE001
+                hit = None
+            if hit is not None:
+                out["settings"] = hit["path"]
+                out["model"] = out["model"] or str(mine.get("model") or "") or str(hit.get("model") or "")
+        if not out["model"] and mine.get("model"):
+            out["model"] = str(mine["model"])
+    return out
+
+
+def _same_path(p: Any) -> str:
+    try:
+        return os.path.normcase(str(Path(p).resolve()))
+    except (OSError, ValueError, RuntimeError):
+        return os.path.normcase(str(p))
+
+
+def _settings_env(path: str) -> Dict[str, str]:
+    try:
+        got = json.loads(Path(path).read_text(encoding="utf-8")).get("env") or {}
+        return {str(k): str(v) for k, v in got.items()} if isinstance(got, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
 def cli_command(s: Dict[str, Any]) -> List[str]:
     """`claude -p` asked once: JSON out, the prompt on stdin (never on the command line: Windows' .cmd wrappers mangle
     quotes and new lines), no tools, no MCP servers, no slash commands, no session kept on disk (so no transcript
     lands among the person's own, where the objectives would read it as their request)."""
-    return [s["path"], "-p", *(["--bare"] if bare_ok() else []), "--output-format", "json", "--model", s["model"],
+    # bare or not by the environment it will sign in with: the person's, and the chosen settings file's over it
+    bare = bare_ok({**os.environ, **_settings_env(s["settings"])} if s.get("settings") else os.environ)
+    return [s["path"], "-p", *(["--bare"] if bare else []), *(["--settings", s["settings"]] if s.get("settings") else []),
+            "--output-format", "json", "--model", s["model"],
             "--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence",
             "--system-prompt", CLI_SYSTEM]
 
@@ -157,7 +211,7 @@ def ask_cli(s: Dict[str, Any], user: str, timeout: int, system: str = SYSTEM) ->
     if not isinstance(data, dict):
         raise ValueError(f"exit {done.returncode}: no JSON")
     if data.get("is_error") or done.returncode:
-        raise ValueError(f"exit {done.returncode}: {str(data.get('result') or data.get('subtype') or '')[:120]}")
+        raise ValueError(f"exit {done.returncode}: {str(data.get('result') or data.get('subtype') or '')[:400]}")
     used = data.get("modelUsage") if isinstance(data.get("modelUsage"), dict) else {}
     model = next(iter(used), "") or s["model"]
     text = data.get("result") if isinstance(data.get("result"), str) else ""
@@ -283,7 +337,10 @@ def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: i
 
 def _complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: int,
               limit: int) -> Optional[Tuple[str, str]]:
-    claude = claude_llm(root, cfg.get("narrate", {}).get("settings", []))
+    pick = chosen(root, cfg)   # the person's choice for this project: its gateway (settings) and model
+    claude = claude_llm(root, list(cfg.get("narrate", {}).get("settings", [])) + ([pick["settings"]] if pick["settings"] else []))
+    if claude and pick["model"]:
+        claude = {**claude, "model": pick["model"]}
     if claude:
         # With a thinking budget first (some gateways' reasoning models need one); without it if refused.
         for attempt in ({**claude, "thinking": 4000}, claude):
@@ -312,11 +369,14 @@ def _complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: 
     if claude or shell:
         return None          # a gateway is set: its failure is said above, and the CLI is not asked instead
     cli = claude_cli()
+    if cli and (pick["settings"] or pick["model"]):
+        cli = {**cli, **({"settings": pick["settings"]} if pick["settings"] else {}), **({"model": pick["model"]} if pick["model"] else {})}
     if cli:
         try:
             text, model = ask_cli(cli, user, timeout, system)
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            _failed(root, f"system-diff: claude -p --model {cli['model']}: {type(exc).__name__}: {str(exc)[:160]}")
+            how = f" --settings {Path(cli['settings']).name}" if cli.get("settings") else ""
+            _failed(root, f"system-diff: claude -p{how} --model {cli['model']}: {type(exc).__name__}: {str(exc)[:420]}")
             return None
         if text:
             return text[:limit], f"{model} (your Claude Code)"

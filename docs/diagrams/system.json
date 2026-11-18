@@ -309,7 +309,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 323,
+   "lines": 383,
    "hub": false,
    "quiet": false
   },
@@ -602,6 +602,7 @@
   "names>graph": 1,
   "narrate>live": 1,
   "narrate>sources": 2,
+  "narrate>src/system_diff": 2,
   "objectives>activity": 1,
   "objectives>agents": 1,
   "objectives>compare": 1,
@@ -1376,6 +1377,13 @@
   "narrate>sources": [
    "git_dir",
    "run_hidden"
+  ],
+  "narrate>src/system_diff": [
+   "DEFAULTS",
+   "OWN",
+   "_read",
+   "discover",
+   "state_dir"
   ],
   "objectives>activity": [
    "PROMPT",

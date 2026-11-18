@@ -150,8 +150,11 @@ how long starting a program takes there, how long the hooks took, and why the en
   it, keeps it in front of Claude and every agent, and marks changes that touch it. `x` clears one you disagree with.
 
 Everything stays on your machine, under `.git/system-diff/`: never committed, never sent anywhere. The only exception
-is the optional LLM features (regrouping the diagram, learning objectives), which send structure, never code, to the
-LLM your own Claude Code already uses. `SYSTEM_DIFF_LLM=off` turns them off.
+is the optional LLM features (regrouping the diagram, learning objectives, a file's summary when you open it), which
+send structure (and, for a file's summary, that file's code with literal secrets masked) to the LLM your own Claude
+Code already uses: the settings file and model chosen in the Studio for that project (or for all projects), else Claude
+Code's own setup with a small model (haiku). `[narrate] model = "..."` in system-diff.toml picks another model. When
+the LLM cannot be reached, the page says so in its conversation panel. `SYSTEM_DIFF_LLM=off` turns them off.
 
 ### Several projects
 
