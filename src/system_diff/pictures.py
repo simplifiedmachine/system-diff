@@ -511,7 +511,7 @@ def _route(a: tuple, b: tuple, ay: float, by: float, columns: Dict[int, tuple]) 
     bx, _by0, _bh, bc = b
     if bc == ac:  # same column: an arc on the right
         x = ax + AW
-        bend = 30 + min(44, abs(by - ay) / 5)
+        bend = min(30 + min(44, abs(by - ay) / 5), AGX - 14)   # in the channel right of the column, not past it
         d = "M{},{} C{},{} {},{} {},{}".format(*map(_f, (x, ay, x + bend, ay, x + bend, by, x + 7, by)))
         return d, x + bend * 0.75 + 6, (ay + by) / 2 + 4, "start"
     step = 1 if bc > ac else -1
@@ -561,6 +561,7 @@ def architecture_svg(model: dict, label: str = "System") -> str:
         body.append(svg)
         rows[n["id"]] = r
     markers: Dict[str, str] = {}
+    right = 0.0   # the furthest right a flow or its label reaches: the picture is at least that wide
     for e in model.get("edges", []):
         s, t = e.get("from"), e.get("to")
         if s not in pos or t not in pos or s == t:
@@ -570,6 +571,9 @@ def architecture_svg(model: dict, label: str = "System") -> str:
         ay = rows[s].get(e.get("from_item") or "", a[1] + min(a[2] / 2, 26))
         by = rows[t].get(e.get("to_item") or "", b[1] + min(b[2] / 2, 26))
         d, lx, ly, anchor = _route(a, b, ay, by, columns)
+        if a[3] == b[3]:   # an arc beside its column (a claim contradicting a claim): it and its label stay inside
+            right = max(right, a[0] + AW + AGX - 14 + 4,
+                        (lx - 6 + text_width(cut(e["label"], 18), 10.5) + 12) if e.get("label") else 0)
         mid = f"sda-{kind}-{status}"
         markers.setdefault(mid, f'<marker id="{esc(mid)}" class="arh k-{esc(kind)} s-{esc(status)}" viewBox="0 0 10 10" '
                                 f'refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
@@ -604,7 +608,7 @@ def architecture_svg(model: dict, label: str = "System") -> str:
         cls = f"lg s-{key}" if kind == "op" else "lg agent" if kind == "agent" else "lg"
         body.append(f'<text class="{cls}" x="{_f(lx)}" y="{_f(ly)}">{esc(label_text)}</text>')
         lx += text_width(label_text, 12.5) + 20
-    width = max(width, lx + APAD)
+    width = max(width, lx + APAD, right + 10)
     height = ly + 14
     w, h = int(round(width)), int(round(height))
     return (f'<svg xmlns="http://www.w3.org/2000/svg" class="sd-arch" viewBox="0 0 {w} {h}" '

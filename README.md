@@ -211,8 +211,18 @@ research = "research_diff.system_diff_ext"
 ```
 
 and its module defines its views (`VIEWS`, `pane(ctx)`, `web(ctx)`), optionally routes of its own under `/x/<name>/`
-(`route`), what it watches (`WATCH`), the files the page may show (`file_ok`) and MCP tools (`mcp`). The contract is in
+(`route`), what it watches (`WATCH`), the files the page may show (`file_ok`), their outline and summary in the code
+viewer (`outline`: a paper by its sections) and MCP tools (`mcp`). A view may pin a list on the left (`nav`: the
+studies of a repository with several papers), and a diagram's file may open at given lines (`{"path", "line", "end"}`).
+The contract is in
 [src/system_diff/extensions.py](src/system_diff/extensions.py). `SYSTEM_DIFF_EXTENSIONS=off` loads none.
+
+## Repositories inside a repository
+
+Git submodules and nested repositories (a folder with its own `.git`) are systems of their own. The web page lists
+them on the left, under the outer repository, with their branch; a click opens that repository's own engine and
+page (its own checkpoint, history and caches), and every repository of the family shows the same list, so you can go
+back. Extensions get the outer repository as `ctx.parent`.
 
 ## Roadmap
 

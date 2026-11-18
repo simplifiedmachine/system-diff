@@ -92,6 +92,28 @@ header.top h1 { font-size:15px; margin:0 6px 0 0; font-weight:650; }
 #since { color:var(--muted); font-size:12.5px; }
 main { max-width:1240px; margin:0 auto; padding:18px 20px 28px; display:grid; gap:16px; }
 main > * { min-width:0; }
+.withnav { display:grid; grid-template-columns:1fr; max-width:1520px; margin:0 auto; }
+.withnav.on { grid-template-columns:minmax(180px, 240px) minmax(0, 1fr); }
+.withnav.on main { max-width:none; margin:0; }
+#leftnav { position:sticky; top:8px; align-self:start; max-height:calc(100vh - 16px); overflow:auto; padding:18px 0 18px 16px;
+  display:grid; gap:14px; }
+#leftnav h3 { margin:0 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+#leftnav ul { list-style:none; margin:0; padding:0; display:grid; gap:2px; }
+#leftnav button { width:100%; text-align:left; display:grid; gap:1px; padding:6px 8px; border-radius:8px; border:1px solid transparent;
+  background:transparent; color:inherit; font:inherit; cursor:pointer; }
+#leftnav button:hover, #leftnav button:focus-visible { background:var(--card); border-color:var(--line); }
+#leftnav button[aria-current="true"] { background:var(--card); border-color:var(--accent); }
+#leftnav .t { font-weight:600; font-size:13px; overflow-wrap:anywhere; } #leftnav .s { font-size:12px; color:var(--muted); }
+#leftnav .badge { font-size:11px; margin-left:6px; padding:0 6px; border-radius:9px; background:var(--line); color:inherit; font-weight:500; }
+#leftnav .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent); margin-left:6px; vertical-align:middle; }
+#leftnav .tree { color:var(--muted); font-family:var(--mono, monospace); margin-right:2px; }
+@media (max-width: 760px) {
+  .withnav.on { grid-template-columns:1fr; }
+  #leftnav { position:static; max-height:none; padding:10px 16px 0; }
+  #leftnav ul { display:flex; flex-wrap:wrap; gap:6px; }
+  #leftnav button { width:auto; border-color:var(--line); padding:4px 10px; }
+  #leftnav .s { display:none; }
+}
 pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 [hidden] { display:none !important; }
 .headline, .card > h2 { overflow-wrap:anywhere; }
@@ -361,6 +383,8 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
   <button id="chatbtn" type="button" aria-pressed="false" aria-controls="chat" title="Show or hide the conversation with Claude (c)">Conversation<span class="count" id="chatcount"></span></button>
   <button id="theme" type="button" title="Light, dark, or as your system is">◐ auto</button>
 </header>
+<div class="withnav">
+<nav id="leftnav" aria-label="Repositories and lists" hidden></nav>
 <main>
   <div><p class="headline" id="headline">Reading the code…</p><div class="error" id="error"></div></div>
   <section class="card" id="status" hidden></section>
@@ -369,6 +393,7 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
     <div class="diawrap" id="diawrap"><div id="dia" role="img"></div><div id="detail" aria-live="polite"></div><div id="code" hidden></div></div></section>
   <div id="after" style="display:grid;gap:16px"></div>
 </main>
+</div>
 <div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · tick two changes in History to compare them · <kbd>f</kbd> follow Claude · <kbd>c</kbd> conversation · <kbd>[</kbd> <kbd>]</kbd> projects · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
 <aside class="chat" id="chat" aria-label="Conversation with Claude" hidden>
   <header><h2>Conversation with Claude</h2><button id="chatclose" type="button" aria-label="Hide the conversation">Hide</button></header>
@@ -807,7 +832,7 @@ $("dia").addEventListener("click", e => {
   const d = pickAt(e.target), g = (ui.data && ui.data.diagram) || {}, t = d && keyed(g.enter, d);
   if (t && typeof t === "object") go(t.view || ui.view, t.part || "");   // an extension's: {view, part}
   else if (t) go(ui.view === "history" ? "history" : "now", t);
-  else if (d && keyed(g.files, d)) showCode(keyed(g.files, d));
+  else if (d && keyed(g.files, d)) { const f = fileOf(keyed(g.files, d)); showCode(f.path, false, f); }
 });
 // the send box stays pinned to the bottom of the window, over the page; the page keeps room for it as it grows
 (function () {
@@ -820,7 +845,10 @@ $("dia").addEventListener("click", e => {
 // with an outline beside it to skim: one chunk per class and function, each with what Claude says it does (made in
 // the background when a file is opened, kept per version of the file); hovering a chunk of the code shows that.
 const cv = { path:"", chunks:[], summary:null, timer:0, card:null, spans:[], here:null, pinned:false };
-async function showCode(path, pinned) {
+// a diagram's file: a path, or {path, line, end} (an extension's: a claim's paragraph in the paper)
+function fileOf(v) { return v && typeof v === "object" ? { path:String(v.path || ""), line:+v.line || 0, end:+v.end || +v.line || 0 }
+                                                       : { path:String(v || ""), line:0, end:0 }; }
+async function showCode(path, pinned, at) {
   cv.pinned = !!pinned;
   const box = $("code");
   box.hidden = false; box.replaceChildren(el("div", "Reading " + path + "…", "sub"));
@@ -854,7 +882,61 @@ async function showCode(path, pinned) {
   pre.addEventListener("mouseleave", hideCodeCard);
   pre.addEventListener("scroll", () => { hideCodeCard(); markHere(firstVisibleLine(pre)); }, { passive:true });
   box.scrollIntoView({ block:"nearest", behavior:"smooth" });
+  if (at && at.line > 0) jumpTo({ line:at.line, end:Math.max(at.line, at.end || at.line) });
   pollSummary(path);
+}
+// the pinned list on the left: the repositories of this family (a submodule or nested repository is its own system,
+// with its own engine) and a view's own list (an extension's: the studies of a repository with several papers)
+function paintNav(items, family) {
+  const nav = $("leftnav"); nav.replaceChildren();
+  if (family.length) {
+    const ul = el("ul");
+    for (const r of family) {
+      const b = el("button"); b.type = "button";
+      if (r.current) b.setAttribute("aria-current", "true");
+      const t = el("span", null, "t");
+      if (r.rel) t.append(el("span", "├ ", "tree"));
+      t.append(r.name + (r.kind === "outer" ? (r.current ? " (this repository)" : " (outer repository)")
+                                       : r.kind === "nested" ? " (nested repository)" : " (submodule)"));
+      const known = (projects.list || []).find(x => r.port && x.port === r.port);
+      if (r.changed || (known && known.changed && !r.current)) t.append(el("span", null, "dot"));
+      b.append(t, el("span", (r.branch ? r.branch : "") + (r.url ? "" : r.current ? "" : (r.branch ? " · " : "") + "not open yet"), "s"));
+      b.title = r.path;
+      b.addEventListener("click", () => openRepo(r, b));
+      { const li = el("li"); li.append(b); ul.append(li); }
+    }
+    const h = el("h3", "Repositories"); nav.append(h, ul);
+  }
+  if (items.length) {
+    const ul = el("ul");
+    for (const it of items) {
+      const b = el("button"); b.type = "button";
+      if (it.active) b.setAttribute("aria-current", "true");
+      const t = el("span", it.title || it.id || "", "t");
+      if (it.badge !== undefined && it.badge !== "") t.append(el("span", String(it.badge), "badge"));
+      b.append(t); if (it.sub) b.append(el("span", it.sub, "s"));
+      const tg = it.target || {};
+      b.addEventListener("click", () => go(tg.view || ui.view, tg.part || ""));
+      { const li = el("li"); li.append(b); ul.append(li); }
+    }
+    nav.append(el("h3", (ui.data && ui.data.nav_title) || "In this view"), ul);
+  }
+  const on = !!(family.length || items.length);
+  nav.hidden = !on; nav.parentElement.classList.toggle("on", on);
+}
+async function openRepo(r, b) {
+  if (r.current) return;
+  const s = b.querySelector(".s"); if (s) s.textContent = "Opening…";
+  for (let i = 0; i < 90; i++) {
+    try {
+      const q = await fetch("repos/open?rel=" + encodeURIComponent(r.rel), { method:"POST", headers:{ "X-Token":TOKEN } });
+      const d = await q.json();
+      if (q.ok && d.port) { location.href = projectHref(d.port, ui.view); return; }
+      if (!q.ok) { if (s) s.textContent = d.error || "Could not open it"; return; }
+    } catch (e) { /* try again */ }
+    await new Promise(res => setTimeout(res, 1000));
+  }
+  if (s) s.textContent = "Its engine did not start: see system-diff doctor in it";
 }
 function closeCode() {
   clearTimeout(cv.timer); cv.path = ""; hideCodeCard();
@@ -1192,7 +1274,7 @@ function drawDiagram(g) {
   }
   box.classList.toggle("enterable", !!(g.enter && Object.keys(g.enter).length) || !!(g.files && Object.keys(g.files).length));
   const shown = $("code").querySelector(".head b");      // a file shown that this diagram no longer has: closed
-  if (shown && !Object.values(g.files || {}).includes(shown.textContent) && !ui.openAfter && !cv.pinned) closeCode();
+  if (shown && !Object.values(g.files || {}).map(v => fileOf(v).path).includes(shown.textContent) && !ui.openAfter && !cv.pinned) closeCode();
 }
 
 // ---- the page: re-render only what changed ----
@@ -1241,7 +1323,8 @@ function render(d) {
   if (d.chat && changed("chat", d.chat)) { renderTalk(d.chat); redrawn = true; }
   if (redrawn || !ui.mine) applyPick();
   if (ui.openAfter && g.svg) { const f = ui.openAfter; ui.openAfter = ""; showCode(f, true); }
-  if (changed("files", g.files || {})) prefetch(Object.values(g.files || {}).slice(0, 8), false);
+  if (changed("files", g.files || {})) prefetch([...new Set(Object.values(g.files || {}).map(v => fileOf(v).path))].slice(0, 8), false);
+  if (changed("nav", [d.nav || [], d.repos || []])) paintNav(d.nav || [], d.repos || []);
 }
 function paintChrome() {
   for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.view === ui.view));
@@ -1789,7 +1872,7 @@ def handler(w: Watcher):
             except Exception as exc:  # noqa: BLE001 - the page shows it and keeps polling
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
             return self._json(200, {**page, "version": version, "engine_error": w.last_error(),
-                                    "chat": chat_view(w, page)})
+                                    "chat": chat_view(w, page), "repos": repos_view(w)})
 
         def _projects(self, path: str):
             """The project tabs (GET /projects: every running engine of this user, from the registry cleaned of
@@ -1920,6 +2003,25 @@ def handler(w: Watcher):
             r = urlsplit(referer)
             return f"{r.scheme}://{r.netloc}" in own
 
+        def _post_repo(self):
+            """POST /repos/open?rel=<path in the family>: that repository's engine (started if it is not running):
+            {"port", "url"} when it listens, {"starting": true} meanwhile (the page asks again)."""
+            self._drain()
+            if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                return self._json(403, {"error": "forbidden"})
+            from . import repos
+            target = repos.member(w.root, self._query().get("rel", "")[:400])
+            if target is None:
+                return self._json(404, {"error": "not a repository of this one's family"})
+            got = repos._engine(target)
+            if got.get("port"):
+                return self._json(200, got)
+            try:
+                start_detached(target, wait=0)
+            except Exception as exc:  # noqa: BLE001
+                return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+            return self._json(200, {"starting": True})
+
         def _post_send(self):
             if self.headers.get("X-Token") != w.token or not self._same_origin():
                 self._drain()
@@ -2023,6 +2125,8 @@ def handler(w: Watcher):
                 return self._post_hook()
             if urlsplit(self.path).path == "/mark":
                 return self._post_mark()
+            if urlsplit(self.path).path == "/repos/open":
+                return self._post_repo()
             if urlsplit(self.path).path == "/send":
                 return self._post_send()
             if urlsplit(self.path).path == "/note/clear":
@@ -2141,12 +2245,31 @@ def chat_view(w: "Watcher", page: Optional[Dict[str, Any]] = None) -> Dict[str, 
         return {"stamp": "", "items": [], "pointing": None, "notes": {}, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def repos_view(w: "Watcher") -> List[Dict[str, Any]]:
+    """The repositories of this one's family, for the page's left column (empty for a repository alone)."""
+    try:
+        from . import repos
+        return repos.family(w.root)
+    except Exception:  # noqa: BLE001 - the list is extra
+        return []
+
+
 def file_extras(w: "Watcher", path: str, text: str, prefetch: bool = False) -> Dict[str, Any]:
     """A file's outline (one chunk per class and function, for the viewer's skim column) and its LLM summary (made in
     the background the first time a version of the file is opened or prefetched)."""
     from . import fileview
     data = text.encode("utf-8")
     blob = fileview.blob_id(data)
+    if extensions.load():
+        try:
+            from .config import lenient
+            own = not Code(lenient(w.root)).is_code(path) and extensions.file_ok(path)
+        except Exception:  # noqa: BLE001
+            own = False
+        got = extensions.outline(w.root, path, text) if own else None
+        if got is not None:   # a file an extension owns (a paper's main.tex): its sections, its summary
+            return {"blob": blob, "outline": got.get("outline") or {"chunks": []},
+                    "summary": got.get("summary") or {"state": "failed", "why": "no summary for this file"}}
     try:
         index = chat_index(w)
     except Exception:  # noqa: BLE001

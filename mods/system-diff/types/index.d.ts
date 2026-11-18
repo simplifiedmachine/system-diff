@@ -6,7 +6,7 @@ export type Row = Run[]
 // compare: c on an entry of the History (or on its "now" row): the first marks where to compare from ("◆ from"), a
 // second shows the two compared (the part "[<block>#]compare:<A>..<B>"), c again on the marked one unmarks it
 export type Act = { zoom?: string; learn?: string; view?: string; clear_objective?: string; history?: string;
-                    entry?: string; compare?: string }
+                    entry?: string; compare?: string; go?: { view?: string; part?: string } }
 export type PageBlock = {
   id: string
   x: number

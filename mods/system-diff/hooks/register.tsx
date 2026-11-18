@@ -15,7 +15,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.10.0.dev1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.10.0.dev2' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't'],
@@ -373,6 +373,15 @@ async function choose($: EngineInterface, next: string): Promise<void> {
   await refresh($)
 }
 
+// A view and a part at once (an item of a view's pinned list: research-diff's studies): Back returns here.
+async function goTo($: EngineInterface, next: string, id: string): Promise<void> {
+  const from = await read($, part)
+  if (from !== id) await update($, back, list => [...list, from].slice(-20))
+  if (next) await update($, view, () => next)
+  await update($, part, () => id)
+  await refresh($)
+}
+
 // The block a History part is about: "<block>", "<block>#<entry>", "[<block>#]compare:<A>[..<B>]" ('' the whole system).
 function blockOf(p: string): string {
   const hash = p.indexOf('#')
@@ -650,6 +659,7 @@ export const register: Register = (on, options) => {
     else if (data.follow) await follow($)
     else if (typeof data.zoomBy === 'number') await zoomBy($, data.zoomBy)
     else if (typeof data.view === 'string') await choose($, data.view)
+    else if (data.go && typeof data.go === 'object') await goTo($, String(data.go.view ?? ''), String(data.go.part ?? ''))
     return {}
   })
 

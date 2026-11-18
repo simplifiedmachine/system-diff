@@ -1068,6 +1068,7 @@ def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = N
     global ZOOM
     ZOOM = (1 if width < 110 else 0) if zoom < 0 else max(0, min(2, zoom))
     out = _show(root, width, view, part)
+    _pin_nav(out, root, view, width)
     from . import extensions
     out["views"] = [list(v) for v in extensions.views()]   # the extensions' tabs, for the pane to add
     out["zoom"] = ZOOM
@@ -1156,6 +1157,43 @@ def unread_count(root: Path, name: str) -> int:
         return int(pending(root, name)) if pending else len(agents.inbox(root, name, mark=False))
     except Exception:
         return 0
+
+
+def _pin_nav(page: Dict[str, Any], root: Path, view: str, width: int) -> None:
+    """The web page's pinned left list, in the pane: a row of pickable blocks above the view. An extension's own
+    list (its page's "nav": [{id, title, badge, active, target: {view, part}}]) and the repositories of this one's
+    family (a submodule: shown by its own engine, whose page the web link opens)."""
+    items = [n for n in (page.pop("nav", None) or []) if isinstance(n, dict)]
+    if not items:
+        return
+    rows: List[list] = []
+    blocks: List[Dict[str, Any]] = []
+    row: list = []
+    x = 0
+    for n in items[:30]:
+        label = str(n.get("title") or n.get("id") or "")[:32]
+        badge = n.get("badge")
+        text = f"[{label}{' ' + str(badge) if badge not in (None, '') else ''}]"
+        if x and x + len(text) + 1 > width:
+            rows.append(row)
+            row, x = [], 0
+        if x:
+            row.append([" ", ""])
+            x += 1
+        tg = n.get("target") or {}
+        blocks.append({"id": "nav:" + str(n.get("id") or label), "x": x, "y": len(rows), "w": len(text), "h": 1,
+                       "enter": {"go": {"view": str(tg.get("view") or view), "part": str(tg.get("part") or "")}}})
+        row.append([text, "heading" if n.get("active") else "muted"])
+        x += len(text)
+    rows.append(row)
+    rows.append([])
+    shift = len(rows)
+    page["rows"] = rows + list(page.get("rows") or [])
+    for b in page.get("blocks") or []:
+        b["y"] = b.get("y", 0) + shift
+        if isinstance(b.get("slot"), list) and b["slot"]:
+            b["slot"] = [b["slot"][0] + shift, *b["slot"][1:]]
+    page["blocks"] = blocks + list(page.get("blocks") or [])
 
 
 def _show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = None) -> Dict[str, Any]:

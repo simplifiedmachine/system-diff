@@ -17,9 +17,17 @@ may define:
                                                             #   from the page itself (as /send)
     WATCH = ["research-diff/"]                              # paths under the git dir whose change moves the version
     def file_ok(path) -> bool                               # files the page's file viewer may show beside code
+    def outline(ctx, path, text) -> {"outline": {"chunks": [{"line", "end", "depth", "qual", "name", "kind"}]},
+                                     "summary": {"state", "file", "by", "chunks": {qual: {"what", "how", "watch"}}}}
+                                                            # the viewer's outline and summary for a file it owns
     def mcp(server) -> None                                 # MCP tools of its own
 
-`ctx` is a Context: root, view, part, width (pane), zoom, and `live` (compare.Live: the working tree as the engine
+A view's JSON (web) may carry "nav": [{"id", "title", "sub", "badge", "active", "target": {"view", "part"}}]: a
+pinned list on the left of the page (a row of pickable blocks in the pane); a diagram's "files" may map a block to
+{"path", "line", "end"}: a click opens the file there, those lines lit.
+
+`ctx` is a Context: root (the repository shown: a submodule's when one is picked), parent (the repository it sits
+inside, else None), view, part, width (pane), zoom, and `live` (compare.Live: the working tree as the engine
 holds it, `live.source` reading files without git, `live.identity` the same for the same files: a key to cache by),
 None outside the engine.
 
@@ -51,6 +59,7 @@ class Context:
     width: int = 100
     zoom: int = 0
     live: Any = None
+    parent: Optional[Path] = None
 
 
 def load() -> List[Any]:
@@ -113,8 +122,8 @@ def by_name(name: str) -> Optional[Any]:
 
 
 def context(root: Path, view: str, part: str = "", width: int = 100, zoom: int = 0) -> Context:
-    from . import compare
-    return Context(Path(root), view, part or "", width, zoom, compare.live(root))
+    from . import compare, repos
+    return Context(Path(root), view, part or "", width, zoom, compare.live(root), repos.parent(root))
 
 
 def watched(gitdir: Path) -> tuple:
@@ -143,6 +152,24 @@ def file_ok(path: str) -> bool:
         except Exception:  # noqa: BLE001
             continue
     return False
+
+
+def outline(root: Path, path: str, text: str) -> Optional[Dict[str, Any]]:
+    """The outline and summary an extension gives for a file it owns (file_ok), else None."""
+    for ext in load():
+        ok, out = getattr(ext, "file_ok", None), getattr(ext, "outline", None)
+        if ok is None or out is None:
+            continue
+        try:
+            if not ok(path):
+                continue
+            got = out(context(root, "", ""), path, text)
+        except Exception as exc:  # noqa: BLE001 - the viewer shows the code without it
+            failed(getattr(ext, "NAME", "extension") + " outline", exc)
+            return {"outline": {"chunks": []}, "summary": {"state": "failed", "why": f"{type(exc).__name__}: {exc}"}}
+        if isinstance(got, dict):
+            return got
+    return None
 
 
 def failed(view: str, exc: BaseException) -> Dict[str, Any]:
