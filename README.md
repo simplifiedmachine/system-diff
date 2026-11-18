@@ -65,9 +65,13 @@ its own (`system-diff tui`). All three show the same live picture.
    ```
 2. Give Claude Code its tools, once for every repository:
    ```sh
-   claude mcp add --scope user system-diff -- system-diff mcp           # macOS, Linux
-   claude mcp add --scope user system-diff -- python -m system_diff mcp # Windows (see below: updates)
+   claude mcp add --scope user system-diff -- system-diff mcp             # macOS, Linux
+   claude mcp add --scope user system-diff "--" python -m system_diff mcp # Windows PowerShell
    ```
+   On Windows the `--` goes in quotes: PowerShell takes a bare `--` as the end of its own options and drops it
+   (`claude` is a PowerShell script there), and `claude` then reads `-m` as its own: `error: unknown option '-m'`.
+   Python itself, not `system-diff.exe`, so that nothing holds that file when you update (below).
+   `claude mcp list` shows it connected.
 3. In your repository, start it and open the page it prints:
    ```sh
    system-diff watch            # the web page, http://localhost:8765/
