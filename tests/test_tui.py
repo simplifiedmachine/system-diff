@@ -153,3 +153,37 @@ def test_frame_rewrites_only_what_changed():
     assert first.startswith("\x1b[2J") and "\x1b[1;1H" in first and "\x1b[2;1H" in first
     again = tui.frame(["a", "c"], ["a", "b"], 2)
     assert "\x1b[1;1H" not in again and "\x1b[2;1H\x1b[2Kc" in again
+
+
+def test_history_tab_and_h_on_a_block():
+    f = Fake()
+    f.app.start()
+    f.settle()
+    assert f.app.st.sel == "b:api"
+    f.app.handle("h")                                     # h on a picked box: that box's own history
+    f.settle()
+    assert f.app.st.view == "history" and f.app.st.part == "api"
+    assert f.asked[-1][1:3] == ("history", "api")
+    f.app.handle("b")                                     # b goes back to where it was
+    f.settle()
+    assert f.app.st.view == "now" and f.app.st.part == ""
+    f.app.st.sel = ""
+    f.app.handle("h")                                     # with nothing picked: the whole system's
+    f.settle()
+    assert f.app.st.view == "history" and f.app.st.part == ""
+    assert "History" in plain(tui.render(f.app.page, f.app.st, 60, 14)[0])
+    f.app.stop()
+
+
+def test_history_entry_and_compare_keys():
+    f = Fake(view="history")
+    f.app.start()
+    f.settle()
+    f.app._act({"entry": "abc1"})
+    assert f.app.st.part == "#abc1"
+    f.app._go("history", "")
+    f.app._compare("abc1")                                # the first marks where to compare from
+    assert f.app.st.part == "compare:abc1"
+    f.app._compare("def2")                                # the second shows the two compared
+    assert f.app.st.part == "compare:abc1..def2"
+    f.app.stop()
