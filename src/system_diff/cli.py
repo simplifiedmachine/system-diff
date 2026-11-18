@@ -15,6 +15,7 @@
     system-diff objectives [clear ID | restore ID | learn]          -> what you keep asking for, learned from your requests
     system-diff history [--part ID] [--json]                        -> how the system evolved: what you asked, what it got
     system-diff history --compare ID ID|now                         -> what changed between two points of it
+    system-diff stop                                                -> stop this repository's engine
     system-diff mcp                                                 -> the MCP server (stdio)
 
 Deterministic: everything is read from git objects (no checkout) or a directory, with the standard library only.
@@ -272,6 +273,7 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
+    sub.add_parser("stop", help="stop this repository's engine (the web page's server), if one runs")
     sub.add_parser("doctor", help="why system-diff is slow or quiet here: times a read, checks hooks, web, git")
     pg = sub.add_parser("progress", help="what a long read of the system is doing now (for the pane, while it waits)")
     pg.add_argument("--wait", type=float, default=0, help="seconds to wait first (the pane's pace)")
@@ -493,6 +495,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "hook":
         from . import agent
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
+    if args.cmd == "stop":
+        from . import live
+        if live.engine_info(root) is None:
+            print("No engine runs for this repository.")
+        elif live.client_quit(root):
+            print("Stopped this repository's engine.")
+        else:
+            print("The engine did not answer; it may already be gone.")
+        return 0
     if args.cmd == "doctor":
         from . import doctor
         return doctor.main(root)

@@ -285,3 +285,19 @@ def test_a_newer_nightly_retires_the_one_before_it(monkeypatch):
     assert watch.older("0.9.0.dev1") and live._older("0.9.0.dev1")
     assert not watch.older("0.9.0") and not live._older("0.9.0")          # the release is above its dev versions
     assert watch.older("0.8.0") and not watch.older("0.9.0.dev2")
+
+
+def test_stop_asks_the_engine_to_quit(served, repo):
+    info = json.loads((git_dir(repo) / "web.json").read_text())
+    assert live.client_quit(repo) is True
+    deadline = time.time() + 5
+    while time.time() < deadline and watch._whoami(info["port"], info["id"]):
+        time.sleep(0.05)
+    assert not watch._whoami(info["port"], info["id"])
+    assert live.client_quit(repo) is False                 # nothing answers any more
+
+
+def test_stop_with_no_engine_says_so(repo, capsys):
+    from system_diff import cli
+    assert cli.main(["--repo", str(repo), "stop"]) == 0
+    assert "No engine runs" in capsys.readouterr().out
