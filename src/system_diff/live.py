@@ -381,6 +381,12 @@ def _ask(root: Path, method: str, path: str, body: Optional[dict], timeout: floa
             conn.close()
 
 
+def client_quit(root: Path, timeout: float = 5.0) -> bool:
+    """Ask the repository's engine to stop (POST /quit with the token from web.json, as an upgrade does). True when it
+    said it is quitting; False when none runs or it did not answer."""
+    return bool((_ask(root, "POST", "/quit", {}, timeout) or {}).get("quitting"))
+
+
 def client_progress(root: Path, timeout: float = 2.0) -> Optional[dict]:
     """Where the repository's engine is (GET /progress): {"stage", "done", "total", "version", "ready", "complete",
     "seconds"}; None when no engine answers. It answers at once, however busy the engine is."""
