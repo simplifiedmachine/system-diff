@@ -188,8 +188,8 @@ def studio_line() -> str:
             where += f", {n} session{'' if n == 1 else 's'}"
         except Exception:  # noqa: BLE001
             pass
-    return (f"studio: {where} · Agent SDK: {sdk or 'not installed (pip install \"system-diff[app]\")'} · "
-            f"claude CLI: {cli}")
+    sdk_said = sdk or 'not installed (pip install "system-diff[app]")'
+    return f"studio: {where} · Agent SDK: {sdk_said} · claude CLI: {cli}"
 
 
 def main(root: Path) -> int:

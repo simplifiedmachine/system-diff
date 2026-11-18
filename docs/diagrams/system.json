@@ -2632,6 +2632,7 @@
   "tests/test_names.py": 1,
   "tests/test_objectives.py": 1,
   "tests/test_objectives_ui.py": 1,
+  "tests/test_old_python.py": 1,
   "tests/test_page_tools.py": 1,
   "tests/test_regroup.py": 1,
   "tests/test_slow_start.py": 1,
