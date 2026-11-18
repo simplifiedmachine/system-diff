@@ -91,11 +91,35 @@ def _count(root: Path, name: str, field: str, **extra: Any) -> None:
 def planned(root: Path, agents: List[Dict[str, Any]]) -> None:
     for a in agents:
         _count(root, a.get("name") or "", "planned", area=a.get("area"), brief=a.get("brief"))
+        _note_global(root, a.get("name") or "", "planned", prompt=a.get("brief") or "")
 
 
 def finished(root: Path, agent_type: str) -> None:
     if agent_type and agent_type not in ("general-purpose", "Explore", "Plan", "fork"):
         _count(root, agent_type, "finished")
+        _note_global(root, agent_type, "finished")
+
+
+def _note_global(root: Path, role: str, field: str, prompt: str = "") -> None:
+    """The across-projects count only (the repository's is counted by the caller)."""
+    f = _global_file()
+    if f is None or not _name(role):
+        return
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        data = _load(f)
+        r = data.setdefault("roles", {}).setdefault(_name(role), {"kinds": {}})
+        if prompt:
+            r["prompt"] = str(prompt)[:4000]
+        r["last"] = round(time.time(), 3)
+        for kind in sorted(kind_of(root)):
+            c = r["kinds"].setdefault(kind, {"planned": 0, "finished": 0, "projects": []})
+            c[field] = int(c.get(field) or 0) + 1
+            if str(Path(root).resolve()) not in c["projects"]:
+                c["projects"] = (c["projects"] + [str(Path(root).resolve())])[-50:]
+        _save(f, data)
+    except (OSError, ValueError):
+        pass
 
 
 def _front(text: str) -> Dict[str, str]:
@@ -221,6 +245,246 @@ def match(root: Path, name: str, area: str = "") -> Optional[Dict[str, Any]]:
 
 
 def library(root: Path) -> Dict[str, Any]:
-    return {"saved": saved(root), "worth_keeping": worth_keeping(root),
+    return {"saved": saved(root), "worth_keeping": suggest(root), "kinds": sorted(kind_of(root)),
+            "for_project": [{k: a[k] for k in ("name", "description", "source", "scope")} for a in for_project(root)],
+            "in_library": [{k: a[k] for k in ("name", "description", "kinds", "ours")} for a in _library()],
             "how": "save_agent writes a subagent Claude Code starts by name (Task tool, subagent_type); save_skill a "
                    "procedure. Save a role when it recurs or the person asks, and say what you saved."}
+
+
+# ── the person's library, by kind of project (shared with research-diff) ────────────────────────────────────────
+#
+# Claude Code has no scope for "research projects" or "software projects": an agent is a repository's
+# (.claude/agents/) or the person's everywhere (~/.claude/agents/). So the library lives beside them, where Claude Code
+# does not look (~/.claude/agent-library/<name>.md, the same file format with a `kinds:` line), and each project gets
+# the agents of its kinds: a Studio session through the Agent SDK (no file written), a terminal session as files in
+# the repository once the person says so (install). Roles are counted across all the person's projects, by kind, so a
+# role used once in each of several research repositories is still found worth keeping.
+#
+# The API research-diff calls: kind_of, note_use, suggest, save, for_project.
+
+LIBRARY_SCOPES = ("project", "everywhere")   # and any kind: "research", "software", ...
+GLOBAL_USAGE = "agent-usage.json"
+
+
+def library_dir() -> Path:
+    return Path.home() / ".claude" / "agent-library"
+
+
+def _global_file() -> Optional[Path]:
+    try:
+        from .app import state_dir
+        folder = state_dir()
+    except Exception:  # noqa: BLE001
+        folder = None
+    return folder / GLOBAL_USAGE if folder is not None else None
+
+
+def kind_of(root: Path) -> set:
+    """The project's kinds: what system-diff.toml says (`kind = "research"` or a list), else "research" when an
+    extension of that kind applies to it (research-diff), else "software"."""
+    try:
+        from .config import lenient
+        said = lenient(Path(root)).get("kind")
+    except Exception:  # noqa: BLE001
+        said = None
+    if isinstance(said, str) and said.strip():
+        return {said.strip().lower()}
+    if isinstance(said, list) and said:
+        return {str(k).strip().lower() for k in said if str(k).strip()}
+    kinds = set()
+    try:
+        from . import extensions
+        for ext in extensions.load():
+            kind = str(getattr(ext, "KIND", "") or ("research" if getattr(ext, "NAME", "") == "research" else ""))
+            applies = getattr(ext, "applies", None)
+            if kind and applies is not None and applies(Path(root)):
+                kinds.add(kind)
+    except Exception:  # noqa: BLE001
+        pass
+    return kinds or {"software"}
+
+
+def note_use(root: Path, role: str, description: str = "", prompt: str = "", tools: str = "", model: str = "",
+             event: str = "planned") -> None:
+    """A role was used (planned, or finished as a subagent): counted for the repository and, across the person's
+    projects, under the project's kinds."""
+    name = _name(role)
+    if not name:
+        return
+    field = "finished" if event == "finished" else "planned"
+    _count(root, name, field, brief=prompt or None)
+    f = _global_file()
+    if f is None:
+        return
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        data = _load(f)
+        r = data.setdefault("roles", {}).setdefault(name, {"kinds": {}})
+        for k, v in (("description", description), ("prompt", prompt), ("tools", tools), ("model", model)):
+            if v:
+                r[k] = str(v)[:4000]
+        r["last"] = round(time.time(), 3)
+        for kind in sorted(kind_of(root)):
+            c = r["kinds"].setdefault(kind, {"planned": 0, "finished": 0, "projects": []})
+            c[field] = int(c.get(field) or 0) + 1
+            if str(Path(root).resolve()) not in c["projects"]:
+                c["projects"] = (c["projects"] + [str(Path(root).resolve())])[-50:]
+        _save(f, data)
+    except (OSError, ValueError):
+        pass
+
+
+def _library() -> List[Dict[str, Any]]:
+    out = []
+    folder = library_dir()
+    for f in sorted(folder.glob("*.md")) if folder.is_dir() else []:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fm = _front(text)
+        body = re.sub(r"^---\s*\n.*?\n---\s*\n", "", text, count=1, flags=re.S).replace(MARKER, "").strip()
+        kinds = {k.strip().lower() for k in fm.get("kinds", "everywhere").split(",") if k.strip()}
+        out.append({"name": fm.get("name") or f.stem, "description": fm.get("description", ""), "prompt": body,
+                    "tools": fm.get("tools", ""), "model": fm.get("model", ""), "kinds": sorted(kinds),
+                    "path": str(f), "ours": MARKER in text, "scope": ",".join(sorted(kinds))})
+    return out
+
+
+def _files_of(folder: Path, scope: str) -> List[Dict[str, Any]]:
+    out = []
+    for f in sorted(folder.glob("*.md")) if folder.is_dir() else []:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fm = _front(text)
+        body = re.sub(r"^---\s*\n.*?\n---\s*\n", "", text, count=1, flags=re.S).replace(MARKER, "").strip()
+        out.append({"name": fm.get("name") or f.stem, "description": fm.get("description", ""), "prompt": body,
+                    "tools": fm.get("tools", ""), "model": fm.get("model", ""), "path": str(f), "scope": scope,
+                    "ours": MARKER in text})
+    return out
+
+
+def for_project(root: Path) -> List[Dict[str, Any]]:
+    """The agents a session in this project gets: the library's of its kinds, the person's (~/.claude/agents), and the
+    repository's own, which win on a name clash. Each with "source": project, user or library."""
+    kinds = kind_of(root)
+    got: Dict[str, Dict[str, Any]] = {}
+    for a in _library():
+        if "everywhere" in a["kinds"] or set(a["kinds"]) & kinds:
+            got[a["name"]] = {**a, "source": "library"}
+    for a in _files_of(Path.home() / ".claude" / "agents", "user"):
+        got[a["name"]] = {**a, "source": "user"}
+    for a in _files_of(Path(root) / ".claude" / "agents", "project"):
+        got[a["name"]] = {**a, "source": "project"}
+    return sorted(got.values(), key=lambda a: a["name"])
+
+
+def suggest(root: Path) -> List[Dict[str, Any]]:
+    """The roles worth keeping, with the scope to offer: "project" (only this repository uses it), a kind ("research":
+    used in several projects of that kind), or "everywhere" (used across kinds)."""
+    have = {a["name"] for a in for_project(root)} | {a["name"] for a in _library()}
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in worth_keeping(root):
+        if r["name"] not in have:
+            out[r["name"]] = {**r, "scope": "project"}
+    f = _global_file()
+    roles = (_load(f).get("roles") or {}) if f is not None else {}
+    mine = kind_of(root)
+    for name, r in roles.items() if isinstance(roles, dict) else []:
+        if name in have or not isinstance(r, dict):
+            continue
+        kinds = r.get("kinds") or {}
+        wide = {k: c for k, c in kinds.items() if len(c.get("projects") or []) >= 2}
+        if not wide or not (set(wide) & mine or len(wide) > 1):
+            continue
+        scope = "everywhere" if len(wide) > 1 else next(iter(wide))
+        n = sum(len(c.get("projects") or []) for c in wide.values())
+        out[name] = {"name": name, "scope": scope, "why": f"used in {n} of your projects ({', '.join(sorted(wide))})",
+                     "planned": sum(int(c.get("planned") or 0) for c in kinds.values()),
+                     "finished": sum(int(c.get("finished") or 0) for c in kinds.values()),
+                     "area": "", "brief": str(r.get("prompt") or "")[:600], "description": r.get("description", ""),
+                     "by": ["system-diff"]}
+    return sorted(out.values(), key=lambda r: -(r["planned"] + r["finished"]))
+
+
+def save(name: str, description: str, prompt: str, tools: str = "", model: str = "", scope: str = "project",
+         root: Optional[Path] = None) -> Dict[str, Any]:
+    """Save an agent: "project" (the repository's .claude/agents, needs root), "everywhere" (~/.claude/agents: every
+    session loads it), or a kind ("research", "software": the library, given to projects of that kind)."""
+    scope = str(scope or "project").strip().lower()
+    if scope == "user":
+        scope = "everywhere"
+    if scope == "project":
+        if root is None:
+            raise ValueError("a project agent needs the project")
+        return save_agent(root, name, description, prompt, tools, model, "project")
+    if scope == "everywhere":
+        return save_agent(Path.home(), name, description, prompt, tools, model, "user")
+    if not re.match(r"^[a-z][a-z0-9-]{0,30}$", scope):
+        raise ValueError("scope: project, everywhere, or a kind of project such as research or software")
+    name = _name(name)
+    if not NAME.match(name or ""):
+        raise ValueError("name: lowercase letters, digits and dashes")
+    if not str(description).strip() or not str(prompt).strip():
+        raise ValueError("an agent needs a description (when to use it) and its standing instructions")
+    f = library_dir() / f"{name}.md"
+    kinds = {scope}
+    if f.exists():
+        old = next((a for a in _library() if a["path"] == str(f)), None)
+        if old is not None and old["ours"]:
+            kinds |= set(old["kinds"]) - {"everywhere"}
+    head = ["---", f"name: {name}", f"description: {_yaml(description.strip()[:1000])}", f"kinds: {', '.join(sorted(kinds))}"]
+    if tools.strip():
+        head.append(f"tools: {tools.strip()[:400]}")
+    if model.strip():
+        head.append(f"model: {model.strip()[:60]}")
+    _write(f, "\n".join(head + ["---", MARKER, "", prompt.strip(), ""]))
+    return {"saved": name, "scope": ", ".join(sorted(kinds)), "path": str(f),
+            "use": f"projects of kind {', '.join(sorted(kinds))} get it (the Studio at once; a terminal session after "
+                   "install)"}
+
+
+def forget_library(name: str) -> Dict[str, Any]:
+    f = library_dir() / f"{_name(name)}.md"
+    if not f.exists():
+        raise ValueError(f"no library agent {name!r}")
+    if MARKER not in f.read_text(encoding="utf-8"):
+        raise ValueError(f"{f} was written by someone else: system-diff leaves it as it is")
+    f.unlink()
+    return {"forgot": _name(name), "scope": "library"}
+
+
+def install(root: Path, names: List[str]) -> Dict[str, Any]:
+    """Copy library agents into the repository's .claude/agents/, so terminal sessions there get them too (only when
+    the person says so: it writes files in their repository). Never over a file system-diff did not write."""
+    lib = {a["name"]: a for a in _library()}
+    done, skipped = [], []
+    for n in names:
+        a = lib.get(_name(n))
+        if a is None:
+            skipped.append({"name": n, "why": "not in the library"})
+            continue
+        try:
+            save_agent(root, a["name"], a["description"] or a["name"], a["prompt"], a["tools"], a["model"], "project")
+            done.append(a["name"])
+        except ValueError as exc:
+            skipped.append({"name": a["name"], "why": str(exc)})
+    return {"installed": done, "skipped": skipped}
+
+
+def sdk_agents(root: Path) -> Dict[str, Any]:
+    """The library's agents of this project's kinds, for a Studio session (the Agent SDK's `agents`): the ones Claude
+    Code would not load from files already (not the repository's own or the person's)."""
+    from claude_agent_sdk import AgentDefinition
+    out = {}
+    for a in for_project(root):
+        if a["source"] != "library":
+            continue
+        tools = [t.strip() for t in a["tools"].split(",") if t.strip()] or None
+        model = a["model"] if a["model"] in ("sonnet", "opus", "haiku", "inherit") else None
+        out[a["name"]] = AgentDefinition(description=a["description"] or a["name"], prompt=a["prompt"], tools=tools,
+                                         model=model)
+    return out

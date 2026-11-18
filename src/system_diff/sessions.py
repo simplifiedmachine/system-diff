@@ -422,6 +422,13 @@ class Session:
         kw["allowed_tools"] = allowed + ext["allowed"]
         if servers:
             kw["mcp_servers"] = servers
+        try:   # the person's library agents of this project's kinds (research, software), with no file written
+            from . import agentlib
+            lib = agentlib.sdk_agents(self.project)
+            if lib:
+                kw["agents"] = lib
+        except Exception:  # noqa: BLE001 - the session starts without them
+            pass
         if o.get("model"):
             kw["model"] = str(o["model"])
         if o.get("settings"):

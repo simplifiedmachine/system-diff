@@ -270,6 +270,8 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
 #sendnote { color:var(--muted); font-size:12.5px; max-width:30vw; }
 #sendnote.bad { color:var(--attn); }
 .hint { color:var(--muted); font-size:12px; text-align:center; padding:0 0 10px; }
+html.in-studio, html.in-studio body { background:transparent; }
+html.in-studio header.top { background:color-mix(in srgb, var(--card) 62%, transparent); -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px); }
 #shown { position:sticky; top:0; z-index:30; display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:8px 16px;
   background:var(--card); border-bottom:2px solid var(--accent); font-size:14px; }
 #shown .why { flex:1 1 280px; min-width:0; overflow-wrap:anywhere; } #shown label { font-size:12px; color:var(--muted); }
@@ -1425,6 +1427,7 @@ function paintChrome() {
 __PROJECT_HREF__
 // inside the Studio (system-diff app): its own column lists the projects
 const STUDIO = window.parent !== window && /(^|[?&])studio=1(&|$)/.test(location.search);
+if (STUDIO) document.documentElement.classList.add("in-studio");   // the Studio's glass shows through
 function paintProjects() {
   const nav = $("projects"), key = JSON.stringify([projects.list, ui.view]);
   if (STUDIO) { nav.hidden = true; return; }

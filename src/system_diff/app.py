@@ -395,7 +395,7 @@ def handler(studio: Studio):
                     got = profiles.choices(root)
                     got["default"] = studio.default_for(root)
                     got["default_from"] = studio.default_from(root)
-                    got["agents"] = [a["name"] for a in agentlib.saved(root)]
+                    got["agents"] = [a["name"] for a in agentlib.for_project(root)]
                     from . import sessions
                     got["sdk"] = sessions.sdk_available()
                     return self._json(200, got)
@@ -525,12 +525,17 @@ def handler(studio: Studio):
                                                                 "settings, effort and agent apply from the next session"})
             if path == "/api/agents/save":
                 root = self._root({"project": str(b.get("project") or "")})
-                return self._json(200, agentlib.save_agent(root, str(b.get("name") or ""),
-                                                           str(b.get("description") or ""), str(b.get("prompt") or ""),
-                                                           str(b.get("tools") or ""), str(b.get("model") or ""),
-                                                           str(b.get("scope") or "project")))
+                return self._json(200, agentlib.save(str(b.get("name") or ""), str(b.get("description") or ""),
+                                                     str(b.get("prompt") or ""), str(b.get("tools") or ""),
+                                                     str(b.get("model") or ""), str(b.get("scope") or "project"),
+                                                     root=root))
+            if path == "/api/agents/install":
+                root = self._root({"project": str(b.get("project") or "")})
+                return self._json(200, agentlib.install(root, [str(n) for n in b.get("names") or []]))
             if path == "/api/agents/forget":
                 root = self._root({"project": str(b.get("project") or "")})
+                if str(b.get("scope") or "") == "library":
+                    return self._json(200, agentlib.forget_library(str(b.get("name") or "")))
                 return self._json(200, agentlib.forget(root, str(b.get("name") or ""), str(b.get("scope") or "project")))
             return self._json(404, {"error": "not found"})
 

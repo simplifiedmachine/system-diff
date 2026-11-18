@@ -412,11 +412,19 @@ def build() -> Server:
     @server.tool()
     def save_agent(name: str, description: str, prompt: str, tools: str = "", model: str = "",
                    scope: str = "project") -> Dict[str, Any]:
-        """Save a role that keeps coming back as a Claude Code subagent (.claude/agents/<name>.md for the project,
-        shared through git; scope "user" for every repository of the person's): its description says when to use
-        it, its prompt is its standing instructions, tools and model optional. Say what you saved."""
+        """Save a role that keeps coming back as a Claude Code subagent. scope: "project" (this repository's
+        .claude/agents, shared through git), a kind of project ("research", "software": the person's library, given
+        to every project of that kind), or "everywhere". saved_agents says which scope each suggestion fits. Its
+        description says when to use it, its prompt is its standing instructions. Say what you saved."""
         from . import agentlib
-        return _safe(lambda: agentlib.save_agent(_root(), name, description, prompt, tools, model, scope))
+        return _safe(lambda: agentlib.save(name, description, prompt, tools, model, scope, root=_root()))
+
+    @server.tool()
+    def install_agents(names: List[str]) -> Dict[str, Any]:
+        """Copy library agents (of this project's kinds) into this repository's .claude/agents/, so terminal sessions
+        here get them too. Only when the person asks: it writes files in their repository."""
+        from . import agentlib
+        return _safe(lambda: agentlib.install(_root(), names))
 
     @server.tool()
     def save_skill(name: str, description: str, steps: str, scope: str = "project") -> Dict[str, Any]:

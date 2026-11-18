@@ -204,8 +204,8 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,1268 C507,1268 507,112 536,112" marker-end="url(#ar-call-same)"><title>regroup → sources</title></path>
 <path class="be k-call s-same" d="M742,112 C778,112 778,52 748,52" marker-end="url(#ar-call-same)"><title>sources → gitfs</title></path>
 <path class="be k-call s-same" d="M478,1508 C507,1508 507,112 536,112" marker-end="url(#ar-call-same)"><title>src/system_diff → sources</title></path>
-<path class="be k-call s-same" d="M478,1508 C544,1508 544,248 484,248" marker-end="url(#ar-call-same)"><title>src/system_diff → extract</title></path>
 <path class="be k-call s-same" d="M478,1508 C544,1508 544,188 484,188" marker-end="url(#ar-call-same)"><title>src/system_diff → config</title></path>
+<path class="be k-call s-same" d="M478,1508 C544,1508 544,248 484,248" marker-end="url(#ar-call-same)"><title>src/system_diff → extract</title></path>
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,248 220,248" marker-end="url(#ar-call-same)"><title>src/system_diff → watch</title></path>
 <path class="be k-call s-same" d="M478,1508 C544,1508 544,112 484,112" marker-end="url(#ar-call-same)"><title>src/system_diff → compare</title></path>
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,308 220,308" marker-end="url(#ar-call-same)"><title>src/system_diff → hub</title></path>

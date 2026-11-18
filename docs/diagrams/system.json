@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 10,
-   "lines": 3075,
+   "lines": 3432,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 469,
+   "lines": 477,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2933,
+   "lines": 2936,
    "hub": false,
    "quiet": false
   }
@@ -597,7 +597,7 @@
   "mcp>objectives": 2,
   "mcp>pictures": 1,
   "mcp>sources": 1,
-  "mcp>src/system_diff": 9,
+  "mcp>src/system_diff": 10,
   "mcp>textmap": 1,
   "names>graph": 1,
   "narrate>sources": 1,
@@ -643,7 +643,7 @@
   "src/system_diff>agent": 2,
   "src/system_diff>chat": 2,
   "src/system_diff>compare": 3,
-  "src/system_diff>config": 4,
+  "src/system_diff>config": 5,
   "src/system_diff>diff": 1,
   "src/system_diff>extract": 5,
   "src/system_diff>gitfs": 2,
@@ -1344,7 +1344,7 @@
    "show",
    "source",
    "view",
-   "library"
+   "install"
   ],
   "mcp>textmap": [
    "plain",
@@ -2154,11 +2154,11 @@
    "time": 5,
    "sys": 3,
    "threading": 3,
+   "claude_agent_sdk": 2,
    "hashlib": 2,
    "importlib": 2,
    "urllib": 2,
    "asyncio": 1,
-   "claude_agent_sdk": 1,
    "configparser": 1,
    "dataclasses": 1,
    "html": 1,
@@ -2556,10 +2556,10 @@
    "time": 5,
    "sys": 3,
    "threading": 3,
+   "claude_agent_sdk": 2,
    "hashlib": 2,
    "urllib.parse": 2,
    "asyncio": 1,
-   "claude_agent_sdk": 1,
    "configparser": 1,
    "dataclasses": 1,
    "html": 1,

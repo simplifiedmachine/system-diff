@@ -524,3 +524,69 @@ def test_open_sessions_take_the_model_and_permissions_live(manager, repo):
     s.apply_live("haiku", "plan")
     assert until(lambda: getattr(s.client, "mode", "") == "plan" and s.client.model == "haiku")
     assert s.options["model"] == "haiku" and any("all-projects" in e.get("text", "") for e in s.events_since(0)["events"])
+
+
+# ── the agent library, by kind of project ────────────────────────────────────────────────────────────────────────
+def test_the_library_gives_each_project_the_agents_of_its_kind(monkeypatch, tmp_path, repo, files):
+    import types
+    from system_diff import extensions
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv("SYSTEM_DIFF_APP_STATE", str(tmp_path / "state"))
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    __import__("subprocess").run(["git", "init", "-q", "-b", "main"], cwd=paper, check=True)
+    ext = types.SimpleNamespace(NAME="research", VIEWS=[], applies=lambda root: (Path(root) / "main.tex").exists())
+    monkeypatch.setattr(extensions, "_LOADED", [ext])
+    files(paper, {"main.tex": "\\section{A}\n"})
+    assert agentlib.kind_of(paper) == {"research"} and agentlib.kind_of(repo) == {"software"}
+    cfg = (repo / "system-diff.toml").read_text(encoding="utf-8")
+    files(repo, {"system-diff.toml": 'kind = ["software", "research"]\n' + cfg})   # a top-level key: before any table
+    assert agentlib.kind_of(repo) == {"software", "research"}
+    files(repo, {"system-diff.toml": cfg})
+
+    # a role used once in each of two research projects is worth keeping for research, not for this software project
+    other = tmp_path / "paper2"
+    other.mkdir()
+    __import__("subprocess").run(["git", "init", "-q", "-b", "main"], cwd=other, check=True)
+    files(other, {"main.tex": "x"})
+    agentlib.note_use(paper, "citation-checker", "Checks every citation.", "You check citations.", event="finished")
+    agentlib.note_use(other, "citation-checker", event="planned")
+    got = {r["name"]: r for r in agentlib.suggest(paper)}
+    assert got["citation-checker"]["scope"] == "research" and "2 of your projects" in got["citation-checker"]["why"]
+    assert "citation-checker" not in {r["name"] for r in agentlib.suggest(repo)}
+
+    agentlib.save("citation-checker", "Checks every citation.", "You check citations.", scope="research")
+    agentlib.save("api-tester", "Tests the HTTP API.", "You test the API.", scope="software")
+    agentlib.save("writer", "Writes clearly.", "You write.", scope="everywhere")
+    agentlib.save("shop-api", "This shop's API.", "You know the shop.", scope="project", root=repo)
+    names = lambda root: {a["name"]: a["source"] for a in agentlib.for_project(root)}   # noqa: E731
+    assert names(paper) == {"citation-checker": "library", "writer": "user"}
+    assert names(repo) == {"api-tester": "library", "writer": "user", "shop-api": "project"}
+    assert "citation-checker" not in {r["name"] for r in agentlib.suggest(paper)}       # kept now
+
+    agentlib.save("api-tester", "Tests the HTTP API.", "You test the API.", scope="research")   # both kinds now
+    assert "api-tester" in names(paper) and "api-tester" in names(repo)
+    agentlib.save("api-tester", "x", "y", scope="project", root=repo)                         # the repository's wins
+    assert names(repo)["api-tester"] == "project"
+    assert agentlib.install(paper, ["citation-checker"])["installed"] == ["citation-checker"]
+    assert (paper / ".claude" / "agents" / "citation-checker.md").is_file()
+    mine = agentlib.library_dir() / "mine.md"
+    mine.write_text("---\nname: mine\nkinds: research\n---\nmy own\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        agentlib.save("mine", "d", "p", scope="research")
+    with pytest.raises(ValueError):
+        agentlib.forget_library("mine")
+    agentlib.forget_library("citation-checker")
+    assert "citation-checker" not in {a["name"] for a in agentlib._library()}
+
+
+def test_a_studio_session_gets_its_kinds_library_agents(monkeypatch, manager, repo, tmp_path):
+    pytest.importorskip("claude_agent_sdk")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(sessions, "plugin_enabled", lambda *a, **k: False)
+    agentlib.save("api-tester", "Tests the HTTP API.", "You test the API.", tools="Read, Bash", model="haiku",
+                  scope="software")
+    o = sessions.Session(manager, repo, {}).sdk_options()
+    assert set(o.agents) == {"api-tester"} and o.agents["api-tester"].tools == ["Read", "Bash"]
+    assert o.agents["api-tester"].model == "haiku"

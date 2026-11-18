@@ -4,85 +4,137 @@ PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>System diff Studio</title>
 <style>
+/* Glass: frosted, translucent panels floating over a soft colour field; pill controls; quiet motion.
+   Solid fallbacks where the browser cannot blur or the person asks for less transparency or motion. */
 :root { color-scheme:light;
-  --ink:#161c24; --muted:#5f6b7c; --line:#e1e5eb; --bg:#f3f5f8; --card:#ffffff; --accent:#1f5fbf; --accent-ink:#fff;
-  --ok:#1b7f4b; --bad:#b42318; --warn:#9a6700; --code:#f0f2f6; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  --sans:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; --chatw:420px; --projw:250px; }
+  --ink:#1d1d1f; --muted:#6e6e73; --line:rgba(60,60,67,.14); --hair:rgba(255,255,255,.65);
+  --glass:rgba(255,255,255,.58); --glass-strong:rgba(255,255,255,.78); --glass-soft:rgba(255,255,255,.38);
+  --field-a:#dfe9ff; --field-b:#f6e3ff; --field-c:#dff7ef; --base:#f2f3f7;
+  --accent:#0a84ff; --accent-2:#5e5ce6; --accent-ink:#fff; --ok:#248a3d; --bad:#d70015; --warn:#b25000;
+  --code:rgba(118,118,128,.10); --shadow:0 10px 40px rgba(31,38,64,.12), 0 2px 6px rgba(31,38,64,.06);
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",system-ui,Helvetica,Arial,sans-serif;
+  --r:18px; --chatw:420px; --projw:260px; --blur:saturate(180%) blur(28px); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme:dark;
-  --ink:#e4e9f0; --muted:#97a2b3; --line:#2a3240; --bg:#0f1319; --card:#161b23; --accent:#6ea8ff; --accent-ink:#0f1319;
-  --ok:#5cc28d; --bad:#ff7b72; --warn:#e3b341; --code:#0d1117; } }
-:root[data-theme="dark"] { color-scheme:dark; --ink:#e4e9f0; --muted:#97a2b3; --line:#2a3240; --bg:#0f1319; --card:#161b23;
-  --accent:#6ea8ff; --accent-ink:#0f1319; --ok:#5cc28d; --bad:#ff7b72; --warn:#e3b341; --code:#0d1117; }
+  --ink:#f5f5f7; --muted:#a1a1a6; --line:rgba(235,235,245,.12); --hair:rgba(255,255,255,.14);
+  --glass:rgba(30,32,40,.55); --glass-strong:rgba(38,40,50,.78); --glass-soft:rgba(30,32,40,.32);
+  --field-a:#1b2440; --field-b:#2a1a3a; --field-c:#10302a; --base:#0b0c10;
+  --accent:#0a84ff; --accent-2:#7d7aff; --ok:#30d158; --bad:#ff453a; --warn:#ff9f0a;
+  --code:rgba(118,118,128,.22); --shadow:0 10px 40px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3); } }
+:root[data-theme="dark"] { color-scheme:dark;
+  --ink:#f5f5f7; --muted:#a1a1a6; --line:rgba(235,235,245,.12); --hair:rgba(255,255,255,.14);
+  --glass:rgba(30,32,40,.55); --glass-strong:rgba(38,40,50,.78); --glass-soft:rgba(30,32,40,.32);
+  --field-a:#1b2440; --field-b:#2a1a3a; --field-c:#10302a; --base:#0b0c10;
+  --accent:#0a84ff; --accent-2:#7d7aff; --ok:#30d158; --bad:#ff453a; --warn:#ff9f0a;
+  --code:rgba(118,118,128,.22); --shadow:0 10px 40px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3); }
 * { box-sizing:border-box; }
 html, body { height:100%; }
-body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 var(--sans); }
+body { margin:0; color:var(--ink); font:14px/1.45 var(--sans); -webkit-font-smoothing:antialiased; letter-spacing:-.005em;
+  background:var(--base);
+  background-image:radial-gradient(60% 50% at 8% 0%, var(--field-a) 0%, transparent 70%),
+                   radial-gradient(50% 45% at 100% 10%, var(--field-b) 0%, transparent 70%),
+                   radial-gradient(60% 50% at 50% 100%, var(--field-c) 0%, transparent 70%);
+  background-attachment:fixed; }
 button, select, input, textarea { font:inherit; color:inherit; }
-button { cursor:pointer; border:1px solid var(--line); background:var(--card); border-radius:7px; padding:4px 10px; }
-button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:600; }
+.glass, #projects, .mid, #chat { background:var(--glass); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur);
+  border:1px solid var(--hair); border-radius:var(--r); box-shadow:var(--shadow), inset 0 1px 0 var(--hair); }
+button { cursor:pointer; border:1px solid var(--line); background:var(--glass-strong); border-radius:999px; padding:5px 13px;
+  box-shadow:inset 0 1px 0 var(--hair), 0 1px 2px rgba(0,0,0,.06); transition:transform .16s ease, background .16s ease, box-shadow .16s ease; }
+button:hover:not(:disabled) { background:var(--glass); box-shadow:inset 0 1px 0 var(--hair), 0 4px 14px rgba(0,0,0,.10); }
+button:active:not(:disabled) { transform:scale(.97); }
+button.primary { background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent));
+  color:var(--accent-ink); border-color:transparent; font-weight:600; box-shadow:0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+button.primary:hover:not(:disabled) { background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, white), var(--accent));
+  box-shadow:0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent); }
 button.danger { color:var(--bad); }
-button:disabled { opacity:.5; cursor:default; }
-button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-select, input[type=text], textarea { background:var(--card); border:1px solid var(--line); border-radius:7px; padding:4px 8px; min-width:0; }
-.app { display:grid; height:100vh; grid-template-columns:var(--projw) minmax(0,1fr) 6px var(--chatw); }
-.app.noproj { grid-template-columns:0 minmax(0,1fr) 6px var(--chatw); }
+#optsbox > summary { list-style:none; cursor:pointer; padding:8px 14px; font-size:13px; color:var(--muted); display:flex; gap:8px; align-items:center;
+  border-bottom:1px solid var(--line); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#optsbox > summary::-webkit-details-marker { display:none; }
+#optsbox > summary::before { content:"▸"; transition:transform .16s ease; } #optsbox[open] > summary::before { transform:rotate(90deg); }
+#optsbox > summary b { color:var(--ink); font-weight:600; }
+button:disabled { opacity:.45; cursor:default; }
+:focus-visible { outline:3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset:2px; }
+select, input[type=text], textarea { background:var(--glass-soft); border:1px solid var(--line); border-radius:12px; padding:6px 10px;
+  min-width:0; transition:border-color .16s ease, background .16s ease; }
+select:focus, input[type=text]:focus, textarea:focus { background:var(--glass-strong); border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
+.app { display:grid; height:100vh; padding:10px; gap:10px; grid-template-columns:var(--projw) minmax(0,1fr) 4px var(--chatw);
+  transition:grid-template-columns .22s ease; }
+.app.noproj { grid-template-columns:0 minmax(0,1fr) 4px var(--chatw); }
 .app.nochat { grid-template-columns:var(--projw) minmax(0,1fr) 0 0; }
 .app.noproj.nochat { grid-template-columns:0 minmax(0,1fr) 0 0; }
 .app.noproj #projects, .app.nochat #chat, .app.nochat #grip { display:none; }
-#projects { overflow:auto; border-right:1px solid var(--line); padding:12px 10px; display:grid; align-content:start; gap:10px; }
-#projects h1 { font-size:15px; margin:0 0 2px; display:flex; align-items:center; gap:6px; }
-#projects .tree { list-style:none; margin:0; padding:0; display:grid; gap:2px; }
-#projects .tree ul { list-style:none; margin:2px 0 0 12px; padding:0; display:grid; gap:2px; border-left:1px solid var(--line); }
-.pj { width:100%; text-align:left; display:grid; gap:0; border:1px solid transparent; background:transparent; padding:5px 8px; }
-.pj:hover { background:var(--card); border-color:var(--line); }
-.pj[aria-current="true"] { background:var(--card); border-color:var(--accent); }
+#projects { overflow:auto; padding:14px 10px; display:grid; align-content:start; gap:12px; }
+#projects h1 { font-size:17px; font-weight:700; letter-spacing:-.02em; margin:2px 6px 4px; }
+#projects .tree { list-style:none; margin:0; padding:0; display:grid; gap:3px; }
+#projects .tree ul { list-style:none; margin:3px 0 2px 14px; padding:0 0 0 6px; display:grid; gap:3px; border-left:1px solid var(--line); }
+.pj { width:100%; text-align:left; display:grid; gap:1px; border:1px solid transparent; background:transparent; box-shadow:none;
+  border-radius:12px; padding:7px 10px; }
+.pj:hover:not(:disabled) { background:var(--glass-soft); box-shadow:none; }
+.pj[aria-current="true"] { background:var(--glass-strong); border-color:var(--hair); box-shadow:0 2px 10px rgba(0,0,0,.08); }
+.pj[aria-current="true"] .t { color:var(--accent); }
 .pj .t { font-weight:600; overflow-wrap:anywhere; } .pj .s { font-size:12px; color:var(--muted); }
-.badge { display:inline-block; font-size:11px; padding:0 6px; border-radius:9px; background:var(--line); margin-left:6px; font-weight:500; }
-.badge.ask { background:var(--warn); color:#000; }
-form.add { display:flex; gap:6px; } form.add input { flex:1; }
-.mid { display:grid; grid-template-rows:auto 1fr; min-width:0; }
-.bar { display:flex; gap:6px; align-items:center; padding:6px 10px; border-bottom:1px solid var(--line); background:var(--card); }
-.bar .title { font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-iframe#view { width:100%; height:100%; border:0; background:var(--bg); }
-.empty { padding:40px 24px; color:var(--muted); max-width:60ch; }
-#grip { cursor:col-resize; background:var(--line); }
-#grip:hover, #grip.drag { background:var(--accent); }
-#chat { display:grid; grid-template-rows:auto auto 1fr auto; min-width:0; background:var(--card); border-left:1px solid var(--line); }
-.tabs { display:flex; gap:4px; padding:6px 8px 0; border-bottom:1px solid var(--line); }
-.tabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; padding:6px 10px; }
-.tabs button[aria-selected="true"] { border-bottom-color:var(--accent); font-weight:600; }
-.opts { display:grid; grid-template-columns:auto 1fr; gap:6px 8px; align-items:center; padding:8px 10px; border-bottom:1px solid var(--line); font-size:13px; }
-.opts label { color:var(--muted); } .opts .row { display:flex; gap:6px; flex-wrap:wrap; } .opts .row > * { flex:1 1 auto; }
+.badge { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px; background:var(--code); margin-left:6px; font-weight:500; vertical-align:1px; }
+.badge.ask { background:var(--warn); color:#fff; }
+form.add { display:flex; gap:6px; padding:0 4px; min-width:0; } form.add input { flex:1 1 0; min-width:0; width:0; } form.add button { flex:0 0 auto; }
+.mid { display:grid; grid-template-rows:auto 1fr; min-width:0; overflow:hidden; }
+.bar { display:flex; gap:8px; align-items:center; padding:8px 10px; border-bottom:1px solid var(--line); }
+.bar .title { font-weight:600; font-size:15px; letter-spacing:-.01em; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#viewbox { min-height:0; }
+iframe#view { width:100%; height:100%; border:0; background:transparent; border-radius:0 0 var(--r) var(--r); }
+.empty { padding:48px 28px; color:var(--muted); max-width:60ch; font-size:15px; }
+#grip { cursor:col-resize; border-radius:999px; background:transparent; margin:30vh 0; transition:background .16s ease; }
+#grip:hover, #grip.drag, #grip:focus-visible { background:color-mix(in srgb, var(--accent) 60%, transparent); }
+#chat { display:grid; grid-template-rows:auto auto 1fr auto; grid-template-columns:minmax(0,1fr); min-width:0; overflow:hidden; }
+.tabs { display:flex; gap:2px; margin:10px 10px 4px; padding:3px; background:var(--code); border-radius:999px; }
+.tabs button { flex:1; border:0; box-shadow:none; background:transparent; border-radius:999px; padding:5px 10px; color:var(--muted); font-weight:500; }
+.tabs button[aria-selected="true"] { background:var(--glass-strong); color:var(--ink); box-shadow:0 1px 4px rgba(0,0,0,.12), inset 0 1px 0 var(--hair); }
+.opts { display:grid; grid-template-columns:auto minmax(0,1fr); gap:7px 10px; align-items:center; padding:8px 12px 10px; border-bottom:1px solid var(--line); font-size:13px; }
+.opts label { color:var(--muted); } .opts .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; min-width:0; }
+.opts .row > * { flex:1 1 0; min-width:0; } .opts .row > button { flex:0 0 auto; }
+.opts select, .opts input[type=text] { width:100%; min-width:0; }
 .opts select.danger { border-color:var(--bad); color:var(--bad); }
-#feed { overflow:auto; padding:10px; display:grid; align-content:start; gap:8px; }
-.ev { border-radius:9px; padding:7px 10px; overflow-wrap:anywhere; }
-.ev.user { background:var(--code); border:1px solid var(--line); white-space:pre-wrap; }
-.ev.text { white-space:pre-wrap; }
-.ev.meta { color:var(--muted); font-size:12px; padding:0 4px; }
-.ev.err { color:var(--bad); font-size:13px; }
-.ev.tool { border:1px solid var(--line); font-size:13px; }
-.ev.tool summary { cursor:pointer; } .ev.tool .nm { font-weight:600; }
-.ev pre, .card pre { font:12px/1.45 var(--mono); background:var(--code); border-radius:6px; padding:6px 8px; margin:6px 0 0; white-space:pre-wrap; max-height:260px; overflow:auto; }
+#feed { overflow:auto; overflow-x:hidden; padding:12px; display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:10px; }
+.ev { border-radius:16px; padding:8px 12px; overflow-wrap:anywhere; animation:in .2s ease both; }
+@keyframes in { from { opacity:0; transform:translateY(4px); } }
+.ev.user { justify-self:end; max-width:88%; white-space:pre-wrap; color:#fff; border-bottom-right-radius:6px;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent)); box-shadow:0 4px 14px color-mix(in srgb, var(--accent) 25%, transparent); }
+.ev.text { justify-self:start; max-width:96%; white-space:pre-wrap; background:var(--glass-strong); border:1px solid var(--hair); border-bottom-left-radius:6px; }
+.ev.meta { color:var(--muted); font-size:12px; padding:0 4px; animation:none; }
+.ev.err { color:var(--bad); font-size:13px; background:color-mix(in srgb, var(--bad) 10%, transparent); }
+.ev.tool { border:1px solid var(--line); background:var(--glass-soft); font-size:13px; padding:7px 12px; }
+.ev.tool summary { cursor:pointer; list-style:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ev.tool summary::before { content:"▸ "; color:var(--muted); }
+.ev.tool[open] summary::before { content:"▾ "; } .ev.tool .nm { font-weight:600; }
+.ev pre, .card pre { overflow-wrap:anywhere; word-break:break-word; font:12px/1.5 var(--mono); background:var(--code); border-radius:10px; padding:7px 10px; margin:6px 0 0; white-space:pre-wrap; max-height:260px; overflow:auto; }
 pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid var(--ok); }
-.card { border:2px solid var(--warn); border-radius:10px; padding:8px 10px; display:grid; gap:6px; }
+.card { border-radius:16px; padding:10px 12px; display:grid; gap:7px; background:var(--glass-strong);
+  border:1px solid color-mix(in srgb, var(--warn) 55%, transparent); box-shadow:0 6px 24px color-mix(in srgb, var(--warn) 18%, transparent); animation:in .2s ease both; }
 .card .q { font-weight:600; } .card .acts { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
 .card .acts input { flex:1 1 140px; }
-.card.done { border-color:var(--line); opacity:.75; }
-.compose { border-top:1px solid var(--line); padding:8px 10px; display:grid; gap:6px; }
-.compose textarea { width:100%; min-height:62px; max-height:40vh; resize:vertical; }
+.card.done { border-color:var(--line); box-shadow:none; opacity:.7; }
+.compose { border-top:1px solid var(--line); padding:10px 12px 12px; display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
+.compose .row .st { min-width:0; }
+.compose textarea { width:100%; min-height:64px; max-height:40vh; resize:vertical; border-radius:14px; padding:9px 12px; }
 .compose .row { display:flex; gap:6px; align-items:center; } .compose .row .st { flex:1; color:var(--muted); font-size:12px; }
-.pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent); margin-right:6px; animation:p 1s infinite; }
-@keyframes p { 50% { opacity:.3; } }
-@media (prefers-reduced-motion: reduce) { .pulse { animation:none; } }
-#agentsbox { overflow:auto; padding:10px; display:grid; align-content:start; gap:10px; }
-#agentsbox h3 { margin:4px 0 0; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
-.ag { border:1px solid var(--line); border-radius:9px; padding:7px 10px; display:grid; gap:3px; }
-.ag .t { font-weight:600; } .ag .s { color:var(--muted); font-size:12px; } .ag .acts { display:flex; gap:6px; }
-.notice { margin:10px; padding:10px; border-radius:9px; border:1px solid var(--warn); }
+.pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent); margin-right:6px; animation:p 1.2s ease-in-out infinite; }
+@keyframes p { 50% { opacity:.25; transform:scale(.8); } }
+#agentsbox { overflow:auto; overflow-x:hidden; padding:12px; display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:10px; }
+#agentsbox h3 { margin:6px 2px 0; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); }
+.ag { border:1px solid var(--hair); background:var(--glass-strong); border-radius:14px; padding:9px 12px; display:grid; gap:4px; }
+.ag .t { font-weight:600; } .ag .s { color:var(--muted); font-size:12px; } .ag .acts { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.notice { margin:10px 12px 0; padding:10px 12px; border-radius:14px; background:color-mix(in srgb, var(--warn) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
 .notice code { font-family:var(--mono); }
+::-webkit-scrollbar { width:10px; height:10px; } ::-webkit-scrollbar-thumb { background:var(--code); border-radius:999px; border:3px solid transparent; background-clip:padding-box; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --glass:var(--glass-strong); } }
+@media (prefers-reduced-transparency: reduce) {
+  .glass, #projects, .mid, #chat { -webkit-backdrop-filter:none; backdrop-filter:none; background:var(--base); }
+  :root { --glass-soft:var(--code); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 @media (max-width: 900px) {
-  .app, .app.noproj, .app.nochat { grid-template-columns:1fr; grid-template-rows:auto minmax(60vh,1fr) auto; height:auto; }
-  #grip { display:none; } #projects { border-right:0; border-bottom:1px solid var(--line); max-height:30vh; }
-  #chat { border-left:0; border-top:1px solid var(--line); min-height:70vh; }
+  .app, .app.noproj, .app.nochat { grid-template-columns:1fr; grid-template-rows:auto minmax(60vh,1fr) auto; height:auto; padding:8px; }
+  #grip { display:none; } #projects { max-height:32vh; }
+  #chat { min-height:70vh; }
 }
 </style></head><body>
 <div class="app" id="app">
@@ -108,7 +160,7 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
       <button role="tab" id="tabsession" aria-selected="true">Session</button>
       <button role="tab" id="tabagents" aria-selected="false">Agents</button>
     </div>
-    <div id="sessionhead">
+    <div id="sessionhead"><details id="optsbox" open><summary id="optsum"><b>Session options</b><span id="optline"></span></summary>
       <div class="opts" id="opts">
         <label for="sesspick">Session</label>
         <div class="row"><select id="sesspick" aria-label="Session"></select><button type="button" id="newsess" class="primary">New</button></div>
@@ -122,7 +174,7 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
         <span></span><div class="row"><button type="button" id="forall" title="These choices for every project (a project's own change still wins there)">Use for all projects</button><button type="button" id="applyopen" hidden title="The model and the permission mode change now in every open session; settings, effort and agent from the next session">Apply to open sessions</button></div>
         <span></span><div class="row"><button type="button" id="fork" hidden title="Continue this conversation in a new session; this one stays as it is">Fork</button><button type="button" id="apply" hidden title="Start a session with these settings that continues this conversation">Apply to this conversation</button></div>
       </div>
-    </div>
+    </details></div>
     <div id="feed" aria-live="polite"></div>
     <div id="agentsbox" hidden></div>
     <div class="compose" id="compose">
@@ -243,9 +295,13 @@ async function loadChoices() {
   const ag = $("agentpick"); ag.replaceChildren(); option(ag, "", "Claude (no saved agent)"); for (const a of c.agents || []) option(ag, a, a);
   paintSdk();
 }
-function paintMode() { $("mode").classList.toggle("danger", $("mode").value === "bypassPermissions"); }
+function paintOptLine() {
+  const st = $("settings"), name = st.selectedOptions[0] ? st.selectedOptions[0].textContent.split(" · ")[0] : "";
+  $("optline").textContent = " · " + [$("model").value || "default model", $("mode").value, $("effort").value ? "effort " + $("effort").value : "", name].filter(Boolean).join(" · ");
+}
+function paintMode() { $("mode").classList.toggle("danger", $("mode").value === "bypassPermissions"); paintOptLine(); }
 $("mode").addEventListener("change", () => { paintMode(); offerApply(); });
-for (const id of ["settings", "model", "agentpick", "effort"]) $(id).addEventListener("change", offerApply);
+for (const id of ["settings", "model", "agentpick", "effort"]) { $(id).addEventListener("change", offerApply); $(id).addEventListener("change", paintOptLine); }
 function choice() { return { project:S.project, settings_profile:$("settings").value, model:$("model").value.trim(),
                              permission_mode:$("mode").value, agent:$("agentpick").value, effort:$("effort").value }; }
 function offerApply() { $("apply").hidden = !(S.session && S.session.claude_session && S.session.status !== "closed"); }
@@ -268,7 +324,7 @@ async function loadSessions() {
   if (!S.sessions.length) option(sel, "", "none yet: New starts one");
   for (const s of S.sessions) option(sel, s.id, (s.title || "(nothing asked yet)").slice(0, 50) + " · " + s.status);
   const want = S.session && S.sessions.find(s => s.id === S.session.id) ? S.session.id : (S.sessions[0] || {}).id || "";
-  sel.value = want; if (want) follow(want); else { S.session = null; $("feed").replaceChildren(); paintStatus(); }
+  sel.value = want; if (want) follow(want); else { S.session = null; $("feed").replaceChildren(); paintStatus(); foldOptions(true); }
 }
 $("sesspick").addEventListener("change", () => { if ($("sesspick").value) follow($("sesspick").value); });
 async function loadPast() {
@@ -306,7 +362,9 @@ $("fork").addEventListener("click", async () => {
   try { const s = await api("api/sessions/" + S.session.id + "/fork", {}); await loadSessions(); $("sesspick").value = s.id; follow(s.id); }
   catch (e) { $("sstatus").textContent = e.message; }
 });
+function foldOptions(open) { $("optsbox").open = open; paintOptLine(); }
 function follow(id) {
+  foldOptions(false);   // a conversation: the options fold to one line above it
   S.polling++; const mine = S.polling;
   S.session = { id }; S.next = 0; S.streaming = null; S.cards = {}; $("feed").replaceChildren();
   (async () => {
@@ -407,29 +465,52 @@ async function loadAgents() {
   const box = $("agentsbox"); box.replaceChildren();
   if (!S.project) { box.append(el("div", "Pick a project first.", "ev meta")); return; }
   let lib; try { lib = await api("api/agents?project=" + S.project); } catch (e) { box.append(el("div", e.message, "ev err")); return; }
+  const kinds = lib.kinds || ["software"];
+  box.append(el("div", "This project is " + kinds.join(" and ") + ": it gets your library's " + kinds.join(" and ") + " agents.", "ev meta"));
   box.append(el("h3", "Worth keeping"));
-  if (!lib.worth_keeping.length) box.append(el("div", "No role has come back yet: roles that plans or subagents use again show here.", "ev meta"));
+  if (!lib.worth_keeping.length) box.append(el("div", "No role has come back yet: roles your plans or subagents use again (here or across your projects) show here.", "ev meta"));
   for (const r of lib.worth_keeping) {
     const a = el("div", null, "ag"); a.append(el("span", r.name, "t"), el("span", r.why + (r.area ? " · " + r.area : ""), "s"));
-    const acts = el("div", null, "acts"), k = el("button", "Keep", "primary"); k.type = "button";
+    const acts = el("div", null, "acts"), sc = el("select"); sc.setAttribute("aria-label", "Keep it for");
+    for (const [v, label] of [["project", "this project"], ...kinds.map(k => [k, "all " + k + " projects"]), ["everywhere", "everywhere"]]) option(sc, v, label);
+    sc.value = [...sc.options].some(o => o.value === r.scope) ? r.scope : "project";
+    const k = el("button", "Keep", "primary"); k.type = "button";
     k.addEventListener("click", async () => {
-      const description = prompt("When should Claude use " + r.name + "? (its description)", "Use for work on " + (r.area || r.name) + ".");
+      const description = prompt("When should Claude use " + r.name + "? (its description)", r.description || ("Use for work on " + (r.area || r.name) + "."));
       if (!description) return;
-      try { await api("api/agents/save", { project:S.project, name:r.name, description, prompt:r.brief || ("You are the " + r.name + " agent."), scope:"project" }); loadAgents(); loadChoices(); }
+      try { await api("api/agents/save", { project:S.project, name:r.name, description, prompt:r.brief || ("You are the " + r.name + " agent."), scope:sc.value }); loadAgents(); loadChoices(); }
       catch (e) { alert(e.message); }
     });
-    acts.append(k); a.append(acts); box.append(a);
+    acts.append(sc, k); a.append(acts); box.append(a);
   }
-  box.append(el("h3", "Saved"));
-  if (!lib.saved.length) box.append(el("div", "None saved: Claude saves one with save_agent, or press Keep above.", "ev meta"));
-  for (const s of lib.saved) {
-    const a = el("div", null, "ag"); a.append(el("span", s.name + " (" + s.scope + ")", "t"));
+  box.append(el("h3", "This project's agents"));
+  const mine = lib.for_project || [];
+  if (!mine.length) box.append(el("div", "None yet: Keep one above, or Claude saves one with save_agent.", "ev meta"));
+  const counts = Object.fromEntries((lib.saved || []).map(x => [x.name, x]));
+  for (const s of mine) {
+    const a = el("div", null, "ag");
+    a.append(el("span", s.name, "t"), el("span", { project:"this repository", user:"everywhere (yours)", library:"your library: " + (s.scope || "") }[s.source] || s.source, "badge"));
     if (s.description) a.append(el("span", s.description, "s"));
-    a.append(el("span", "planned " + s.planned + "×, finished " + s.finished + "×" + (s.model ? " · " + s.model : ""), "s"));
+    const c = counts[s.name]; if (c) a.append(el("span", "planned " + c.planned + "×, finished " + c.finished + "×", "s"));
     const acts = el("div", null, "acts"), use = el("button", "Start with it"); use.type = "button";
     use.addEventListener("click", () => { tab("session"); $("agentpick").value = s.name; start(); });
     acts.append(use);
-    if (s.ours) { const f = el("button", "Forget", "danger"); f.type = "button"; f.addEventListener("click", async () => { if (!confirm("Forget " + s.name + "? Its file is deleted.")) return; try { await api("api/agents/forget", { project:S.project, name:s.name, scope:s.scope }); loadAgents(); loadChoices(); } catch (e) { alert(e.message); } }); acts.append(f); }
+    if (s.source === "library") {
+      const ins = el("button", "Add to this repository"); ins.type = "button"; ins.title = "Write it into .claude/agents/ here, so terminal sessions get it too";
+      ins.addEventListener("click", async () => { try { const d = await api("api/agents/install", { project:S.project, names:[s.name] }); if (d.skipped.length) alert(d.skipped[0].why); loadAgents(); } catch (e) { alert(e.message); } });
+      acts.append(ins);
+    }
+    const lib_ = (lib.in_library || []).find(x => x.name === s.name);
+    const ours = s.source === "library" ? !!(lib_ && lib_.ours) : !!((lib.saved || []).find(x => x.name === s.name && x.ours));
+    if (ours) {
+      const f = el("button", "Forget", "danger"); f.type = "button";
+      f.addEventListener("click", async () => {
+        if (!confirm("Forget " + s.name + "? Its file is deleted" + (s.source === "library" ? " from your library (every project of its kind)." : "."))) return;
+        try { await api("api/agents/forget", { project:S.project, name:s.name, scope:s.source === "library" ? "library" : s.source }); loadAgents(); loadChoices(); }
+        catch (e) { alert(e.message); }
+      });
+      acts.append(f);
+    }
     a.append(acts); box.append(a);
   }
 }

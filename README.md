@@ -250,9 +250,13 @@ beside it, run by the app with your own Claude Code login and gateway:
   never the default and shows red). Changing them mid-conversation starts a session that continues it. They are
   remembered per project; **Use for all projects** makes them every project's (a project's own change still wins
   there), and **Apply to open sessions** changes the model and permissions of the open ones at once.
-- **Agents worth keeping**: roles your plans and subagents keep using (a tester, a reviewer, an API agent) are
-  suggested in the Agents tab; **Keep** saves one as a Claude Code subagent (`.claude/agents/<name>.md`), and
-  **Start with it** opens a session that uses it. Claude can save them too (`save_agent`, `save_skill`).
+- **Agents worth keeping, by kind of project**: roles your plans and subagents keep using (a tester, a reviewer, a
+  citation checker) are suggested in the Agents tab, counted across all your projects. **Keep** saves one for this
+  project (`.claude/agents/`), for every project of a kind (your library, `~/.claude/agent-library/`: research
+  projects get the research agents, software projects the software ones), or everywhere. A project's kind is
+  research when research-diff applies to it, software otherwise (`kind = "research"` in `system-diff.toml` says so).
+  Studio sessions get their kind's agents at once; **Add to this repository** writes one into `.claude/agents/` for
+  terminal sessions too. Claude can save them as well (`save_agent`, `save_skill`, `install_agents`).
 - The diagrams follow the session as they follow a terminal one, and what you send from the page goes to the open
   session. One app per user (`system-diff app` again opens it); it uses each repository's own engine, so a terminal
   session in the same repository shares it. Every route checks the host name, the token and the page's origin.
