@@ -197,10 +197,15 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
 const TOKEN = "__TOKEN__";
 const $ = id => document.getElementById(id);
 function el(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined && text !== null && text !== "") e.textContent = text; if (cls) e.className = cls; return e; }
-async function api(path, body) {
-  const opt = { cache:"no-store", headers:{ "X-Token":TOKEN } };
+async function api(path, body, ms) {   // every call gives up after `ms` (a long poll asks for more): never a silent wait
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms || 30000);
+  const opt = { cache:"no-store", headers:{ "X-Token":TOKEN }, signal:ctl.signal };
   if (body !== undefined) { opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
-  const r = await fetch(path, opt); let d = {};
+  let r;
+  try { r = await fetch(path, opt); }
+  catch (e) { throw new Error(e.name === "AbortError" ? "the Studio did not answer " + path.split("?")[0] + " in " + Math.round((ms || 30000) / 1000) + " s" : e.message); }
+  finally { clearTimeout(timer); }
+  let d = {};
   try { d = await r.json(); } catch (e) { d = { error:"no answer" }; }
   if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
   return d;
@@ -256,7 +261,8 @@ function paintProjects() {
   if (!S.projects.length) ul.append(el("li", "No projects yet: add a repository's folder below, or open Claude Code in one.", "ev meta"));
 }
 async function loadProjects() {
-  try { S.projects = (await api("api/projects")).projects || []; paintProjects(); } catch (e) { $("projnote").textContent = e.message; }
+  try { S.projects = (await api("api/projects", undefined, 60000)).projects || []; paintProjects(); $("projnote").textContent = ""; }
+  catch (e) { $("projnote").textContent = "Could not list the projects: " + e.message; }
 }
 function findProject(pred) {
   for (const p of S.projects) { if (pred(p)) return p; for (const k of p.kids || []) if (pred(k)) return k; }
@@ -272,7 +278,7 @@ async function openProject(p) {
   f.src = "p/" + p.id + "/?studio=1" + (S.scope ? "#scope=" + encodeURIComponent(S.scope) : ""); box.append(f);
   if (same && p.kind === "folder") return;   // the same repository, another of its projects: its sessions stay
   api("api/projects/open", { project:p.id, wait:0 }).catch(() => {});
-  await loadChoices(); await loadSessions(); await loadPast();
+  await Promise.allSettled([loadChoices(), loadSessions(), loadPast()]);   // side by side: one slow list never holds the others
   if ($("tabagents").getAttribute("aria-selected") === "true") loadAgents();
 }
 $("reload").addEventListener("click", () => { const f = $("view"); if (f) f.src = f.src; });
@@ -294,7 +300,8 @@ addEventListener("message", async e => {   // the project's page asks to open an
 function option(sel, value, label) { const o = el("option", label); o.value = value; sel.append(o); return o; }
 async function loadChoices() {
   if (!S.project) return;
-  try { S.choices = await api("api/choices?project=" + S.project); } catch (e) { S.choices = null; return; }
+  try { S.choices = await api("api/choices?project=" + S.project); }
+  catch (e) { S.choices = null; $("sstatus").textContent = "Could not load the session choices: " + e.message; return; }
   const c = S.choices, d = c.default || {};
   const st = $("settings"); st.replaceChildren();
   for (const p of c.settings) option(st, p.id, p.id === "claude-code" ? p.name : p.name + " · " + p.scope + (p.model ? " · " + p.model : "") + (p.provider ? " · " + p.provider : ""));
@@ -334,7 +341,8 @@ function paintSdk() {
 // ── sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
 async function loadSessions() {
   if (!S.project) return;
-  try { S.sessions = (await api("api/sessions?project=" + S.project)).sessions || []; } catch (e) { S.sessions = []; }
+  try { S.sessions = (await api("api/sessions?project=" + S.project)).sessions || []; }
+  catch (e) { S.sessions = []; $("sstatus").textContent = "Could not load the sessions: " + e.message; }
   const sel = $("sesspick"); sel.replaceChildren();
   if (!S.sessions.length) option(sel, "", "none yet: New starts one");
   for (const s of S.sessions) option(sel, s.id, (s.title || "(nothing asked yet)").slice(0, 50) + " · " + s.status);
@@ -344,7 +352,7 @@ async function loadSessions() {
 $("sesspick").addEventListener("change", () => { if ($("sesspick").value) follow($("sesspick").value); });
 async function loadPast() {
   if (!S.project) return;
-  try { S.past = (await api("api/past?project=" + S.project)).past || []; } catch (e) { S.past = []; }
+  try { S.past = (await api("api/past?project=" + S.project, undefined, 60000)).past || []; } catch (e) { S.past = []; }
   const sel = $("pastpick"); sel.replaceChildren(); option(sel, "", S.past.length ? "a past conversation…" : "no past conversations");
   for (const p of S.past) option(sel, p.id, (p.title || p.summary || p.first_prompt || p.id).slice(0, 70) + (p.modified ? " · " + new Date(p.modified).toLocaleString() : ""));
 }
@@ -385,7 +393,7 @@ function follow(id) {
   (async () => {
     while (mine === S.polling) {
       try {
-        const d = await api("api/sessions/" + id + "/events?since=" + S.next + "&wait=25");
+        const d = await api("api/sessions/" + id + "/events?since=" + S.next + "&wait=25", undefined, 45000);
         if (mine !== S.polling) return;
         S.session = d.session; S.next = d.next;
         for (const ev of d.events) paint(ev);
@@ -396,6 +404,7 @@ function follow(id) {
 }
 function paintStatus() {
   const s = S.session, st = $("sstatus"); st.replaceChildren();
+  if (!S.project) { st.textContent = "No project open: pick one on the left, or add a repository by its folder."; $("stop").disabled = true; return; }
   if (!s || !s.status) { st.textContent = "No session: New starts one with the settings above."; $("stop").disabled = true; return; }
   const busy = s.status === "working" || s.status === "waiting";
   if (busy) st.append(el("span", null, "pulse"));

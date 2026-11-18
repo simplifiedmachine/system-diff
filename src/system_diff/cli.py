@@ -270,6 +270,7 @@ def parser() -> argparse.ArgumentParser:
     st.add_argument("--port", type=int, default=8765, help="the first port to try (ten are tried)")
     st.add_argument("--open", action="store_true", help="open it in the browser too")
     st.add_argument("--stop", action="store_true", help="stop the running Studio (its sessions close)")
+    st.add_argument("--status", action="store_true", help="what the Studio sees: its projects, the engines, and why")
     st.add_argument("--foreground", action="store_true",
                     help="run it here until Ctrl-C, not in the background (to see what it prints)")
     up = sub.add_parser("update", help="update system-diff in one step: stop what would block it, install the latest "
@@ -474,6 +475,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         from . import app
         if args.stop:
             return app.stop()
+        if args.status:
+            return app.status()
         if args.foreground:
             return app.serve(port=args.port, open_it=args.open)
         return app.start(port=args.port, open_it=args.open)

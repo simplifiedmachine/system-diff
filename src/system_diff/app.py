@@ -709,6 +709,80 @@ def stop(folder: Optional[Path] = None, wait: float = 15.0) -> int:
     return 1
 
 
+def status(folder: Optional[Path] = None, say=print) -> int:
+    """`system-diff app --status`: what the Studio sees and why, to paste into a bug report: this system-diff and any
+    other copy on PATH, the Studio, the engines registered (and whether each answers as itself), and the Studio's own
+    project list. Changes nothing."""
+    import importlib.util
+    from . import __version__
+    folder = folder if folder is not None else state_dir()
+    spec = importlib.util.find_spec("system_diff")
+    say(f"system-diff {__version__} · Python {sys.version.split()[0]} at {sys.executable}")
+    say(f"  package: {Path(spec.origin).parent if spec and spec.origin else '?'}")
+    copies = []
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        for name in (("system-diff.exe",) if os.name == "nt" else ("system-diff",)):
+            f = Path(d) / name
+            if f.is_file() and str(f) not in copies:
+                copies.append(str(f))
+    say("  system-diff on PATH: " + (", ".join(copies) or "none") +
+        ("  ← more than one: the first one wins, and it may be an older copy" if len(copies) > 1 else ""))
+    others = []
+    for d in sys.path:
+        try:
+            if d and (Path(d) / "system_diff" / "__init__.py").is_file():
+                others.append(str(Path(d) / "system_diff"))
+        except OSError:
+            continue
+    if len(others) > 1:
+        say("  ! system_diff is installed more than once (the first is used): " + ", ".join(others))
+    have = running(folder)
+    say(f"Studio: {'running at ' + have['url'] + ' (pid ' + str(have.get('pid')) + ')' if have else 'not running'}")
+    say(f"  its folder: {folder}")
+    got = _read(folder / PROJECTS) if folder is not None else None
+    added = got.get("projects") if isinstance(got, dict) else []
+    say(f"  projects added: {', '.join(added) if added else 'none'}")
+    reg = hub.engines_dir()
+    say(f"Engines registered in {reg}:")
+    entries = []
+    for f in sorted(reg.glob("*.json")) if reg is not None and reg.is_dir() else []:
+        e = hub._read(f)
+        if e is None:
+            say(f"  {f.name}: unreadable")
+            continue
+        who = hub.whoami(e["port"], 2.0)
+        state = ("answers as itself" if isinstance(who, dict) and who.get("id") == e["id"] else
+                 "busy (did not answer in 2 s)" if who is None else
+                 "another engine answers on its port" if isinstance(who, dict) else "gone (nothing answers)")
+        entries.append(e)
+        say(f"  {e['name'] or '?'}  {e['root']}  port {e['port']}  version {e['version'] or '?'}: {state}"
+            + ("  ← older than this system-diff: the Studio retires it" if e["version"] and _older(e["version"]) else ""))
+    if not entries:
+        say("  none")
+    if have:
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", int(have["port"]), timeout=60)
+            conn.request("GET", "/api/projects", headers={"X-Token": str(have.get("token") or ""),
+                                                          "Host": f"127.0.0.1:{have['port']}"})
+            r = conn.getresponse()
+            body = json.loads(r.read().decode("utf-8") or "{}")
+            conn.close()
+            listed = body.get("projects") or []
+            say("The Studio lists: " + (", ".join(f"{x['name']} (port {x['port'] or 'none'})" for x in listed)
+                                        if listed else f"nothing{' (HTTP ' + str(r.status) + ')' if r.status != 200 else ''}"))
+        except Exception as exc:  # noqa: BLE001
+            say(f"The Studio did not answer its project list: {type(exc).__name__}: {exc}")
+    return 0
+
+
+def _older(version: str) -> bool:
+    try:
+        from .watch import older
+        return older(version)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def serve(port: int = FIRST, open_it: bool = False, folder: Optional[Path] = None, ready=None,
           manager: Any = None) -> int:
     """Run the Studio until interrupted (one per user: a running one is opened instead)."""

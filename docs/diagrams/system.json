@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 601,
+   "lines": 604,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 11,
-   "lines": 3778,
+   "lines": 3881,
    "hub": false,
    "quiet": false
   },
@@ -642,7 +642,7 @@
   "sources>gitfs": 3,
   "src/system_diff>agent": 2,
   "src/system_diff>chat": 2,
-  "src/system_diff>cli": 1,
+  "src/system_diff>cli": 2,
   "src/system_diff>compare": 3,
   "src/system_diff>config": 6,
   "src/system_diff>diff": 1,
@@ -653,7 +653,7 @@
   "src/system_diff>mcp": 1,
   "src/system_diff>panel": 3,
   "src/system_diff>sources": 12,
-  "src/system_diff>watch": 4,
+  "src/system_diff>watch": 5,
   "statusline>activity": 1,
   "statusline>config": 1,
   "statusline>extract": 1,
@@ -933,6 +933,7 @@
    "run",
    "serve",
    "start",
+   "status",
    "stop"
   ],
   "cli>statusline": [
@@ -1595,9 +1596,9 @@
    "_open",
    "projects",
    "branch",
+   "engines_dir",
    "_alive",
-   "allowed",
-   "engines_dir"
+   "_read"
   ],
   "src/system_diff>live": [
    "token_ok",
@@ -1618,7 +1619,8 @@
   "src/system_diff>watch": [
    "_look",
    "_starting",
-   "start_detached"
+   "start_detached",
+   "older"
   ],
   "statusline>activity": [
    "now",
@@ -1827,6 +1829,7 @@
   "src/system_diff": [
    "CODESPACE_NAME",
    "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN",
+   "PATH",
    "SYSTEM_DIFF_EXTENSIONS"
   ]
  },
@@ -2160,10 +2163,10 @@
    "re": 6,
    "time": 6,
    "sys": 4,
+   "importlib": 3,
    "threading": 3,
    "claude_agent_sdk": 2,
    "hashlib": 2,
-   "importlib": 2,
    "shutil": 2,
    "subprocess": 2,
    "urllib": 2,
@@ -2566,6 +2569,7 @@
    "threading": 3,
    "claude_agent_sdk": 2,
    "hashlib": 2,
+   "importlib.util": 2,
    "shutil": 2,
    "subprocess": 2,
    "urllib.parse": 2,
@@ -2576,7 +2580,6 @@
    "http.client": 1,
    "http.server": 1,
    "importlib.metadata": 1,
-   "importlib.util": 1,
    "secrets": 1,
    "socket": 1,
    "tomllib": 1,

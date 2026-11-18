@@ -280,9 +280,29 @@ def _global_file() -> Optional[Path]:
     return folder / GLOBAL_USAGE if folder is not None else None
 
 
+_KINDS: Dict[str, tuple] = {}
+
+
 def kind_of(root: Path) -> set:
     """The project's kinds: what system-diff.toml says (`kind = "research"` or a list), else "research" when an
-    extension of that kind applies to it (research-diff), else "software"."""
+    extension of that kind applies to it (research-diff), else "software". Kept while the index and the config are
+    unchanged: an extension may ask git (a program start: seconds on some machines), so it is asked once."""
+    try:
+        from .projects import _stamp
+        stamp = _stamp(Path(root))
+    except Exception:  # noqa: BLE001
+        stamp = None
+    key = str(Path(root).resolve())
+    got = _KINDS.get(key)
+    if stamp is not None and got is not None and got[0] == stamp:
+        return set(got[1])
+    kinds = _kind_of(root)
+    if stamp is not None:
+        _KINDS[key] = (stamp, frozenset(kinds))
+    return kinds
+
+
+def _kind_of(root: Path) -> set:
     try:
         from .config import lenient
         said = lenient(Path(root)).get("kind")

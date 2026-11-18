@@ -281,7 +281,9 @@ beside it, run by the app with your own Claude Code login and gateway:
   session. One app per user (`system-diff app` again opens it); it uses each repository's own engine, so a terminal
   session in the same repository shares it. Every route checks the host name, the token and the page's origin.
 
-`system-diff doctor` says whether the app runs, its sessions, the Agent SDK and the `claude` it found.
+`system-diff doctor` says whether the app runs, its sessions, the Agent SDK and the `claude` it found;
+`system-diff app --status` what the Studio sees: the engines registered (and whether each answers), its project list,
+and every copy of system-diff on PATH.
 
 ## Claude sees and steers the page
 
