@@ -16,6 +16,7 @@ IMPACT_WORDS = {
     "data-schema-change": "changes stored data", "deployment-change": "changes what is deployed",
     "new-flow": "connects parts that were not connected", "removed-flow": "disconnects parts",
     "new-config": "reads new settings", "test-gap": "changes code without changing tests",
+    "repository-change": "changes which version of a repository inside it is used",
 }
 
 
@@ -167,6 +168,15 @@ def diff(a: dict, b: dict, numstat: Optional[Dict[str, tuple]] = None, deploy_gl
             op = "add" if x is None else "remove" if y is None else "change"
             detail = [] if op != "change" else [f"{k}: {x.get(k)!r} → {y.get(k)!r}" for k in y if x.get(k) != y.get(k)]
             add(op, "container", name, name, detail, ["deployment-change"])
+    ra, rb = a.get("repos") or {}, b.get("repos") or {}
+    for path in sorted(set(ra) | set(rb)):   # a submodule added, removed, or moved to another commit
+        x, y = ra.get(path), rb.get(path)
+        if x == y:
+            continue
+        op = "add" if x is None else "remove" if y is None else "change"
+        detail = [f"now at {y['sha'][:7]}"] if op == "add" else [] if op == "remove" else \
+            [f"moved from {x['sha'][:7]} to {y['sha'][:7]}"]
+        add(op, "repo", path, f"{path} (submodule)", detail, ["repository-change"])
     for table in sorted(set(a["tables"]) | set(b["tables"])):
         if table not in a["tables"]:
             add("add", "table", table, table, [], ["data-schema-change"])

@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 850,
+   "lines": 892,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 9,
-   "lines": 2541,
+   "lines": 2565,
    "hub": false,
    "quiet": false
   },
@@ -69,7 +69,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 734,
+   "lines": 741,
    "hub": false,
    "quiet": false
   },
@@ -141,7 +141,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 258,
+   "lines": 268,
    "hub": false,
    "quiet": false
   },
@@ -177,7 +177,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2143,
+   "lines": 2145,
    "hub": false,
    "quiet": false
   },
@@ -213,7 +213,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 335,
+   "lines": 339,
    "hub": false,
    "quiet": false
   },
@@ -273,7 +273,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1436,
+   "lines": 1437,
    "hub": false,
    "quiet": false
   },
@@ -393,7 +393,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 204,
+   "lines": 210,
    "hub": false,
    "quiet": false
   },
@@ -462,7 +462,7 @@
   "agent>learn": 1,
   "agent>live": 2,
   "agent>objectives": 2,
-  "agent>sources": 1,
+  "agent>sources": 2,
   "agent>src/system_diff": 1,
   "agent>watch": 1,
   "agents>activity": 1,
@@ -746,8 +746,8 @@
    "ensure"
   ],
   "agent>sources": [
-   "git",
    "git_dir",
+   "git",
    "run_hidden"
   ],
   "agent>src/system_diff": [
@@ -1744,6 +1744,7 @@
  },
  "routes": {},
  "externals": {},
+ "repos": {},
  "dormant": {
   "chromium": {
    "label": "Headless Chromium (Docker or Playwright)",

@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from . import progress
 from .config import segment_rx
 
-EXTRACT_VERSION = "5"  # what a blueprint records: a blueprint cached by another version is read again
+EXTRACT_VERSION = "6"  # what a blueprint records: a blueprint cached by another version is read again
 
 
 def glob_rx(pattern: str) -> re.Pattern:
@@ -2118,6 +2118,8 @@ def _combine(source, cfg: Dict[str, Any], code_of: Code, files: List[str], files
         "uses": used,
         "routes": routes,
         "externals": externals,
+        "repos": {p: {"kind": "submodule", "sha": sha} for p, sha in sorted((getattr(source, "gitlinks", None) or {}).items())
+                  if not code_of.skip.search(p + "/")},
         "dormant": dormant,
         "internal": dict(sorted(internal.items())),
         "env": {c: sorted(v) for c, v in sorted(env_by_comp.items()) if v},

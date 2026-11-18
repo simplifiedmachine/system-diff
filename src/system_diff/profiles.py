@@ -69,7 +69,7 @@ def discover(project: Path, home: Optional[Path] = None) -> List[Dict[str, Any]]
 
 def choices(project: Path, home: Optional[Path] = None) -> Dict[str, Any]:
     """What the page's dropdowns offer: settings, models, permission modes."""
-    from .sessions import MODELS, PERMISSION_MODES
+    from .sessions import EFFORTS, MODELS, PERMISSION_MODES
     found = discover(project, home)
     models = []
     for p in found:
@@ -78,18 +78,22 @@ def choices(project: Path, home: Optional[Path] = None) -> Dict[str, Any]:
     return {"settings": [{"id": OWN, "name": "Claude Code's own (user + project + local)", "scope": "",
                           "path": "", "model": "", "provider": "", "permissions": {}, "env": {}}] + found,
             "models": [""] + models + [m for m in MODELS if m not in models],
-            "permission_modes": list(PERMISSION_MODES), "danger": ["bypassPermissions"]}
+            "permission_modes": list(PERMISSION_MODES), "danger": ["bypassPermissions"],
+            "efforts": [""] + list(EFFORTS)}
 
 
 def options_for(project: Path, choice: Dict[str, Any], home: Optional[Path] = None) -> Dict[str, Any]:
     """The session options a dropdown choice means: Claude Code's own settings, or one file (and the sources ticked)."""
-    from .sessions import PERMISSION_MODES
+    from .sessions import EFFORTS, PERMISSION_MODES
     profile = str(choice.get("settings_profile") or OWN)
     sources = choice.get("setting_sources")
     sources = [s for s in sources if s in ("user", "project", "local")] if isinstance(sources, list) else None
     out: Dict[str, Any] = {"settings_profile": profile, "model": str(choice.get("model") or "")[:100],
                            "permission_mode": str(choice.get("permission_mode") or "default"),
-                           "agent": str(choice.get("agent") or "")[:80]}
+                           "agent": str(choice.get("agent") or "")[:80],
+                           "effort": str(choice.get("effort") or "")}
+    if out["effort"] and out["effort"] not in EFFORTS:
+        raise ValueError(f"effort is one of {', '.join(EFFORTS)}")
     if out["permission_mode"] not in PERMISSION_MODES:
         raise ValueError(f"permission_mode is one of {', '.join(PERMISSION_MODES)}")
     if profile == OWN:

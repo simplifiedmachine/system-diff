@@ -168,6 +168,10 @@ def change_marks(d: dict, a: dict, b: dict) -> dict:
             detail = ", ".join(x.replace("+ column ", "+ ") for x in c["detail"])
             lines[store].append({"text": c["id"] + (f": {detail}" if detail else ""), "code": True, "status": op})
             status[store] = "changed"
+        elif entity == "repo":
+            status["r:" + c["id"]] = op
+            if c["detail"]:
+                subs["r:" + c["id"]] = c["detail"][0]
     for ext in set(a["externals"]) ^ set(b["externals"]):
         status["x:" + ext] = "added" if ext in b["externals"] else "removed"
     return {"status": status, "lines": lines, "subs": subs, "edges": changed, "store": store}

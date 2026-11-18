@@ -162,10 +162,12 @@ def test_send_to_claude_from_the_page_reaches_the_open_session(manager, repo):
 def test_the_sdk_options_a_session_runs_with(manager, repo, monkeypatch, tmp_path):
     pytest.importorskip("claude_agent_sdk")
     monkeypatch.setattr(sessions, "plugin_enabled", lambda *a, **k: False)
-    s = sessions.Session(manager, repo, {"model": "sonnet", "permission_mode": "plan", "setting_sources": []},
+    s = sessions.Session(manager, repo, {"model": "sonnet", "permission_mode": "plan", "setting_sources": [],
+                                         "effort": "high"},
                          resume="claude-9", fork=True)
     o = s.sdk_options()
     assert (o.model, o.permission_mode, o.resume, o.fork_session, o.cwd) == ("sonnet", "plan", "claude-9", True, str(repo))
+    assert o.effort == "high"
     assert o.setting_sources == [] and "system-diff" in o.mcp_servers and o.can_use_tool is not None
     assert "mcp__system-diff__ui_view" in o.allowed_tools and "mcp__system-diff__ui_show" not in o.allowed_tools
     assert o.system_prompt["preset"] == "claude_code" and "ui_view" in o.system_prompt["append"]
@@ -325,6 +327,14 @@ def test_a_session_from_the_page(studio, repo):
     assert studio["studio"].default_for(repo.resolve())["permission_mode"] == "acceptEdits"
     t = call(url + f"api/sessions/{s['id']}/switch", {"project": pid, "permission_mode": "plan"}, w)
     assert t["id"] != s["id"] and studio["studio"].manager.get(t["id"]).resume == "claude-123"
+    f = call(url + f"api/sessions/{s['id']}/fork", {}, w)
+    forked = studio["studio"].manager.get(f["id"])
+    assert forked.resume == "claude-123" and forked.fork and forked.options["permission_mode"] == "acceptEdits"
+    e = call(url + "api/sessions", {"project": pid, "effort": "xhigh"}, w)
+    assert e["options"]["effort"] == "xhigh"
+    with pytest.raises(urllib.error.HTTPError) as bad:
+        call(url + "api/sessions", {"project": pid, "effort": "eleven"}, w)
+    assert bad.value.code == 400
     with pytest.raises(urllib.error.HTTPError) as gone:
         call(url + "api/sessions/nope/send", {"text": "x"}, w)
     assert gone.value.code == 404

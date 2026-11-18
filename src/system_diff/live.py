@@ -1209,6 +1209,7 @@ class Engine:
         ident = self.identity()
         ref = LIVE_PREFIX + ident
         src = LiveSource(self, files, blobs, ref)
+        src.gitlinks = {p: e.sha for p, e in self.entries.items() if e.mode == "160000"}
         LIVE_SOURCES[ref] = src
         if ref not in self._live_ids:
             self._live_ids.append(ref)

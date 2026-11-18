@@ -547,6 +547,8 @@ def on_tool(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dic
     if not path:
         return said()
     edit = tool in EDIT_TOOLS
+    if edit:
+        tell_inner(root, path)
     activity.record(root, {"event": activity.EDIT if edit else activity.READ, "path": path, "tool": tool,
                            "session": payload.get("session_id", ""), "agent": agent_id})
     part = activity.part_of(path, Code(config.lenient(root)))
@@ -559,6 +561,46 @@ def on_tool(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dic
     messages.append(got.get("message") or "")
     context.append(got.get("context") or "")
     return said()
+
+
+def inner_repo(root: Path, path: str) -> Optional[Path]:
+    """The repository inside this one (a submodule, a nested repository) that holds `path`, if any: found by walking
+    up from the file to the root (a few stats; no scan of the tree)."""
+    here = (Path(root) / path).parent
+    try:
+        here.relative_to(root)
+    except ValueError:
+        return None
+    while here != Path(root) and here != here.parent:
+        if (here / ".git").exists():
+            return here
+        here = here.parent
+    return None
+
+
+def tell_inner(root: Path, path: str) -> None:
+    """An edit inside a repository within this one goes to that repository's engine too (its own diagram, history and
+    tabs follow), when one runs: one short local request; never in the way of the hook."""
+    inner = inner_repo(root, path)
+    if inner is None:
+        return
+    try:
+        from .sources import git_dir
+        info = json.loads((git_dir(inner) / "web.json").read_text(encoding="utf-8"))
+        port, token = int(info.get("port") or 0), str(info.get("token") or "")
+        if not port or not token or _nobody_listens(port):
+            return
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=CONNECT)
+        try:
+            rel = (Path(root) / path).relative_to(inner).as_posix()
+            conn.request("POST", "/touch", body=json.dumps({"paths": [rel]}).encode("utf-8"),
+                         headers={"X-Token": token, "Content-Type": "application/json"})
+            conn.getresponse().read()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - its engine finds the edit at its next look anyway
+        pass
 
 
 def record_step(root: Path, path: str, part: str, before: Iterable[str], notes: List[Dict[str, Any]]) -> None:

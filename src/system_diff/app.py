@@ -208,8 +208,8 @@ class Studio:
 
     def remember(self, root: Path, choice: Dict[str, Any]) -> None:
         with self.lock:
-            self.defaults[str(root)] = {k: choice.get(k) for k in ("settings_profile", "model", "permission_mode",
-                                                                   "setting_sources") if k in choice}
+            self.defaults[str(root)] = {k: choice.get(k) for k in ("settings_profile", "model", "effort",
+                                                                   "permission_mode", "setting_sources") if k in choice}
             if self.folder is not None:
                 _write_private(self.folder / DEFAULTS, self.defaults)
 
@@ -423,6 +423,13 @@ def handler(studio: Studio):
                 if act == "close":
                     s.close()
                     return self._json(200, {"ok": True})
+                if act == "fork":   # the conversation so far, continued apart: this one goes on as it was
+                    if not s.claude_id:
+                        raise ValueError("this session has no conversation yet to fork")
+                    opts = profiles.options_for(s.project, b) if b.get("settings_profile") else dict(s.options)
+                    t = studio.sessions().start(s.project, opts, resume=s.claude_id, fork=True)
+                    t.emit("note", text=f"A fork of session {s.id}: the same conversation so far, going its own way")
+                    return self._json(200, t.head())
                 if act == "switch":   # new options, the same conversation: a new session resuming it
                     if not s.claude_id:
                         raise ValueError("this session has no conversation yet: just start a new one")

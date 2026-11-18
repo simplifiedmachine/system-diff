@@ -257,7 +257,9 @@ config: Claude renames or groups a box by editing `system-diff.toml`, and the pa
 Git submodules and nested repositories (a folder with its own `.git`) are systems of their own. The web page lists
 them on the left, under the outer repository, with their branch; a click opens that repository's own engine and
 page (its own checkpoint, history and caches), and every repository of the family shows the same list, so you can go
-back. Extensions get the outer repository as `ctx.parent`.
+back. In the outer repository's diagram each submodule is one box, at its commit, marked changed when its pointer
+moves; an edit inside one reaches that repository's own engine too. Extensions get the outer repository as
+`ctx.parent`.
 
 ## Roadmap
 

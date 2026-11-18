@@ -114,10 +114,11 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
         <div class="row"><select id="sesspick" aria-label="Session"></select><button type="button" id="newsess" class="primary">New</button></div>
         <label for="settings">Settings</label><select id="settings"></select>
         <label for="model">Model</label><div class="row"><input type="text" id="model" list="models" placeholder="the settings' default"><datalist id="models"></datalist></div>
+        <label for="effort">Effort</label><select id="effort"></select>
         <label for="mode">Permissions</label><select id="mode"></select>
         <label for="agentpick">Agent</label><select id="agentpick"><option value="">Claude (no saved agent)</option></select>
         <label for="pastpick">Resume</label><div class="row"><select id="pastpick"><option value="">a past conversation…</option></select><button type="button" id="resume">Resume</button></div>
-        <span></span><div class="row"><button type="button" id="apply" hidden title="Start a session with these settings that continues this conversation">Apply to this conversation</button></div>
+        <span></span><div class="row"><button type="button" id="fork" hidden title="Continue this conversation in a new session; this one stays as it is">Fork</button><button type="button" id="apply" hidden title="Start a session with these settings that continues this conversation">Apply to this conversation</button></div>
       </div>
     </div>
     <div id="feed" aria-live="polite"></div>
@@ -231,15 +232,18 @@ async function loadChoices() {
   $("model").value = d.model || "";
   const md = $("mode"); md.replaceChildren(); for (const m of c.permission_modes) option(md, m, m === "bypassPermissions" ? m + " (no questions: dangerous)" : m);
   md.value = d.permission_mode || "default"; paintMode();
+  const ef = $("effort"); ef.replaceChildren(); for (const x of c.efforts || [""]) option(ef, x, x || "the settings' default");
+  ef.value = d.effort || "";
   const ag = $("agentpick"); ag.replaceChildren(); option(ag, "", "Claude (no saved agent)"); for (const a of c.agents || []) option(ag, a, a);
   paintSdk();
 }
 function paintMode() { $("mode").classList.toggle("danger", $("mode").value === "bypassPermissions"); }
 $("mode").addEventListener("change", () => { paintMode(); offerApply(); });
-for (const id of ["settings", "model", "agentpick"]) $(id).addEventListener("change", offerApply);
+for (const id of ["settings", "model", "agentpick", "effort"]) $(id).addEventListener("change", offerApply);
 function choice() { return { project:S.project, settings_profile:$("settings").value, model:$("model").value.trim(),
-                             permission_mode:$("mode").value, agent:$("agentpick").value }; }
+                             permission_mode:$("mode").value, agent:$("agentpick").value, effort:$("effort").value }; }
 function offerApply() { $("apply").hidden = !(S.session && S.session.claude_session && S.session.status !== "closed"); }
+function offerFork() { $("fork").hidden = !(S.session && S.session.claude_session); }
 function paintSdk() {
   const old = $("sdknote"); if (old) old.remove();
   if (S.choices && !S.choices.sdk) {
@@ -279,6 +283,11 @@ $("apply").addEventListener("click", async () => {
   try { const s = await api("api/sessions/" + S.session.id + "/switch", choice()); await loadSessions(); $("sesspick").value = s.id; follow(s.id); $("apply").hidden = true; }
   catch (e) { $("sstatus").textContent = e.message; }
 });
+$("fork").addEventListener("click", async () => {
+  if (!S.session) return;
+  try { const s = await api("api/sessions/" + S.session.id + "/fork", {}); await loadSessions(); $("sesspick").value = s.id; follow(s.id); }
+  catch (e) { $("sstatus").textContent = e.message; }
+});
 function follow(id) {
   S.polling++; const mine = S.polling;
   S.session = { id }; S.next = 0; S.streaming = null; S.cards = {}; $("feed").replaceChildren();
@@ -303,7 +312,7 @@ function paintStatus() {
               closed:"Closed: New starts another, or Resume this conversation", failed:"Could not start: " + (s.error || "") }[s.status] || s.status);
   if (s.model) st.append(" · " + s.model);
   $("stop").disabled = !busy;
-  offerApply();
+  offerApply(); offerFork();
 }
 function scrolled(fn) { const f = $("feed"), end = f.scrollHeight - f.scrollTop - f.clientHeight < 60; fn(); if (end) f.scrollTop = f.scrollHeight; }
 function toolView(v) {

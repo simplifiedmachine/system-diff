@@ -22,6 +22,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
 PERMISSION_MODES = ("default", "acceptEdits", "plan", "dontAsk", "auto", "bypassPermissions")
 MODELS = ("opus", "sonnet", "haiku", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-2")
 KEEP_EVENTS = 5000          # in memory per session; the log file keeps all
@@ -158,7 +159,8 @@ class Session:
 
     def public_options(self) -> Dict[str, Any]:
         o = self.options
-        return {k: o.get(k) for k in ("model", "permission_mode", "settings_profile", "setting_sources", "agent")}
+        return {k: o.get(k) for k in ("model", "effort", "permission_mode", "settings_profile", "setting_sources",
+                                      "agent")}
 
     def events_since(self, since: int, wait: float = 0.0) -> Dict[str, Any]:
         deadline = time.time() + max(0.0, min(wait, LONG_POLL))
@@ -298,6 +300,8 @@ class Session:
             kw["model"] = str(o["model"])
         if o.get("settings"):
             kw["settings"] = str(o["settings"])
+        if o.get("effort") in EFFORTS:
+            kw["effort"] = o["effort"]
         if self.resume:
             kw["resume"] = self.resume
             if self.fork:

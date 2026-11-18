@@ -237,6 +237,11 @@ def outside_nodes(bp: dict, cfg: Dict[str, Any], before: Optional[dict] = None) 
         for u in users:
             flows.append({"from": u, "to": "x:" + e["id"], "label": e.get("via") or protocol(e["label"], e.get("shape", "")),
                           "kind": "data" if db else "network"})
+    for side in [s for s in (before, bp) if s]:   # repositories inside this one: a box each, its own system
+        for path, r in (side.get("repos") or {}).items():
+            nodes["r:" + path] = {"id": "r:" + path, "col": "external", "type": "host", "status": "same",
+                                  "title": f"{path.rsplit('/', 1)[-1]} (submodule)",
+                                  "sub": f"at {str(r.get('sha') or '')[:7]}" if path in (bp.get("repos") or {}) else "removed"}
     return list(nodes.values()), flows
 
 
@@ -309,6 +314,8 @@ def _system(cmp, marks: Optional[dict] = None, agent: Optional[str] = None,
     outs, out_flows = outside_nodes(bp, cfg, before)
     for n in acts + outs:
         n["status"] = _status(marks, n["id"])
+        if n["id"].startswith("r:") and marks.get("subs", {}).get(n["id"]):
+            n["sub"] = marks["subs"][n["id"]]   # where its pointer moved
         nodes[n["id"]] = n
         box_of[n["id"]] = n["id"]
     flows += out_flows

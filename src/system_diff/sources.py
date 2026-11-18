@@ -82,7 +82,7 @@ def is_live(ref: Optional[str]) -> bool:
     return bool(ref) and str(ref).startswith(LIVE_PREFIX)
 
 
-def _listing(ref: str, root: Path) -> Tuple[str, List[str], Dict[str, str]]:
+def _listing(ref: str, root: Path) -> Tuple[str, List[str], Dict[str, str], Dict[str, str]]:
     """(label, files, blobs) of a commit: read through gitfs (loose objects, the one cat-file process) when it can,
     else `git rev-parse --short` and `git ls-tree -r`."""
     from . import gitfs
@@ -97,14 +97,17 @@ def _listing(ref: str, root: Path) -> Tuple[str, List[str], Dict[str, str]]:
             raise gitfs.Fallback(ref)
         files: List[str] = []
         blobs: Dict[str, str] = {}
+        links: Dict[str, str] = {}
         for mode, kind, oid, path in gitfs.ls_tree(root, sha):
             files.append(path)
             if kind == "blob":
                 blobs[path] = oid
+            elif kind == "commit":
+                links[path] = oid   # a submodule, at this commit
         label = sha[:7]
     except (gitfs.Fallback, OSError, ValueError):
         label = git("rev-parse", "--short", ref, cwd=root).strip()
-        files, blobs = [], {}
+        files, blobs, links = [], {}, {}
         for entry in git("ls-tree", "-r", "-z", ref, cwd=root).split("\0"):
             head, tab, path = entry.partition("\t")
             if not tab:
@@ -113,7 +116,9 @@ def _listing(ref: str, root: Path) -> Tuple[str, List[str], Dict[str, str]]:
             mode_type_id = head.split()
             if len(mode_type_id) == 3 and mode_type_id[1] == "blob":
                 blobs[path] = mode_type_id[2]
-    got = (label, files, blobs)
+            elif len(mode_type_id) == 3 and mode_type_id[1] == "commit":
+                links[path] = mode_type_id[2]
+    got = (label, files, blobs, links)
     if sha is not None and gitfs.HEX.match(ref):   # a name (HEAD, a branch) can move: only an id is kept
         _trim(_LISTINGS, 32)
         _LISTINGS[key] = got
@@ -135,8 +140,9 @@ class GitSource:
         self.root, self.ref = Path(root), ref
         # each file's blob id too: a content address, so what was read from a file once (extract's per-file facts)
         # is known again wherever and whenever the same content turns up
-        label, files, blobs = _listing(ref, self.root)
+        label, files, blobs, links = _listing(ref, self.root)
         self.label, self.files, self.blobs = label, list(files), dict(blobs)
+        self.gitlinks = dict(links)   # the submodules: path → the commit the tree points at
         self._cache: Dict[str, str] = {}
 
     def read_many(self, paths: Iterable[str]) -> Dict[str, str]:

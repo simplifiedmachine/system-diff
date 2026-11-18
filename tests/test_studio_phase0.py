@@ -134,3 +134,63 @@ def test_a_flow_within_a_column_stays_inside_the_picture():
     xs = [float(x) for d in re.findall(r'<path d="(M[^"]+)"', svg) for x in re.findall(r"(-?\d+(?:\.\d+)?),", d)]
     tags = [float(x) + float(w) for x, w in re.findall(r'class="tag" x="([\d.]+)" y="[\d.-]+" width="([\d.]+)"', svg)]
     assert xs and max(xs) < width and tags and max(tags) < width
+
+
+def _commit(cwd, msg):
+    _git(cwd, "add", "-A")
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", msg], cwd=cwd, check=True,
+                   capture_output=True)
+
+
+def test_a_submodule_is_one_box_and_its_pointer_moving_a_change(tmp_path, files):
+    from system_diff import architecture, compare, gitfs
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    _git(lib, "init", "-q", "-b", "main")
+    files(lib, {"lib.py": "def f():\n    return 1\n"})
+    _commit(lib, "one")
+    outer = tmp_path / "app"
+    outer.mkdir()
+    _git(outer, "init", "-q", "-b", "main")
+    files(outer, {"app/main.py": "print('hi')\n"})
+    subprocess.run(["git", "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(lib), "vendor/lib"],
+                   cwd=outer, check=True, capture_output=True)
+    _commit(outer, "with lib")
+    first = gitfs.head(outer)
+    files(lib, {"lib.py": "def f():\n    return 2\n"})
+    _commit(lib, "two")
+    _git(outer / "vendor" / "lib", "-c", "protocol.file.allow=always", "pull", "-q", "origin", "main")
+    _commit(outer, "lib moved")
+    c = compare.compare(outer, first, "HEAD")
+    assert c.after["repos"]["vendor/lib"]["sha"] != c.before["repos"]["vendor/lib"]["sha"]
+    moved = [x for x in c.diff["changes"] if x["entity"] == "repo"]
+    assert moved and moved[0]["op"] == "change" and moved[0]["detail"][0].startswith("moved from ")
+    model = architecture.system(c)
+    box = next(n for n in model["nodes"] if n["id"] == "r:vendor/lib")
+    assert box["status"] == "changed" and box["title"] == "lib (submodule)" and box["sub"].startswith("moved from ")
+    assert not any(n["id"].startswith("vendor/") for n in model["nodes"])   # its code is its own system's
+
+
+def test_an_edit_inside_a_submodule_reaches_its_engine(family, monkeypatch):
+    from system_diff import agent
+    assert agent.inner_repo(family, "1_tradeoff/paper/main.tex") == family / "1_tradeoff"
+    assert agent.inner_repo(family, "notes/x.md") is None
+    told = []
+    up = {}
+    t = threading.Thread(target=watch.serve, kwargs={"root": family / "1_tradeoff", "port": 0, "interval": 0.2,
+                                                     "ready": lambda url, server, w: up.update(server=server, w=w)},
+                         daemon=True)
+    t.start()
+    deadline = time.time() + 15
+    while "w" not in up and time.time() < deadline:
+        time.sleep(0.05)
+    try:
+        engine = getattr(up["w"], "engine", None)
+        if engine is not None:
+            assert engine.done.wait(60)
+            monkeypatch.setattr(engine, "touch", lambda paths: told.append(paths) or engine.version)
+        agent.tell_inner(family, "1_tradeoff/paper/main.tex")
+        assert told == [["paper/main.tex"]] or engine is None
+    finally:
+        up["server"].shutdown()
+        t.join(5)
