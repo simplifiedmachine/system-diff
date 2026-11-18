@@ -858,6 +858,29 @@ def owners(model: Dict[str, Any], who: Dict[str, Dict[str, Any]], colour: Dict[s
                 box["owner"] = colour[name]
 
 
+def _library_sections(root: Path) -> List[Dict[str, Any]]:
+    """The agents worth keeping and the saved ones (agentlib), for the Agents tab."""
+    try:
+        from . import agentlib
+        lib = agentlib.library(root)
+    except Exception:  # noqa: BLE001 - the tab stands without it
+        return []
+    out = []
+    if lib["worth_keeping"]:
+        out.append(_web_section("Agents worth keeping", "notes",
+                                [{"sign": "★", "text": r["name"] + (f" · {r['area']}" if r.get("area") else ""),
+                                  "why": r["why"] + " · not saved yet: Claude saves it with save_agent",
+                                  "status": "added"} for r in lib["worth_keeping"][:8]],
+                                "roles that keep coming back"))
+    if lib["saved"]:
+        out.append(_web_section("Saved agents", "notes",
+                                [{"sign": "◆", "text": f"{a['name']} ({a['scope']})",
+                                  "why": (a["description"][:160] + " · " if a["description"] else "")
+                                  + f"planned {a['planned']}×, finished {a['finished']}×"} for a in lib["saved"][:20]],
+                                "Claude Code subagents, started by name"))
+    return out
+
+
 def view_agents(root: Path, width: int) -> Dict[str, Any]:
     cfg = config.lenient(root)
     code = Code(cfg)
@@ -948,6 +971,11 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
             page.add(["        " + canvas.cut(m["why"], width - 9), "muted"])
     if not msgs:
         page.add(["   nothing yet: changes to a block are published here as agents make them", "muted"])
+    for sec in _library_sections(root):
+        page.heading(sec["title"], sec["aside"])
+        for it in sec["items"]:
+            page.para(f"{it['text']}: {it['why']}", "added" if it.get("status") == "added" else "",
+                      first=[f" {it['sign']} ", "accent"])
     return page.json(view="agents", part="")
 
 
@@ -1593,6 +1621,7 @@ def _web_agents(root: Path, zoom: int) -> Dict[str, Any]:
     clash = collisions(root, events, code, cfg)
     if clash:
         sections.append(_web_section("In each other's way", "notes", [_web_note(n) for n in clash]))
+    sections += _library_sections(root)
     badges(model, root, events, code)
     owners(model, who, colour)
     diagram = _web_diagram(c, model, "Who works where", "each box in the colour of its agent", zoom, [])

@@ -388,7 +388,24 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
         for b in g["blocks"]:
             data["claims"][b] = g["name"]
     _save(root, data)
-    return {"task": task, "agents": agents, "how": how}
+    out: Dict[str, Any] = {"task": task, "agents": agents, "how": how}
+    try:   # roles that keep coming back: counted, and a saved subagent used when one fits
+        from . import agentlib
+        agentlib.planned(root, agents)
+        for g in agents:
+            hit = agentlib.match(root, g["name"], g["area"])
+            if hit is not None:
+                g["saved_agent"] = hit["name"]
+                g["brief"] += (f"\nStart it as the saved subagent `{hit['name']}` (the Task tool's subagent_type), "
+                               "with this brief as its prompt.")
+        keep = agentlib.worth_keeping(root)
+        if keep:
+            out["worth_keeping"] = [{k: r[k] for k in ("name", "why")} for r in keep[:5]]
+            out["save_hint"] = ("These roles keep coming back: save_agent saves one as a Claude Code subagent "
+                                "(say what you saved).")
+    except Exception:  # noqa: BLE001 - the plan stands without the library
+        pass
+    return out
 
 
 ORCHESTRATE = ("system-diff: this repository works with a team of agents. Before you start on a task that touches "

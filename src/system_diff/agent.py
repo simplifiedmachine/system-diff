@@ -592,6 +592,8 @@ def run_hook(stdin_text: str, emit: Callable[[str], None] = print, env=None) -> 
     in Python, and the work that needs git is the engine's (hand_off)."""
     began = time.monotonic()
     env = os.environ if env is None else env
+    if env.get("SYSTEM_DIFF_APP_SESSION") == "1":
+        return 0   # a session the Studio runs: the app runs this for it (sessions.py), once
     try:
         payload = json.loads(stdin_text) if stdin_text.strip() else {}
     except ValueError:
@@ -622,6 +624,9 @@ def run_hook(stdin_text: str, emit: Callable[[str], None] = print, env=None) -> 
                 message = None
         elif event == "Stop":
             message = on_stop(root, payload, env)
+        elif event == "SubagentStop":   # a role finished: counted (agents worth keeping)
+            from . import agentlib
+            agentlib.finished(root, str(payload.get("agent_type") or ""))
         if message:
             emit(json.dumps({"systemMessage": message}))
     except Exception:  # noqa: BLE001 - a hook never fails a turn
@@ -647,6 +652,7 @@ HOOKS = (  # event, matcher, how it runs, what it does
      "notes the files Claude reads and, after an edit that changes the system's structure, one line on what it "
      "changed; and hands each agent what other agents published"),
     ("Stop", None, {"timeout": 30}, "after each turn, one line on what the turn changed in the system"),
+    ("SubagentStop", None, {"timeout": 15}, "counts each finished subagent's role, to suggest the ones worth keeping"),
 )
 
 

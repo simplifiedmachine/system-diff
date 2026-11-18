@@ -265,6 +265,10 @@ def parser() -> argparse.ArgumentParser:
     hb = sub.add_parser("hub", help="the one address listing every running project (each repository's engine)")
     hb.add_argument("--open", action="store_true", help="open it in the browser too")
     hb.add_argument("--no-serve", action="store_true", help="when no engine runs, say so instead of serving the list")
+    st = sub.add_parser("app", help="system-diff Studio: every project's page and a Claude Code session beside it, "
+                                    "in one local web app (sessions need the [app] extra)")
+    st.add_argument("--port", type=int, default=8765, help="the first port to try (ten are tried)")
+    st.add_argument("--open", action="store_true", help="open it in the browser too")
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
@@ -449,6 +453,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "hook":   # no git: the hook finds the repository in Python (a git start costs seconds on some machines)
         from . import agent
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
+    if args.cmd == "app":   # every repository's, not one: no repository needed
+        from . import app
+        return app.serve(port=args.port, open_it=args.open)
     if args.cmd == "hub":   # every repository's, not one: no repository needed
         from . import hub
         return hub.main(open_it=args.open, serve=not args.no_serve)

@@ -931,6 +931,7 @@ function paintNav(items, family) {
 }
 async function openRepo(r, b) {
   if (r.current) return;
+  if (STUDIO) { parent.postMessage({ studio:"open", path:r.path }, location.origin); return; }
   const s = b.querySelector(".s"); if (s) s.textContent = "Opening…";
   for (let i = 0; i < 90; i++) {
     try {
@@ -1387,8 +1388,11 @@ function paintChrome() {
 }
 // ---- the project tabs: one per running engine, plain links to each engine's own page, keeping the view ----
 __PROJECT_HREF__
+// inside the Studio (system-diff app): its own column lists the projects
+const STUDIO = window.parent !== window && /(^|[?&])studio=1(&|$)/.test(location.search);
 function paintProjects() {
   const nav = $("projects"), key = JSON.stringify([projects.list, ui.view]);
+  if (STUDIO) { nav.hidden = true; return; }
   if (nav.dataset.key === key) return;
   nav.dataset.key = key;
   const items = [];

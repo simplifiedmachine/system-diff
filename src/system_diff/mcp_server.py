@@ -401,6 +401,30 @@ def build() -> Server:
         return _safe(lambda: uitools.show(_root(), view, part, pick, note, project))
 
     @_read_only(server)
+    def saved_agents() -> Dict[str, Any]:
+        """The subagents saved for this repository and for the person (name, scope, description, how often planned
+        and finished), and the roles worth keeping: planned or finished twice, or a standing role (reviewer, tester)
+        that finished once, not saved yet."""
+        from . import agentlib
+        return agentlib.library(_root())
+
+    @server.tool()
+    def save_agent(name: str, description: str, prompt: str, tools: str = "", model: str = "",
+                   scope: str = "project") -> Dict[str, Any]:
+        """Save a role that keeps coming back as a Claude Code subagent (.claude/agents/<name>.md for the project,
+        shared through git; scope "user" for every repository of the person's): its description says when to use
+        it, its prompt is its standing instructions, tools and model optional. Say what you saved."""
+        from . import agentlib
+        return _safe(lambda: agentlib.save_agent(_root(), name, description, prompt, tools, model, scope))
+
+    @server.tool()
+    def save_skill(name: str, description: str, steps: str, scope: str = "project") -> Dict[str, Any]:
+        """Save a procedure an agent keeps repeating (how this repository runs its tests, how it releases) as a
+        Claude Code skill (.claude/skills/<name>/SKILL.md). Say what you saved."""
+        from . import agentlib
+        return _safe(lambda: agentlib.save_skill(_root(), name, description, steps, scope))
+
+    @_read_only(server)
     def team() -> Dict[str, Any]:
         """The plan, who claims which block, and the latest messages on the bus."""
         root = _root()

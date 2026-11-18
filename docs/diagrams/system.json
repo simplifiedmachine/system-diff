@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 573,
+   "lines": 580,
    "hub": false,
    "quiet": false
   },
@@ -33,7 +33,19 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 844,
+   "lines": 850,
+   "hub": false,
+   "quiet": false
+  },
+  "src/system_diff": {
+   "label": "src/system_diff",
+   "layer": "undeclared",
+   "kind": "",
+   "order": 36,
+   "container": "",
+   "declared": false,
+   "files": 9,
+   "lines": 2541,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 398,
+   "lines": 415,
    "hub": false,
    "quiet": false
   },
@@ -141,7 +153,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 277,
+   "lines": 304,
    "hub": false,
    "quiet": false
   },
@@ -154,18 +166,6 @@
    "declared": true,
    "files": 1,
    "lines": 1277,
-   "hub": false,
-   "quiet": false
-  },
-  "src/system_diff": {
-   "label": "src/system_diff",
-   "layer": "undeclared",
-   "kind": "",
-   "order": 36,
-   "container": "",
-   "declared": false,
-   "files": 4,
-   "lines": 708,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 443,
+   "lines": 467,
    "hub": false,
    "quiet": false
   },
@@ -333,7 +333,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2648,
+   "lines": 2677,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2840,
+   "lines": 2844,
    "hub": false,
    "quiet": false
   }
@@ -463,6 +463,7 @@
   "agent>live": 2,
   "agent>objectives": 2,
   "agent>sources": 1,
+  "agent>src/system_diff": 1,
   "agent>watch": 1,
   "agents>activity": 1,
   "agents>architecture": 2,
@@ -471,6 +472,7 @@
   "agents>extract": 1,
   "agents>objectives": 1,
   "agents>sources": 1,
+  "agents>src/system_diff": 1,
   "architecture>design": 2,
   "architecture>diff": 1,
   "architecture>extract": 1,
@@ -502,7 +504,7 @@
   "cli>png": 1,
   "cli>readme": 1,
   "cli>sources": 1,
-  "cli>src/system_diff": 2,
+  "cli>src/system_diff": 3,
   "cli>statusline": 1,
   "cli>textmap": 1,
   "cli>tui": 1,
@@ -526,7 +528,7 @@
   "doctor>live": 2,
   "doctor>panel": 1,
   "doctor>sources": 3,
-  "doctor>src/system_diff": 1,
+  "doctor>src/system_diff": 3,
   "doctor>watch": 1,
   "explain>architecture": 1,
   "explain>design": 1,
@@ -595,7 +597,7 @@
   "mcp>objectives": 2,
   "mcp>pictures": 1,
   "mcp>sources": 1,
-  "mcp>src/system_diff": 6,
+  "mcp>src/system_diff": 9,
   "mcp>textmap": 1,
   "names>graph": 1,
   "narrate>sources": 1,
@@ -625,7 +627,7 @@
   "panel>pictures": 1,
   "panel>regroup": 1,
   "panel>sources": 3,
-  "panel>src/system_diff": 5,
+  "panel>src/system_diff": 6,
   "panel>textmap": 1,
   "panel>watch": 2,
   "png>sources": 1,
@@ -638,15 +640,17 @@
   "regroup>narrate": 1,
   "regroup>sources": 1,
   "sources>gitfs": 3,
-  "src/system_diff>chat": 1,
+  "src/system_diff>agent": 2,
+  "src/system_diff>chat": 2,
   "src/system_diff>compare": 1,
   "src/system_diff>config": 3,
-  "src/system_diff>extract": 2,
+  "src/system_diff>extract": 3,
   "src/system_diff>gitfs": 2,
-  "src/system_diff>hub": 3,
-  "src/system_diff>live": 1,
-  "src/system_diff>panel": 2,
-  "src/system_diff>sources": 5,
+  "src/system_diff>hub": 4,
+  "src/system_diff>live": 2,
+  "src/system_diff>panel": 3,
+  "src/system_diff>sources": 9,
+  "src/system_diff>watch": 1,
   "statusline>activity": 1,
   "statusline>config": 1,
   "statusline>extract": 1,
@@ -746,6 +750,9 @@
    "git_dir",
    "run_hidden"
   ],
+  "agent>src/system_diff": [
+   "finished"
+  ],
   "agent>watch": [
    "py"
   ],
@@ -778,6 +785,11 @@
   ],
   "agents>sources": [
    "git_dir"
+  ],
+  "agents>src/system_diff": [
+   "match",
+   "planned",
+   "worth_keeping"
   ],
   "architecture>design": [
    "kinds"
@@ -914,7 +926,8 @@
    "repo_root"
   ],
   "cli>src/system_diff": [
-   "line"
+   "line",
+   "serve"
   ],
   "cli>statusline": [
    "statusline"
@@ -1017,7 +1030,9 @@
    "run_hidden"
   ],
   "doctor>src/system_diff": [
-   "stage"
+   "stage",
+   "running",
+   "sdk_available"
   ],
   "doctor>watch": [
    "web_url"
@@ -1327,7 +1342,7 @@
    "show",
    "source",
    "view",
-   "failed"
+   "library"
   ],
   "mcp>textmap": [
    "plain",
@@ -1539,7 +1554,12 @@
    "git_dir",
    "locate"
   ],
+  "src/system_diff>agent": [
+   "run_hook",
+   "find_root"
+  ],
   "src/system_diff>chat": [
+   "delivered",
    "show_page"
   ],
   "src/system_diff>compare": [
@@ -1551,27 +1571,36 @@
    "preview"
   ],
   "src/system_diff>extract": [
-   "Code"
+   "Code",
+   "redact"
   ],
   "src/system_diff>gitfs": [
    "locate",
    "read_index"
   ],
   "src/system_diff>hub": [
+   "projects",
    "_alive",
+   "_open",
    "branch",
-   "projects"
+   "allowed",
+   "engines_dir"
   ],
   "src/system_diff>live": [
    "client_progress",
-   "progress_text"
+   "progress_text",
+   "token_ok"
   ],
   "src/system_diff>panel": [
-   "web_view"
+   "web_view",
+   "take_outbox"
   ],
   "src/system_diff>sources": [
    "git_dir",
    "DirSource"
+  ],
+  "src/system_diff>watch": [
+   "start_detached"
   ],
   "statusline>activity": [
    "now",
@@ -1773,6 +1802,8 @@
    "SYSTEM_DIFF_REGROUP"
   ],
   "src/system_diff": [
+   "CODESPACE_NAME",
+   "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN",
    "SYSTEM_DIFF_EXTENSIONS"
   ]
  },
@@ -1887,7 +1918,8 @@
    "subprocess": 1,
    "sys": 1,
    "time": 1,
-   "typing": 1
+   "typing": 1,
+   "urllib": 1
   },
   "explain": {
    "collections": 1,
@@ -2097,19 +2129,27 @@
    "typing": 1
   },
   "src/system_diff": {
-   "pathlib": 4,
-   "typing": 4,
-   "json": 3,
-   "os": 3,
-   "time": 2,
+   "pathlib": 8,
+   "typing": 8,
+   "json": 7,
+   "os": 6,
+   "time": 5,
+   "re": 4,
+   "sys": 3,
+   "threading": 3,
+   "urllib": 2,
+   "asyncio": 1,
+   "claude_agent_sdk": 1,
    "configparser": 1,
    "dataclasses": 1,
+   "hashlib": 1,
+   "http": 1,
    "importlib": 1,
-   "re": 1,
-   "sys": 1,
-   "threading": 1,
+   "secrets": 1,
+   "shutil": 1,
    "tomllib": 1,
-   "urllib": 1
+   "uuid": 1,
+   "warnings": 1
   },
   "statusline": {
    "json": 1,
@@ -2272,7 +2312,8 @@
    "subprocess": 1,
    "sys": 1,
    "time": 1,
-   "typing": 1
+   "typing": 1,
+   "urllib.request": 1
   },
   "explain": {
    "collections": 1,
@@ -2487,21 +2528,30 @@
    "typing": 1
   },
   "src/system_diff": {
-   "pathlib": 4,
-   "typing": 4,
-   "json": 3,
-   "os": 3,
-   "time": 2,
+   "pathlib": 8,
+   "typing": 8,
+   "json": 7,
+   "os": 6,
+   "time": 5,
+   "re": 4,
+   "sys": 3,
+   "threading": 3,
+   "urllib.parse": 2,
+   "asyncio": 1,
+   "claude_agent_sdk": 1,
    "configparser": 1,
    "dataclasses": 1,
+   "hashlib": 1,
+   "http.client": 1,
+   "http.server": 1,
    "importlib.metadata": 1,
-   "re": 1,
-   "sys": 1,
-   "threading": 1,
+   "secrets": 1,
+   "shutil": 1,
    "tomllib": 1,
    "urllib.error": 1,
-   "urllib.parse": 1,
-   "urllib.request": 1
+   "urllib.request": 1,
+   "uuid": 1,
+   "warnings": 1
   },
   "statusline": {
    "json": 1,
@@ -2584,6 +2634,7 @@
   "tests/test_page_tools.py": 1,
   "tests/test_regroup.py": 1,
   "tests/test_slow_start.py": 1,
+  "tests/test_studio.py": 1,
   "tests/test_studio_phase0.py": 1,
   "tests/test_svg.py": 1,
   "tests/test_system_diff.py": 1,

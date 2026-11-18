@@ -217,6 +217,32 @@ studies of a repository with several papers), and a diagram's file may open at g
 The contract is in
 [src/system_diff/extensions.py](src/system_diff/extensions.py). `SYSTEM_DIFF_EXTENSIONS=off` loads none.
 
+## Studio: work from one web app
+
+```sh
+pip install -U "system-diff[app]"     # brings the Claude Agent SDK; Claude Code itself must be installed
+system-diff app --open
+```
+
+One local page for all your work: your projects on the left (each with its submodules and nested repositories
+under it), the project's system-diff page in the middle (every tab, extensions' too), and a **Claude Code session**
+beside it, run by the app with your own Claude Code login and gateway:
+
+- Streaming answers, tool calls as they happen, and a question card when a tool call needs your say (**Allow**,
+  **Allow always**, **Deny** with a reason). **Interrupt** stops a turn; a reload or a second tab replays the
+  conversation; **Resume** continues one of Claude Code's past conversations of the repository.
+- Dropdowns for the **settings** (Claude Code's own, or one settings file such as `~/.claude/settings.bedrock.json`;
+  secrets never reach the page), the **model** (any alias or id) and the **permission mode** (`bypassPermissions` is
+  never the default and shows red). Changing them mid-conversation starts a session that continues it.
+- **Agents worth keeping**: roles your plans and subagents keep using (a tester, a reviewer, an API agent) are
+  suggested in the Agents tab; **Keep** saves one as a Claude Code subagent (`.claude/agents/<name>.md`), and
+  **Start with it** opens a session that uses it. Claude can save them too (`save_agent`, `save_skill`).
+- The diagrams follow the session as they follow a terminal one, and what you send from the page goes to the open
+  session. One app per user (`system-diff app` again opens it); it uses each repository's own engine, so a terminal
+  session in the same repository shares it. Every route checks the host name, the token and the page's origin.
+
+`system-diff doctor` says whether the app runs, its sessions, the Agent SDK and the `claude` it found.
+
 ## Claude sees and steers the page
 
 The MCP server gives Claude the page as tools, in a terminal session as in the Studio: `ui_view` (what you are

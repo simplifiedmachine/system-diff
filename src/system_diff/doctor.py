@@ -166,6 +166,32 @@ def log_report(root: Path, say, lines: int = 12) -> None:
             say("    " + x[:300])
 
 
+def studio_line() -> str:
+    """The Studio (system-diff app): whether it runs and its sessions, the Agent SDK, the Claude Code CLI it uses."""
+    import shutil
+    from . import sessions
+    sdk = sessions.sdk_available()
+    cli = shutil.which("claude") or "not found on PATH"
+    try:
+        from . import app
+        have = app.running()
+    except Exception:  # noqa: BLE001
+        have = None
+    where = f"running at {have['url']}" if have else "not running (system-diff app starts it)"
+    if have:
+        try:
+            import json
+            import urllib.request
+            req = urllib.request.Request(have["url"] + "api/status", headers={"X-Token": have["token"]})
+            got = json.loads(urllib.request.urlopen(req, timeout=3).read())   # noqa: S310 - this user's app
+            n = len(got.get("sessions") or [])
+            where += f", {n} session{'' if n == 1 else 's'}"
+        except Exception:  # noqa: BLE001
+            pass
+    return (f"studio: {where} · Agent SDK: {sdk or 'not installed (pip install \"system-diff[app]\")'} · "
+            f"claude CLI: {cli}")
+
+
 def main(root: Path) -> int:
     from . import __version__
     terminal = sys.stdout   # the person's, even while a look's page is captured
@@ -179,6 +205,7 @@ def main(root: Path) -> int:
     say(f"git: {_git(root, '--version').strip() or 'not found'} · {shell_line()}")
     say(launch_line())
     say(f"repository: {root}")
+    say(studio_line())
 
     doing("timing how long starting a program takes here (git --version ×3, python ×2)")
     git_start = start_cost(["git", "--version"], 3)
