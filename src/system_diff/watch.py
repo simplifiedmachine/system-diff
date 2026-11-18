@@ -270,6 +270,47 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
 #sendnote { color:var(--muted); font-size:12.5px; max-width:30vw; }
 #sendnote.bad { color:var(--attn); }
 .hint { color:var(--muted); font-size:12px; text-align:center; padding:0 0 10px; }
+/* the team's workflow: a column per stage, a card per agent or extension step, arrows for who waits for whom */
+.wfwrap { position:relative; overflow-x:auto; padding:4px 2px 8px; }
+.wf { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(210px, 1fr); gap:44px; position:relative; z-index:1; }
+.wfcol { display:grid; align-content:start; gap:10px; }
+.wfhead { display:flex; gap:8px; align-items:baseline; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+.wfhead b { color:var(--ink2); }
+.wfnode { text-align:left; display:grid; gap:3px; padding:9px 11px; border-radius:12px; border:1px solid var(--line);
+  background:var(--card); color:inherit; font:inherit; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.04);
+  transition:border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.wfnode:hover, .wfnode:focus-visible { border-color:var(--work); box-shadow:0 4px 14px rgba(0,0,0,.08); transform:translateY(-1px); }
+.wfnode .nm { font-weight:600; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.wfnode .by { font-size:10.5px; font-weight:500; padding:0 6px; border-radius:9px; background:var(--line); color:var(--muted); }
+.wfnode .st { font-size:12px; display:flex; gap:6px; align-items:center; }
+.wfnode .st::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none; }
+.wfnode.st-running { border-color:var(--work); } .wfnode.st-running .st::before { background:var(--work); animation:pulse 1.2s ease-in-out infinite; }
+.wfnode.st-done .st::before { background:#2f9e5b; } .wfnode.st-done { opacity:.85; }
+.wfnode.st-waiting .st::before { background:transparent; border:2px dashed var(--muted); width:6px; height:6px; }
+.wfnode.st-failed .st::before { background:#d1453b; } .wfnode.st-paused .st::before { background:#c98a00; }
+.wfnode .meta { font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@keyframes pulse { 50% { opacity:.35; } }
+svg.wfedges { position:absolute; inset:0; z-index:0; pointer-events:none; overflow:visible; }
+svg.wfedges path { fill:none; stroke:var(--line); stroke-width:2; }
+svg.wfedges path.live { stroke:var(--work); stroke-dasharray:5 4; }
+svg.wfedges path.done { stroke:#2f9e5b; opacity:.6; }
+.wfsaved { margin-top:12px; } .wfsaved summary { cursor:pointer; color:var(--muted); font-size:13px; }
+.wfsaved li { margin:4px 0; } .wfsaved .s { color:var(--muted); font-size:12.5px; }
+dialog#agentlog { width:min(920px, 94vw); height:min(82vh, 900px); padding:0; border:1px solid var(--line); border-radius:16px;
+  background:var(--card); color:var(--ink); box-shadow:0 20px 60px rgba(0,0,0,.25); }
+dialog#agentlog[open] { display:grid; grid-template-rows:auto auto auto 1fr; }
+dialog#agentlog::backdrop { background:rgba(10,14,20,.35); backdrop-filter:blur(2px); }
+dialog#agentlog header { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; padding:14px 18px 8px; border-bottom:1px solid var(--line); }
+dialog#agentlog h2 { margin:0; font-size:17px; } .alogmeta { color:var(--muted); font-size:12.5px; margin-top:3px; }
+.alogacts { display:flex; gap:8px; flex-wrap:wrap; padding:8px 18px 0; } .alogacts:empty { display:none; }
+.alogtabs { display:flex; gap:4px; padding:8px 18px 0; border-bottom:1px solid var(--line); }
+.alogtabs button { border:0; background:transparent; padding:6px 10px; border-bottom:2px solid transparent; color:var(--muted); font:inherit; cursor:pointer; }
+.alogtabs button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--work); font-weight:600; }
+.alogbody { overflow:auto; padding:12px 18px 18px; display:grid; align-content:start; gap:8px; }
+.alog { display:grid; gap:2px; } .alog .when { font-size:11px; color:var(--muted); }
+.alog.text p { margin:0; white-space:pre-wrap; } .alog.tool .t { font:12.5px var(--mono, monospace); }
+.alog pre { margin:0; font:12px/1.45 var(--mono, monospace); background:var(--paper); border-radius:8px; padding:7px 9px; white-space:pre-wrap; max-height:240px; overflow:auto; }
+.alog.result.err pre { border-left:3px solid #d1453b; }
 html.in-studio, html.in-studio body { background:transparent; }
 html.in-studio header.top { background:color-mix(in srgb, var(--card) 62%, transparent); -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px); }
 #shown { position:sticky; top:0; z-index:30; display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:8px 16px;
@@ -403,6 +444,13 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
   <div id="after" style="display:grid;gap:16px"></div>
 </main>
 </div>
+<dialog id="agentlog" aria-labelledby="alogname">
+  <header><div><h2 id="alogname"></h2><div class="alogmeta" id="alogmeta"></div></div>
+    <form method="dialog"><button type="submit" aria-label="Close">Close</button></form></header>
+  <div class="alogacts" id="alogacts"></div>
+  <div class="alogtabs" role="tablist" id="alogtabs"></div>
+  <div class="alogbody" id="alogbody"></div>
+</dialog>
 <div class="hint"><kbd>n</kbd> <kbd>r</kbd> <kbd>a</kbd> <kbd>t</kbd> <kbd>h</kbd> views · <kbd>h</kbd> on a box: its history · tick two changes in History to compare them · <kbd>f</kbd> follow Claude · <kbd>c</kbd> conversation · <kbd>[</kbd> <kbd>]</kbd> projects · <kbd>b</kbd> back · <kbd>+</kbd> <kbd>−</kbd> zoom · hover the diagram to see how parts connect, click to zoom in</div>
 <aside class="chat" id="chat" aria-label="Conversation with Claude" hidden>
   <header><h2>Conversation with Claude</h2><button id="chatclose" type="button" aria-label="Hide the conversation">Hide</button></header>
@@ -725,9 +773,164 @@ function frame(s) {
   return c;
 }
 RENDER.frame = frame;
+// ---- the team's workflow: stages (in parallel within one), who waits for whom, each one's session on click ----
+const SVGNS = "http://www.w3.org/2000/svg";
+function ago(sec) { sec = Math.max(0, Math.round(sec)); return sec < 60 ? sec + "s" : sec < 3600 ? Math.floor(sec / 60) + "m " + (sec % 60) + "s" : Math.floor(sec / 3600) + "h " + Math.floor(sec % 3600 / 60) + "m"; }
+function wfStatusText(x) {
+  if (x.status === "running") return "running";
+  if (x.status === "done") return "done" + (x.started && x.finished ? " in " + ago(x.finished - x.started) : "");
+  if (x.status === "waiting") return "waits for " + (x.waiting_on || x.waits_for || []).join(", ");
+  if (x.status === "queued") return x.kind === "step" ? "next" : "ready to launch";
+  return x.status || "";
+}
+function wfNode(x) {
+  const b = el("button", null, "wfnode st-" + (x.status || "queued")); b.type = "button"; b.dataset.wf = x.name || x.id;
+  const nm = el("span", null, "nm"); nm.append(x.kind === "step" ? (x.title || x.id) : x.name);
+  if (x.by && x.kind === "step") nm.append(el("span", x.by, "by"));
+  if (x.added) nm.append(el("span", "added", "by"));
+  const st = el("span", wfStatusText(x), "st");
+  if (x.status === "running" && x.started) { const t = el("span", " · " + ago(Date.now() / 1000 - x.started), "ticker"); t.dataset.since = x.started; st.append(t); }
+  b.append(nm, st);
+  const meta = x.kind === "step" ? (x.detail || (x.kind_of_step || "")) :
+    [x.area !== x.name ? x.area : "", x.edits ? x.edits + " edit" + (x.edits > 1 ? "s" : "") : "", x.reads ? x.reads + " read" + (x.reads > 1 ? "s" : "") : ""].filter(Boolean).join(" · ");
+  if (meta) b.append(el("span", meta, "meta"));
+  if (x.last) b.append(el("span", x.last, "meta"));
+  b.title = (x.kind === "step" ? "A step of " + x.by : "Agent " + x.name) + ": click for its session";
+  b.addEventListener("click", () => openAgentLog(x.name || x.id));
+  return b;
+}
+function drawWfEdges(wrap, items) {
+  let svg = wrap.querySelector("svg.wfedges");
+  if (!svg) { svg = document.createElementNS(SVGNS, "svg"); svg.setAttribute("class", "wfedges"); svg.setAttribute("aria-hidden", "true"); wrap.prepend(svg); }
+  svg.replaceChildren();
+  const box = wrap.getBoundingClientRect(), w = wrap.scrollWidth, h = wrap.scrollHeight;
+  svg.setAttribute("width", w); svg.setAttribute("height", h); svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  const node = name => wrap.querySelector('.wfnode[data-wf="' + CSS.escape(name) + '"]');
+  for (const x of items) {
+    const to = node(x.name || x.id); if (!to) continue;
+    for (const f of x.waits_for || []) {
+      const from = node(f); if (!from) continue;
+      const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+      const x1 = a.right - box.left + wrap.scrollLeft, y1 = a.top + a.height / 2 - box.top, x2 = b.left - box.left + wrap.scrollLeft - 4, y2 = b.top + b.height / 2 - box.top;
+      const dx = Math.max(24, (x2 - x1) / 2), path = document.createElementNS(SVGNS, "path");
+      path.setAttribute("d", `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`);
+      const fromDone = from.classList.contains("st-done");
+      path.setAttribute("class", fromDone ? "done" : to.classList.contains("st-running") || from.classList.contains("st-running") ? "live" : "");
+      const tip = document.createElementNS(SVGNS, "path");
+      tip.setAttribute("d", `M${x2 - 7},${y2 - 5} L${x2 + 1},${y2} L${x2 - 7},${y2 + 5}`);
+      tip.setAttribute("class", path.getAttribute("class"));
+      svg.append(path, tip);
+    }
+  }
+}
+function workflowCard(s) {
+  const wf = s.workflow || { agents:[], steps:[], stages:[] }, c = card(s.title, s.aside, "wfcard");
+  const items = (wf.agents || []).map(a => ({ ...a, kind:"agent" })).concat((wf.steps || []).map(x => ({ ...x, name:x.id })));
+  if (items.length) {
+    const by = Object.fromEntries(items.map(x => [x.name, x]));
+    const wrap = el("div", null, "wfwrap"), board = el("div", null, "wf");
+    (wf.stages || []).forEach((names, i) => {
+      const col = el("div", null, "wfcol"), head = el("div", null, "wfhead");
+      head.append(el("b", "Stage " + (i + 1)), el("span", names.length > 1 ? "in parallel" : i ? "after stage " + i : "first"));
+      col.append(head);
+      for (const n of names) if (by[n]) col.append(wfNode(by[n]));
+      board.append(col);
+    });
+    wrap.append(board); c.append(wrap);
+    if (wf.task) c.append(el("div", "Task: " + wf.task, "sub"));
+    const redraw = () => drawWfEdges(wrap, items);
+    requestAnimationFrame(redraw);
+    if (window.ResizeObserver) new ResizeObserver(redraw).observe(wrap);
+  } else c.append(el("div", "No team is working now. Claude plans one for a task with plan_agents (its agents can run in stages, one waiting for another), or runs a saved workflow.", "empty-note"));
+  if ((s.saved || []).length) {
+    const d = el("details", null, "wfsaved"); d.append(el("summary", "Saved workflows (" + s.saved.length + ")"));
+    const ul = el("ul");
+    for (const w of s.saved) {
+      const li = el("li"); li.append(el("b", w.name), " ");
+      li.append(el("span", [w.agents.length ? w.agents.length + " agent" + (w.agents.length > 1 ? "s" : "") : "", w.steps.length ? w.steps.length + " step" + (w.steps.length > 1 ? "s" : "") : "",
+                            w.stages > 1 ? w.stages + " stages" : "", (w.by && w.by !== "system-diff" ? "from " + w.by : ""), w.scope].filter(Boolean).join(" · "), "s"));
+      if (w.description) li.append(el("div", w.description, "s"));
+      ul.append(li);
+    }
+    d.append(ul, el("div", "Claude runs one for a task with run_workflow (“run the " + s.saved[0].name + " workflow for …”), and saves the team that is working with save_workflow.", "s"));
+    c.append(d);
+  }
+  return c;
+}
+RENDER.workflow = workflowCard;
+setInterval(() => { for (const t of document.querySelectorAll(".ticker[data-since]")) t.textContent = " · " + ago(Date.now() / 1000 - +t.dataset.since); }, 1000);
+const alog = { name:"", tab:"session", timer:0, data:null };
+async function openAgentLog(name) {
+  alog.name = name; alog.tab = "session"; alog.data = null;
+  $("alogname").textContent = name; $("alogmeta").textContent = "Loading…"; $("alogbody").replaceChildren(); $("alogacts").replaceChildren();
+  const d = $("agentlog"); if (!d.open) d.showModal();
+  await loadAgentLog();
+}
+$("agentlog").addEventListener("close", () => { clearTimeout(alog.timer); alog.name = ""; });
+async function loadAgentLog() {
+  clearTimeout(alog.timer);
+  const name = alog.name; if (!name) return;
+  let d;
+  try { const r = await fetch("agents/log?name=" + encodeURIComponent(name), { cache:"no-store", headers:{ "X-Token":TOKEN } }); d = await r.json(); if (!r.ok) throw new Error(d.error || "HTTP " + r.status); }
+  catch (e) { $("alogmeta").textContent = "Could not read it: " + e.message; return; }
+  if (alog.name !== name) return;
+  alog.data = d; paintAgentLog();
+  const me = d.agent || d.step || {};
+  if (me.status === "running" || me.status === "waiting") alog.timer = setTimeout(loadAgentLog, 2500);
+}
+function paintAgentLog() {
+  const d = alog.data, me = d.agent || d.step || {};
+  $("alogname").textContent = me.kind === "step" || d.step ? (me.title || me.id) : me.name;
+  $("alogmeta").textContent = [d.step ? "a step of " + me.by : me.area !== me.name ? me.area : "", wfStatusText(me),
+    me.started ? "started " + new Date(me.started * 1000).toLocaleTimeString() : "", me.stage ? "stage " + me.stage : "",
+    (me.blocks || []).length ? "blocks: " + me.blocks.join(", ") : ""].filter(Boolean).join(" · ");
+  const acts = $("alogacts"); acts.replaceChildren();
+  for (const a of STUDIO ? me.actions || [] : []) {   // acting on a step: in the Studio; this page only shows
+    const b = el("button", a.charAt(0).toUpperCase() + a.slice(1)); b.type = "button";
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try { const r = await fetch("agents/action", { method:"POST", headers:{ "X-Token":TOKEN, "Content-Type":"application/json" }, body:JSON.stringify({ step:me.id, action:a }) });
+            const got = await r.json(); if (!r.ok) throw new Error(got.error || "HTTP " + r.status); }
+      catch (e) { alert(e.message); }
+      b.disabled = false; loadAgentLog();
+    });
+    acts.append(b);
+  }
+  if (d.session && STUDIO) { const b = el("button", "Open its session"); b.type = "button"; b.addEventListener("click", () => parent.postMessage({ studio:"session", id:d.session }, location.origin)); acts.append(b); }
+  const tabs = $("alogtabs"); tabs.replaceChildren();
+  const have = [["session", "Session (" + (d.transcript || []).length + ")"], ["messages", "Messages (" + (d.messages || []).length + ")"], ["files", "Files (" + (d.files || []).length + ")"], ["brief", "Brief"]];
+  for (const [k, label] of have) {
+    const b = el("button", label); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(alog.tab === k));
+    b.addEventListener("click", () => { alog.tab = k; paintAgentLog(); }); tabs.append(b);
+  }
+  const body = $("alogbody"), keep = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+  body.replaceChildren();
+  const when = at => at ? new Date(at * 1000).toLocaleTimeString() : "";
+  if (alog.tab === "session") {
+    if (!(d.transcript || []).length) body.append(el("div", d.step ? "Nothing logged for this step yet." : "No session yet: it shows as soon as the agent starts (Claude Code writes it as the agent works).", "empty-note"));
+    for (const e of d.transcript || []) {
+      const row = el("div", null, "alog " + e.kind + (e.error ? " err" : ""));
+      if (e.at) row.append(el("span", when(e.at), "when"));
+      if (e.kind === "prompt") { const det = el("details"); det.append(el("summary", "The brief it got"), el("pre", e.text)); row.append(det); }
+      else if (e.kind === "text") { const p = el("p"); p.textContent = e.text; row.append(p); }
+      else if (e.kind === "tool") row.append(el("span", (e.name || "") + "  " + (e.text || ""), "t"));
+      else { const pre = el("pre", e.text || "(no output)"); if ((e.text || "").length > 400) { const det = el("details"); det.append(el("summary", e.error ? "error" : "output"), pre); row.append(det); } else row.append(pre); }
+      body.append(row);
+    }
+  } else if (alog.tab === "messages") {
+    if (!(d.messages || []).length) body.append(el("div", "No messages on the bus to or from it.", "empty-note"));
+    for (const m of d.messages || []) { const row = el("div", null, "alog text"); row.append(el("span", when(m.at) + " · " + m.from + " → " + m.topic, "when")); const p = el("p"); p.textContent = m.text + (m.why ? " (" + m.why + ")" : ""); row.append(p); body.append(row); }
+  } else if (alog.tab === "files") {
+    if (!(d.files || []).length) body.append(el("div", "No files read or edited yet.", "empty-note"));
+    for (const f of d.files || []) { const row = el("div", null, "alog tool"); row.append(el("span", (f.at ? when(f.at) + "  " : "") + (f.event || "") + "  " + (f.path || ""), "t")); body.append(row); }
+  } else {
+    body.append(d.brief ? el("pre", d.brief) : el("div", "No brief.", "empty-note"));
+  }
+  if (keep) body.scrollTop = body.scrollHeight;
+}
 function section(s) { return (RENDER[s.kind] || notes)(s); }
 function goesBefore(s) {
-  return s.kind === "lanes" || s.kind === "chips" || s.kind === "compare" || (s.kind === "history" && !!s.pick) || isAttention(s);
+  return s.kind === "workflow" || s.kind === "lanes" || s.kind === "chips" || s.kind === "compare" || (s.kind === "history" && !!s.pick) || isAttention(s);
 }
 
 // ---- the diagram: hover picks, lights and dims; a click zooms in ----
@@ -1905,6 +2108,17 @@ def handler(w: Watcher):
                     return self._json(404, got)
                 extra = file_extras(w, got["path"], got["text"], prefetch=q.get("prefetch") == "1")
                 return self._json(200, {"path": got["path"], "summary": extra["summary"]})
+            if path == "/agents/log":   # one agent's (or extension step's) session, for the workflow's pop-up
+                if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                    return self._json(403, {"error": "forbidden"})
+                name = self._query().get("name", "")[:120]
+                try:
+                    return self._json(200, agents_mod().agent_log(w.root, name))
+                except KeyError:
+                    try:
+                        return self._json(200, agents_mod().step_log(w.root, name))
+                    except KeyError:
+                        return self._json(404, {"error": f"no agent or step {name!r} in the workflow"})
             if path == "/ui/state":   # what each open page (and the pane) shows: for Claude's ui_view tool
                 if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
                     return self._json(403, {"error": "forbidden"})
@@ -2255,6 +2469,22 @@ def handler(w: Watcher):
                 return self._post_mark()
             if urlsplit(self.path).path == "/ui/state":
                 return self._post_ui_state()
+            if urlsplit(self.path).path == "/agents/action":   # pause, resume, stop, retry an extension's step
+                if self.headers.get("X-Token") != w.token or not self._same_origin() or not hub.host_ok(
+                        self.headers.get("Host"), self.server.server_address[1]):
+                    self._drain()
+                    return self._json(403, {"error": "forbidden"})
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                    body = json.loads(self.rfile.read(n).decode("utf-8") or "{}") if 0 < n <= 4096 else {}
+                    got = agents_mod().step_action(w.root, str(body.get("step") or ""), str(body.get("action") or ""))
+                except KeyError:
+                    return self._json(404, {"error": "no such step"})
+                except (ValueError, UnicodeDecodeError) as exc:
+                    return self._json(400, {"error": str(exc)})
+                if w.engine is not None:
+                    w.engine._bump()
+                return self._json(200, got)
             if urlsplit(self.path).path == "/projects/mode":   # one project, or split into those found
                 if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
                     self._drain()
@@ -2474,6 +2704,11 @@ def ui_pages(w: "Watcher", full: bool = False) -> List[Dict[str, Any]]:
 
 
 UI_LOCK = threading.Lock()
+
+
+def agents_mod():
+    from . import agents
+    return agents
 
 
 def repos_view(w: "Watcher") -> List[Dict[str, Any]]:
@@ -2899,7 +3134,14 @@ def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: O
     from . import __version__
     try:
         w = Watcher(root, base, config_path, interval)
-        server = _Server(("127.0.0.1", port), handler(w))
+        server = None
+        for p in ([port] if port == 0 else range(port, port + 10)):   # taken (another program): the next one
+            try:
+                server = _Server(("127.0.0.1", p), handler(w))
+                break
+            except OSError:
+                if p == port + 9 or port == 0:
+                    raise
     except Exception as exc:
         live.log_error(root, f"starting the engine on port {port}", exc)
         raise

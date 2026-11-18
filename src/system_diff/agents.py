@@ -311,22 +311,57 @@ def _areas(c) -> List[Dict[str, Any]]:
     return list(areas.values())
 
 
+def untangle(waits: Dict[str, set]) -> Dict[str, set]:
+    """The waits without circles: agents that wait for each other, directly or round a longer circle, cannot run one
+    after the other, so they run together (on the bus) and their waits for each other go."""
+    names = list(waits)
+    index: Dict[str, int] = {}
+    low: Dict[str, int] = {}
+    stack: List[str] = []
+    on: set = set()
+    group: Dict[str, int] = {}
+    counter = [0, 0]
+
+    def visit(v: str) -> None:   # Tarjan's strongly connected components
+        index[v] = low[v] = counter[0]
+        counter[0] += 1
+        stack.append(v)
+        on.add(v)
+        for w in waits.get(v, ()):
+            if w not in waits:
+                continue
+            if w not in index:
+                visit(w)
+                low[v] = min(low[v], low[w])
+            elif w in on:
+                low[v] = min(low[v], index[w])
+        if low[v] == index[v]:
+            while True:
+                w = stack.pop()
+                on.discard(w)
+                group[w] = counter[1]
+                if w == v:
+                    break
+            counter[1] += 1
+    for v in names:
+        if v not in index:
+            visit(v)
+    return {v: {w for w in waits[v] if w in waits and group[w] != group[v]} for v in names}
+
+
 def stages_of(waits: Dict[str, set]) -> Dict[str, int]:
-    """Each agent's stage: 1 when it waits for nobody, else one after the latest of those it waits for. Agents that
-    wait for each other in a circle cannot be ordered: they share a stage (they run together, on the bus)."""
+    """Each agent's stage: 1 when it waits for nobody, else one after the latest of those it waits for (circles
+    untangled first: their agents share a stage)."""
+    clean = untangle(waits)
     stage: Dict[str, int] = {}
-    left = {n: set(w) for n, w in waits.items()}
-    level = 1
-    while left:
-        ready = [n for n, w in left.items() if not (w & set(left))]
-        if not ready:   # a circle: whatever is left runs together
-            for n in left:
-                stage[n] = level
-            break
-        for n in ready:
-            stage[n] = level
-            del left[n]
-        level += 1
+
+    def of(v: str, seen: frozenset = frozenset()) -> int:
+        if v in stage:
+            return stage[v]
+        stage[v] = 1 + max([of(w, seen | {v}) for w in clean[v] if w not in seen] or [0])
+        return stage[v]
+    for v in clean:
+        of(v)
     return stage
 
 
@@ -402,8 +437,12 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
             w |= {owner_of[d] for d in g["subscribes"] if d in owner_of}
         w |= set((after or {}).get(g["name"]) or []) | set(said.get(g["name"]) or [])
         waits[g["name"]] = {x for x in w if x in names and x != g["name"]}
+    waits = untangle(waits)
     stage_of = stages_of(waits)
+    notes = {str(p.get("name")): str(p.get("notes") or "") for p in preset or [] if isinstance(p, dict)}
     for g in agents:
+        if notes.get(g["name"]):
+            g["brief"] += "\n" + notes[g["name"]]
         g["waits_for"] = sorted(waits[g["name"]])
         g["stage"] = stage_of[g["name"]]
         if g["waits_for"]:
@@ -480,3 +519,447 @@ ORCHESTRATE = ("system-diff: this repository works with a team of agents. Before
                "returns two or more agents, launch them in parallel as subagents with their briefs and coordinate "
                "through its bus (`inbox`, `publish`) instead of doing every part yourself. Small, single-part tasks "
                "need no team.")
+
+
+# ── the workflow as it runs: who started, who waits, who is done, and what each one did ─────────────────────────
+
+RUNS = "agent-runs.jsonl"   # each subagent's start and stop, from Claude Code's hooks: {"at", "event", "agent_id", ...}
+RUNS_KEEP = 2000
+
+
+def record_run(root: Path, event: str, agent_id: str, agent_type: str = "", transcript: str = "") -> None:
+    """A subagent started or stopped (the SubagentStart and SubagentStop hooks)."""
+    if not agent_id or event not in ("start", "stop"):
+        return
+    line = json.dumps({"at": round(time.time(), 3), "event": event, "agent_id": agent_id,
+                       "agent_type": agent_type or "", "transcript": transcript or ""}, ensure_ascii=False)
+    f = git_dir(root) / RUNS
+    try:
+        with open(f, "a", encoding="utf-8") as out:
+            out.write(line + "\n")
+        if f.stat().st_size > RUNS_KEEP * 400:
+            keep = f.read_text(encoding="utf-8", errors="replace").splitlines()[-RUNS_KEEP // 2:]
+            activity._replace(f, "\n".join(keep) + "\n")
+    except OSError:
+        pass
+
+
+def runs(root: Path, since: float = 0.0) -> List[Dict[str, Any]]:
+    try:
+        lines = (git_dir(root) / RUNS).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(r, dict) and float(r.get("at") or 0) >= since:
+            out.append(r)
+    return out
+
+
+def subagent_transcript(main_transcript: str, agent_id: str) -> str:
+    """Where Claude Code writes a subagent's own transcript: beside its session's, <session>/subagents/agent-<id>.jsonl."""
+    if not main_transcript or not agent_id:
+        return ""
+    p = Path(main_transcript)
+    return str(p.with_suffix("") / "subagents" / f"agent-{agent_id}.jsonl")
+
+
+def agent_kinds(root: Path) -> Dict[str, Dict[str, Any]]:
+    """The kinds of agent Claude can add to a team: those extensions offer (`WORKFLOW_KINDS`: research-diff's
+    experiment runner, section writer, contradiction reviewer...) and the person's saved agents (agentlib) for this
+    project, by kind name."""
+    out: Dict[str, Dict[str, Any]] = {}
+    try:
+        from . import agentlib
+        for a in agentlib.for_project(root):
+            out[a["name"]] = {"kind": a["name"], "title": a["name"].replace("-", " "), "brief": a.get("description", ""),
+                              "by": a.get("source", ""), "subagent_type": a["name"]}
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from . import extensions
+        for ext in extensions.load():
+            by = str(getattr(ext, "NAME", "") or "extension")
+            items = getattr(ext, "WORKFLOW_KINDS", None)
+            if callable(items):
+                items = items(extensions.context(root, "", ""))
+            for k in items or []:
+                if isinstance(k, dict) and k.get("kind"):
+                    kid = re.sub(r"[^a-z0-9]+", "-", str(k["kind"]).lower()).strip("-")
+                    out[kid] = {"kind": kid, "title": str(k.get("title") or kid), "brief": str(k.get("brief") or ""),
+                                "by": by, "tools": k.get("tools") or "", "model": k.get("model") or ""}
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def add_agent(root: Path, name: str, brief: str = "", blocks: Iterable[str] = (), waits_for: Iterable[str] = (),
+              area: str = "", kind: str = "") -> Dict[str, Any]:
+    """Add an agent to the team's plan as it runs (the person asked for one in the chat): it claims its blocks, waits
+    for the agents (or extensions' steps) named, and gets a brief; the plan's stages follow. `kind`: one of
+    agent_kinds (an extension's, or a saved agent): its brief, and the subagent type to start it as."""
+    name = re.sub(r"[^a-z0-9]+", "-", str(name or kind or "").lower()).strip("-")
+    k = agent_kinds(root).get(re.sub(r"[^a-z0-9]+", "-", str(kind or "").lower()).strip("-")) if kind else None
+    if kind and k is None:
+        raise ValueError(f"no agent kind {kind!r}: agent_kinds lists them")
+    if k is not None:
+        area = area or k["title"]
+        brief = (brief + "\n" if brief else "") + str(k.get("brief") or "")
+    if not name:
+        raise ValueError("name the agent: lowercase letters, digits and dashes")
+    data = _load(root)
+    pl = data["plan"] or {}
+    if not pl.get("agents"):
+        pl = {"task": brief or name, "at": round(time.time(), 3), "after": (messages(root) or [{"n": 0}])[-1]["n"],
+              "order": "parallel", "agents": []}
+    if any(g.get("name") == name for g in pl["agents"]):
+        raise ValueError(f"the plan has an agent {name!r} already")
+    names = {g["name"] for g in pl["agents"]} | {str(x.get("id")) for x in pl.get("steps") or [] if isinstance(x, dict)}
+    try:
+        names |= {x["id"] for x in _ext_steps(root) if x.get("id")}
+    except Exception:  # noqa: BLE001
+        pass
+    waits = sorted({w for w in waits_for if w in names})
+    unknown = sorted(set(waits_for) - names)
+    stage = 1 + max([g.get("stage", 1) for g in pl["agents"] if g["name"] in waits] or [0])
+    blocks = [b for b in blocks if isinstance(b, str) and b]
+    taken = {b: data["claims"][b] for b in blocks if data["claims"].get(b) not in (None, name)}
+    task = pl.get("task") or ""
+    brief = brief.replace("{task}", task)
+    text = (brief.strip() or (f"You are the {area or name} agent in a team working on: {task}")) + "\n" + \
+        (f"First call the system-diff `claim` tool with agent \"{name}\" and these blocks: {', '.join(blocks)}.\n"
+         if blocks else f"Call system-diff tools with agent \"{name}\".\n") + \
+        (f"You start after {design.and_list(waits, 6)} {'has' if len(waits) == 1 else 'have'} finished: first read "
+         f"the system-diff `inbox` tool as \"{name}\" for what they changed.\n" if waits else "") + \
+        "Finish with a short summary of what you changed in the system's structure."
+    pl["agents"].append({"name": name, "area": area or name, "blocks": blocks, "subscribes": [], "talks_to": [],
+                         "waits_for": waits, "stage": stage, "added": round(time.time(), 3),
+                         **({"kind": k["kind"], "by": k["by"]} if k else {})})
+    data["plan"] = pl
+    a = _agent(data, name)
+    a["brief"], a["blocks"] = text, blocks
+    a["topics"] = sorted(set(a["topics"]) | {f"agent:{name}"})
+    a["read"] = (messages(root) or [{"n": 0}])[-1]["n"]
+    for b in blocks:
+        data["claims"].setdefault(b, name)
+    _save(root, data)
+    publish(root, "all", f"Added to the plan: {name}" + (f", after {', '.join(waits)}" if waits else ""),
+            sender=MAIN, kind="plan")
+    wf = workflow(root)
+    status = {g["name"]: g["status"] for g in wf["agents"]}
+    status.update({x["id"]: x["status"] for x in wf["steps"]})
+    ready = all(status.get(w) == "done" for w in waits)
+    start_as = (f" (Task tool, subagent_type {k['subagent_type']!r})" if k and k.get("subagent_type") else "")
+    return {"agent": name, "brief": text, "stage": stage, "waits_for": waits, "unknown_waits": unknown,
+            "taken_from_others": taken, "kind": k["kind"] if k else "",
+            "how": (f"Launch it now as its own subagent{start_as}, with this brief as its prompt." if ready else
+                    f"Launch it as its own subagent{start_as}, with this brief as its prompt, once "
+                    f"{design.and_list(waits, 6)} {'has' if len(waits) == 1 else 'have'} finished.")}
+
+
+def set_steps(root: Path, steps: List[Dict[str, Any]]) -> None:
+    """The steps a saved workflow brings (an extension's, by id), kept with the plan; extensions report their status."""
+    data = _load(root)
+    if data["plan"]:
+        data["plan"]["steps"] = [dict(x) for x in steps]
+        _save(root, data)
+
+
+STATES = ("queued", "waiting", "running", "paused", "done", "failed")
+ACTIONS = ("pause", "resume", "stop", "retry")
+
+
+def _ext_steps(root: Path) -> List[Dict[str, Any]]:
+    """The steps extensions add to the workflow as it runs. An extension's `workflow(ctx)` gives {"steps": [...],
+    "waits": [...]} (or the steps alone): a step {"id", "title", "kind" (agent | run | check), "state" (waiting,
+    running, done, failed, paused), "agent"?, "session"? (a Studio session id), "log"? (text), "files"?, "actions"?
+    (pause, resume, stop, retry), "detail"?, "started"?, "finished"?}; a wait {"from": what must finish first, "to":
+    what waits for it, "why"?}, by step id or a team agent's name. Each step marked with the extension's name."""
+    out: List[Dict[str, Any]] = []
+    try:
+        from . import extensions
+        exts = extensions.load()
+    except Exception:  # noqa: BLE001
+        return out
+    for ext in exts:
+        fn = getattr(ext, "workflow", None)
+        if not callable(fn):
+            continue
+        by = str(getattr(ext, "NAME", "") or "extension")
+        try:
+            got = fn(extensions.context(root, "", ""))
+        except Exception as exc:  # noqa: BLE001 - its steps are missing, nothing else
+            extensions.failed(by + " workflow", exc)
+            continue
+        steps = got.get("steps") if isinstance(got, dict) else got
+        waits = got.get("waits") if isinstance(got, dict) else []
+        mine: Dict[str, Dict[str, Any]] = {}
+        for x in steps or []:
+            if isinstance(x, dict) and x.get("id"):
+                mine[str(x["id"])] = {**x, "by": by, "waits_for": [str(w) for w in x.get("waits_for") or []],
+                                      "why": dict(x.get("why") or {}) if isinstance(x.get("why"), dict) else {}}
+        extra = []
+        for w in waits or []:
+            if not isinstance(w, dict) or not w.get("from") or not w.get("to"):
+                continue
+            a, b = str(w["from"]), str(w["to"])
+            if b in mine:
+                mine[b]["waits_for"].append(a)
+                if w.get("why"):
+                    mine[b]["why"][a] = str(w["why"])[:200]
+            else:   # a team agent waits for one of its steps
+                extra.append({"agent": b, "waits_for": a, "why": str(w.get("why") or "")[:200], "by": by})
+        out += list(mine.values())
+        out += [{"_agent_wait": True, **e} for e in extra]
+    return out
+
+
+def workflow(root: Path) -> Dict[str, Any]:
+    """The team's plan as it runs: its stages, and each agent with who it waits for and its status ("queued": its
+    waits are done and it was not launched yet; "waiting": for the agents named; "running"; "done"), when it started
+    and finished, what it read and edited, and its last action. From the plan, the subagents' starts and stops
+    (hooks), and the activity log (each hook knows which subagent acted)."""
+    data = _load(root)
+    pl = data["plan"] or {}
+    agents_ = [g for g in pl.get("agents") or [] if isinstance(g, dict) and g.get("name")]
+    if not agents_:
+        return {"task": "", "agents": [], "stages": []}
+    since = float(pl.get("at") or 0)
+    ids = dict(data["ids"])
+    names = {g["name"] for g in agents_}
+    info: Dict[str, Dict[str, Any]] = {g["name"]: {"started": 0.0, "finished": 0.0, "transcript": "", "ids": [],
+                                                   "edits": 0, "reads": 0, "last": "", "last_at": 0.0}
+                                       for g in agents_}
+    for r in runs(root, since):
+        who = ids.get(r["agent_id"]) or (r.get("agent_type") if r.get("agent_type") in names else "")
+        if not who:
+            continue
+        i = info[who]
+        if r["agent_id"] not in i["ids"]:
+            i["ids"].append(r["agent_id"])
+        if r["event"] == "start":
+            i["started"] = i["started"] or float(r["at"])
+            i["finished"] = 0.0 if float(r["at"]) > i["finished"] else i["finished"]
+        else:
+            i["finished"] = float(r["at"])
+        if r.get("transcript"):
+            i["transcript"] = r["transcript"]
+    for e in activity.events(root, 2000):
+        if float(e.get("at") or 0) < since:
+            continue
+        who = ids.get(str(e.get("agent") or ""))
+        if who not in info:
+            continue
+        i = info[who]
+        i["started"] = i["started"] or float(e["at"])
+        if e.get("event") == activity.EDIT:
+            i["edits"] += 1
+        else:
+            i["reads"] += 1
+        i["last"] = ("edited " if e.get("event") == activity.EDIT else "read ") + str(e.get("path") or "")
+        i["last_at"] = float(e["at"])
+    now = time.time()
+    out = []
+    for g in agents_:
+        i = info[g["name"]]
+        waits = list(g.get("waits_for") or [])
+        if i["finished"]:
+            status = "done"
+        elif i["started"]:
+            status = "running"
+        elif any(not info.get(w, {}).get("finished") for w in waits):
+            status = "waiting"
+        else:
+            status = "queued"
+        end = i["finished"] or (now if i["started"] else 0)
+        out.append({"name": g["name"], "area": g.get("area") or g["name"], "blocks": list(g.get("blocks") or []),
+                    "waits_for": waits, "stage": int(g.get("stage") or 1), "status": status,
+                    "waiting_on": [w for w in waits if not info.get(w, {}).get("finished")],
+                    "started": i["started"], "finished": i["finished"],
+                    "seconds": round(end - i["started"], 1) if i["started"] else 0.0,
+                    "edits": i["edits"], "reads": i["reads"], "last": i["last"], "last_at": i["last_at"],
+                    "added": bool(g.get("added")), "has_log": bool(i["transcript"] or i["ids"])})
+    # the steps extensions add (a saved workflow's, kept with the plan; and those extensions report live)
+    steps: Dict[str, Dict[str, Any]] = {}
+    for x in pl.get("steps") or []:
+        if isinstance(x, dict) and x.get("id"):
+            steps[str(x["id"])] = {"id": str(x["id"]), "title": str(x.get("title") or x["id"]),
+                                   "waits_for": [str(w) for w in x.get("waits_for") or []], "by": str(x.get("by") or ""),
+                                   "status": "", "detail": "", "started": 0.0, "finished": 0.0}
+    agent_waits: Dict[str, List[str]] = {}
+    for x in _ext_steps(root):
+        if x.get("_agent_wait"):
+            agent_waits.setdefault(x["agent"], []).append(x["waits_for"])
+            continue
+        sid = str(x["id"])
+        if sid in names:
+            sid = f"{x['by']}:{sid}"   # never one of the agents' names
+        base = steps.get(sid) or {}
+        state = str(x.get("state") or x.get("status") or "")
+        steps[sid] = {**base, "id": sid, "title": str(x.get("title") or base.get("title") or sid),
+                      "waits_for": [str(w) for w in (x.get("waits_for") or base.get("waits_for") or [])],
+                      "why": dict(x.get("why") or {}), "by": str(x.get("by") or base.get("by") or ""),
+                      "status": state if state in STATES else "", "kind_of_step": str(x.get("kind") or "run"),
+                      "agent_name": str(x.get("agent") or ""), "session": str(x.get("session") or ""),
+                      "log": str(x.get("log") or "")[-20000:], "files": [str(f) for f in x.get("files") or []][:50],
+                      "actions": [a for a in x.get("actions") or [] if a in ACTIONS],
+                      "detail": str(x.get("detail") or "")[:300], "started": float(x.get("started") or 0),
+                      "finished": float(x.get("finished") or 0), "has_log": True}
+    for a in out:   # an agent of the team that waits for an extension's step
+        extra = [w for w in agent_waits.get(a["name"], []) if w not in a["waits_for"]]
+        if extra:
+            a["waits_for"] = a["waits_for"] + extra
+            if a["status"] == "queued":
+                a["status"] = "waiting"
+    done = {a["name"] for a in out if a["status"] == "done"} | {k for k, v in steps.items() if v["status"] == "done"}
+    for a in out:
+        a["waiting_on"] = [w for w in a["waits_for"] if w not in done]
+        if a["status"] == "waiting" and not a["waiting_on"]:
+            a["status"] = "queued"
+    for v in steps.values():
+        if v["status"] not in ("running", "done", "failed", "paused"):
+            v["status"] = "waiting" if any(w not in done for w in v["waits_for"] if w in names or w in steps) else "queued"
+        v["waiting_on"] = [w for w in v["waits_for"] if w not in done and (w in names or w in steps)]
+        v["kind"] = "step"
+    # one order for both: who waits for whom, circles untangled, then the stages
+    every = {a["name"]: set(a["waits_for"]) for a in out}
+    every.update({k: set(v["waits_for"]) for k, v in steps.items()})
+    every = {k: {w for w in v if w in every} for k, v in every.items()}
+    stage_of = stages_of(every)
+    for a in out:
+        a["stage"] = stage_of.get(a["name"], a["stage"])
+        a["kind"] = "agent"
+    for k, v in steps.items():
+        v["stage"] = stage_of.get(k, 1)
+    top = max([a["stage"] for a in out] + [v["stage"] for v in steps.values()] or [1])
+    stages = [[a["name"] for a in out if a["stage"] == n] + [k for k, v in steps.items() if v["stage"] == n]
+              for n in range(1, top + 1)]
+    return {"task": pl.get("task") or "", "at": since, "order": pl.get("order") or "parallel", "agents": out,
+            "steps": list(steps.values()), "stages": [s for s in stages if s]}
+
+
+LOG_MOST = 400
+
+
+def _iso(ts: Any) -> float:
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def transcript_entries(path: str, most: int = LOG_MOST) -> List[Dict[str, Any]]:
+    """A subagent's transcript as the page shows it: its prompt (the brief), what it said, each tool call (and the
+    file or command), each result (cut), oldest first. Secrets masked."""
+    from .extract import redact
+    out: List[Dict[str, Any]] = []
+    try:
+        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict) or d.get("type") not in ("user", "assistant"):
+            continue
+        at = _iso(d.get("timestamp"))
+        content = (d.get("message") or {}).get("content")
+        if isinstance(content, str):
+            if d["type"] == "user" and content.strip():
+                out.append({"at": at, "kind": "prompt", "text": redact(content)[:6000]})
+            continue
+        for b in content if isinstance(content, list) else []:
+            if not isinstance(b, dict):
+                continue
+            t = b.get("type")
+            if t == "text" and str(b.get("text") or "").strip():
+                out.append({"at": at, "kind": "prompt" if d["type"] == "user" else "text",
+                            "text": redact(str(b["text"]))[:4000]})
+            elif t == "tool_use":
+                inp = b.get("input") if isinstance(b.get("input"), dict) else {}
+                what = inp.get("file_path") or inp.get("command") or inp.get("pattern") or inp.get("description") or ""
+                out.append({"at": at, "kind": "tool", "name": str(b.get("name") or ""),
+                            "text": redact(str(what))[:300]})
+            elif t == "tool_result":
+                c = b.get("content")
+                text = c if isinstance(c, str) else " ".join(str(x.get("text") or "") for x in c or []
+                                                             if isinstance(x, dict))
+                out.append({"at": at, "kind": "result", "error": bool(b.get("is_error")),
+                            "text": redact(text)[:1500]})
+    return out[-most:]
+
+
+def step_log(root: Path, sid: str) -> Dict[str, Any]:
+    """An extension's step, for the pop-up: what the extension says about it (`step_log(ctx, id) -> {"entries":
+    [{"at", "kind", "text"}], ...}`)."""
+    wf = workflow(root)
+    me = next((x for x in wf["steps"] if x["id"] == sid), None)
+    if me is None:
+        raise KeyError(sid)
+    got: Dict[str, Any] = {}
+    try:
+        from . import extensions
+        ext = next((e for e in extensions.load() if str(getattr(e, "NAME", "")) == me["by"]), None)
+        fn = getattr(ext, "step_log", None) if ext is not None else None
+        if fn is not None:
+            got = fn(extensions.context(root, "", ""), sid.split(":", 1)[-1] if sid.startswith(me["by"] + ":") else sid) or {}
+    except Exception as exc:  # noqa: BLE001
+        got = {"entries": [{"at": time.time(), "kind": "result", "error": True, "text": f"{type(exc).__name__}: {exc}"}]}
+    entries = list(got.get("entries") or [])
+    if not entries and me.get("log"):
+        entries = [{"at": 0, "kind": "text", "text": line} for line in me["log"].splitlines() if line.strip()]
+    return {"step": me, "transcript": entries[-LOG_MOST:], "brief": str(got.get("about") or me.get("detail") or ""),
+            "messages": [], "files": [{"at": 0, "event": "file", "path": f} for f in me.get("files") or []],
+            "session": me.get("session") or ""}
+
+
+def step_action(root: Path, sid: str, action: str) -> Dict[str, Any]:
+    """Pause, resume, stop or retry an extension's step: the extension does it (`workflow_action(ctx, id, action)`),
+    and only for the actions the step lists."""
+    if action not in ACTIONS:
+        raise ValueError(f"action is one of {', '.join(ACTIONS)}")
+    wf = workflow(root)
+    me = next((x for x in wf["steps"] if x["id"] == sid), None)
+    if me is None:
+        raise KeyError(sid)
+    if action not in me.get("actions", []):
+        raise ValueError(f"the step {sid!r} does not offer {action!r} (it offers: {', '.join(me.get('actions') or []) or 'nothing'})")
+    from . import extensions
+    ext = next((e for e in extensions.load() if str(getattr(e, "NAME", "")) == me["by"]), None)
+    fn = getattr(ext, "workflow_action", None) if ext is not None else None
+    if fn is None:
+        raise ValueError(f"{me['by']} does not take actions on its steps")
+    got = fn(extensions.context(root, "", ""), sid.split(":", 1)[-1] if sid.startswith(me["by"] + ":") else sid, action)
+    return {"step": sid, "action": action, **(got if isinstance(got, dict) else {"ok": bool(got)})}
+
+
+def agent_log(root: Path, name: str) -> Dict[str, Any]:
+    """One agent of the plan, for the page's pop-up: its place in the workflow, its brief, its session (the
+    subagent's transcript, when Claude Code wrote one), the messages it sent and got on the bus, and the files it
+    read and edited."""
+    wf = workflow(root)
+    me = next((a for a in wf["agents"] if a["name"] == name), None)
+    if me is None:
+        raise KeyError(name)
+    data = _load(root)
+    ids = [i for i, n in data["ids"].items() if n == name]
+    since = float(wf.get("at") or 0)
+    transcript = ""
+    for r in runs(root, since):
+        if r["agent_id"] in ids or r.get("agent_type") == name:
+            transcript = r.get("transcript") or transcript
+    entries = transcript_entries(transcript) if transcript else []
+    blocks = set(me["blocks"])
+    bus = [m for m in messages(root) if float(m.get("at") or 0) >= since and (
+        m.get("from") == name or m.get("topic") in ({f"agent:{name}", "all"} | blocks))][-100:]
+    files = [{"at": e["at"], "event": e.get("event"), "path": e.get("path")} for e in activity.events(root, 2000)
+             if float(e.get("at") or 0) >= since and str(e.get("agent") or "") in ids][-200:]
+    return {"agent": me, "brief": (data["agents"].get(name) or {}).get("brief", ""), "transcript": entries,
+            "transcript_path": transcript, "messages": bus, "files": files}

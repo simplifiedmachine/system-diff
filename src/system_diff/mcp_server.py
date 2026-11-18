@@ -39,7 +39,10 @@ INSTRUCTIONS = (
     "short finding about a part beside it. The person sees the system-diff page beside the chat: read ui_view when "
     "they say 'this', 'here' or 'the one I picked'; ui_graph gives a view's diagram as data; while explaining, ui_show "
     "and point_to what you name. The diagrams are computed from the code and system-diff.toml: to rename, group or "
-    "move a box, find its source with ui_source, preview with ui_config_preview, then edit the file."
+    "move a box, find its source with ui_source, preview with ui_config_preview, then edit the file. A team can run "
+    "in stages (plan_agents order=staged, or after=...): launch each stage as `how` says. When the person asks for "
+    "another agent, add_agent (agent_kinds lists extensions' kinds and saved agents); save_workflow keeps a team to "
+    "reuse with run_workflow; workflow and agent_log show who runs, who waits, and what each one did."
 )
 WIDTH = 100  # the columns a diagram is drawn for
 
@@ -294,14 +297,86 @@ def build() -> Server:
         return {"checkpoint": sha[:9], "of": ref or "the working tree"}
 
     @server.tool()
-    def plan_agents(task: str, most: int = 4, focus: List[str] = []) -> Dict[str, Any]:  # noqa: B006
+    def plan_agents(task: str, most: int = 4, focus: List[str] = [], order: str = "parallel",  # noqa: B006
+                    after: Dict[str, List[str]] = {}) -> Dict[str, Any]:  # noqa: B006
         """Split a task across a team of agents by the system's blocks: one agent per area the task touches (a
         container, else a part), at most `most`, each with the blocks it owns, the blocks it depends on (it is
         subscribed to them on the bus) and a brief to launch it with. `focus`: block ids to include. Claims the
-        blocks. Then launch the agents in parallel as subagents, each with its brief as its prompt."""
+        blocks. `order`: "parallel" (all at once) or "staged" (an agent whose blocks use another agent's starts after
+        that one finishes); `after`: waits by name, {"web": ["api"]}. Each agent gets its stage; launch the agents of
+        a stage together as subagents, each with its brief as its prompt, as `how` says. The person watches the
+        workflow (who runs, who waits, each one's log) on the system-diff page's Agents tab."""
         root = _root()
         c = cmp.compare(root, "checkpoint", ".")
-        return agents.plan(root, c, task, most, focus)
+        return agents.plan(root, c, task, most, focus, order=order if order in ("parallel", "staged") else "parallel",
+                           after={str(k): [str(x) for x in v] for k, v in (after or {}).items() if isinstance(v, list)})
+
+    @server.tool()
+    def add_agent(name: str, brief: str = "", blocks: List[str] = [], waits_for: List[str] = [],  # noqa: B006
+                  area: str = "", kind: str = "") -> Dict[str, Any]:
+        """Add an agent to the running team when the person asks for one ("add a migrations agent after the API
+        one"): it claims `blocks`, waits for the agents or steps in `waits_for`, and gets a brief (yours, or its
+        kind's: agent_kinds lists the kinds extensions and saved agents offer). Then launch it as `how` says."""
+        return _safe(lambda: agents.add_agent(_root(), name, brief, blocks, waits_for, area, kind))
+
+    @_read_only(server)
+    def agent_kinds() -> Dict[str, Any]:
+        """The kinds of agent add_agent can add here: extensions' (research-diff's experiment runner, section writer,
+        contradiction reviewer...) and the person's saved agents."""
+        return {"kinds": list(agents.agent_kinds(_root()).values())}
+
+    @_read_only(server)
+    def workflow() -> Dict[str, Any]:
+        """The team's workflow as it runs: its stages, and each agent and extension step with who it waits for and
+        its status (queued, waiting, running, paused, done, failed), times, files read and edited, last action."""
+        return agents.workflow(_root())
+
+    @_read_only(server)
+    def agent_log(name: str) -> Dict[str, Any]:
+        """One agent's (or extension step's) session: its brief, what it said and did (its transcript), the messages it
+        sent and got, the files it touched. What the person sees on clicking it in the workflow."""
+        root = _root()
+        try:
+            return agents.agent_log(root, name)
+        except KeyError:
+            try:
+                return agents.step_log(root, name)
+            except KeyError:
+                return {"error": f"no agent or step {name!r} in the workflow"}
+
+    @server.tool()
+    def workflow_action(step: str, action: str) -> Dict[str, Any]:
+        """Pause, resume, stop or retry an extension's step on the workflow (research-diff's experiment run), when the
+        person asks and the step offers it."""
+        try:
+            return agents.step_action(_root(), step, action)
+        except KeyError:
+            return {"error": f"no step {step!r} in the workflow"}
+        except ValueError as exc:
+            return {"error": str(exc)}
+
+    @server.tool()
+    def save_workflow(name: str, description: str = "", scope: str = "project") -> Dict[str, Any]:
+        """Save the team's current workflow (its agents, areas, order, and extensions' steps) to use again for later
+        tasks: scope "project" (this repository, shared through git), a kind of project ("research", "software"),
+        or "everywhere". Say what you saved."""
+        from . import workflows
+        return _safe(lambda: workflows.save(_root(), name, description, scope))
+
+    @_read_only(server)
+    def workflows() -> Dict[str, Any]:
+        """The workflows saved for this project (its own, the person's for its kind or everywhere) and those
+        extensions offer here, each with its agents, steps and stages."""
+        from . import workflows as wf
+        return {"workflows": [wf.summary(w) for w in wf.listing(_root())]}
+
+    @server.tool()
+    def run_workflow(name: str, task: str, most: int = 8) -> Dict[str, Any]:
+        """Plan a saved workflow's team for a new task (the same agents, areas and order); then launch as `how`
+        says."""
+        from . import workflows
+        root = _root()
+        return _safe(lambda: workflows.run(root, cmp.compare(root, "checkpoint", "."), name, task, most))
 
     @server.tool()
     def claim(agent: str, blocks: List[str]) -> Dict[str, Any]:
@@ -438,7 +513,8 @@ def build() -> Server:
         """The plan, who claims which block, and the latest messages on the bus."""
         root = _root()
         st = agents.state(root)
-        return {"plan": st["plan"], "claims": st["claims"], "messages": agents.messages(root)[-20:]}
+        return {"plan": st["plan"], "claims": st["claims"], "messages": agents.messages(root)[-20:],
+                "workflow": agents.workflow(root)}
 
     from . import extensions
     off = {n.strip() for n in os.environ.get("SYSTEM_DIFF_EXT_TOOLS_OFF", "").split(",") if n.strip()}

@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 892,
+   "lines": 902,
    "hub": false,
    "quiet": false
   },
@@ -44,8 +44,8 @@
    "order": 36,
    "container": "",
    "declared": false,
-   "files": 11,
-   "lines": 3970,
+   "files": 12,
+   "lines": 4266,
    "hub": false,
    "quiet": false
   },
@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 482,
+   "lines": 965,
    "hub": false,
    "quiet": false
   },
@@ -237,7 +237,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 519,
+   "lines": 513,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 477,
+   "lines": 553,
    "hub": false,
    "quiet": false
   },
@@ -333,7 +333,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2693,
+   "lines": 2749,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2967,
+   "lines": 3209,
    "hub": false,
    "quiet": false
   }
@@ -469,10 +469,10 @@
   "agents>architecture": 2,
   "agents>config": 1,
   "agents>design": 1,
-  "agents>extract": 1,
+  "agents>extract": 2,
   "agents>objectives": 1,
   "agents>sources": 1,
-  "agents>src/system_diff": 1,
+  "agents>src/system_diff": 6,
   "architecture>design": 2,
   "architecture>diff": 1,
   "architecture>extract": 1,
@@ -597,7 +597,7 @@
   "mcp>objectives": 2,
   "mcp>pictures": 1,
   "mcp>sources": 1,
-  "mcp>src/system_diff": 10,
+  "mcp>src/system_diff": 13,
   "mcp>textmap": 1,
   "names>graph": 1,
   "narrate>sources": 1,
@@ -627,7 +627,7 @@
   "panel>pictures": 1,
   "panel>regroup": 1,
   "panel>sources": 3,
-  "panel>src/system_diff": 7,
+  "panel>src/system_diff": 8,
   "panel>textmap": 1,
   "panel>watch": 2,
   "png>sources": 1,
@@ -641,6 +641,7 @@
   "regroup>sources": 1,
   "sources>gitfs": 3,
   "src/system_diff>agent": 2,
+  "src/system_diff>agents": 4,
   "src/system_diff>chat": 2,
   "src/system_diff>cli": 2,
   "src/system_diff>compare": 3,
@@ -667,6 +668,7 @@
   "tui>src/system_diff": 1,
   "watch>activity": 1,
   "watch>agent": 1,
+  "watch>agents": 1,
   "watch>chat": 1,
   "watch>cli": 4,
   "watch>compare": 1,
@@ -706,6 +708,8 @@
    "is_system"
   ],
   "agent>agents": [
+   "record_run",
+   "subagent_transcript",
    "ORCHESTRATE",
    "after_edit",
    "deliver",
@@ -761,11 +765,11 @@
   ],
   "agents>activity": [
    "EDIT",
-   "PROMPT",
    "_replace",
+   "events",
+   "PROMPT",
    "is_system",
-   "part_of",
-   "READ"
+   "part_of"
   ],
   "agents>architecture": [
    "groups_of"
@@ -781,7 +785,8 @@
    "summarize"
   ],
   "agents>extract": [
-   "Code"
+   "Code",
+   "redact"
   ],
   "agents>objectives": [
    "for_brief"
@@ -790,9 +795,12 @@
    "git_dir"
   ],
   "agents>src/system_diff": [
+   "context",
+   "load",
+   "failed",
+   "for_project",
    "match",
-   "planned",
-   "worth_keeping"
+   "planned"
   ],
   "architecture>design": [
    "kinds"
@@ -1291,12 +1299,12 @@
    "find_root"
   ],
   "mcp>agents": [
+   "workflow",
+   "add_agent",
+   "agent_kinds",
+   "agent_log",
    "claim",
-   "inbox",
-   "messages",
-   "plan",
-   "publish",
-   "state"
+   "inbox"
   ],
   "mcp>chat": [
    "add_note",
@@ -1344,12 +1352,12 @@
    "repo_root"
   ],
   "mcp>src/system_diff": [
+   "save",
    "config_preview",
    "graph",
    "show",
    "source",
-   "view",
-   "install"
+   "view"
   ],
   "mcp>textmap": [
    "plain",
@@ -1396,6 +1404,7 @@
    "MAIN",
    "state",
    "messages",
+   "workflow",
    "inbox",
    "who_worked"
   ],
@@ -1565,6 +1574,14 @@
    "run_hook",
    "find_root"
   ],
+  "src/system_diff>agents": [
+   "plan",
+   "set_steps",
+   "state",
+   "agent_kinds",
+   "stages_of",
+   "workflow"
+  ],
   "src/system_diff>chat": [
    "delivered",
    "show_page"
@@ -1677,6 +1694,9 @@
   "watch>agent": [
    "hook_work",
    "say_later"
+  ],
+  "watch>agents": [
+   "agents"
   ],
   "watch>chat": [
    "Index",
@@ -1859,6 +1879,7 @@
    "typing": 1
   },
   "agents": {
+   "datetime": 1,
    "json": 1,
    "pathlib": 1,
    "re": 1,
@@ -2156,12 +2177,12 @@
    "typing": 1
   },
   "src/system_diff": {
-   "pathlib": 10,
-   "typing": 10,
-   "json": 9,
-   "os": 8,
-   "re": 6,
-   "time": 6,
+   "pathlib": 11,
+   "typing": 11,
+   "json": 10,
+   "os": 9,
+   "re": 7,
+   "time": 7,
    "sys": 4,
    "importlib": 3,
    "threading": 3,
@@ -2258,6 +2279,7 @@
    "typing": 1
   },
   "agents": {
+   "datetime": 1,
    "json": 1,
    "pathlib": 1,
    "re": 1,
@@ -2560,12 +2582,12 @@
    "typing": 1
   },
   "src/system_diff": {
-   "pathlib": 10,
-   "typing": 10,
-   "json": 9,
-   "os": 8,
-   "re": 6,
-   "time": 6,
+   "pathlib": 11,
+   "typing": 11,
+   "json": 10,
+   "os": 9,
+   "re": 7,
+   "time": 7,
    "sys": 4,
    "threading": 3,
    "claude_agent_sdk": 2,
@@ -2682,7 +2704,8 @@
   "tests/test_tui.py": 1,
   "tests/test_update.py": 1,
   "tests/test_web.py": 1,
-  "tests/test_web_chat.py": 1
+  "tests/test_web_chat.py": 1,
+  "tests/test_workflow.py": 1
  },
  "connections": {},
  "part_tables": {}

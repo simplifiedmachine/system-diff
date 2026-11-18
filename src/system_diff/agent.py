@@ -666,8 +666,16 @@ def run_hook(stdin_text: str, emit: Callable[[str], None] = print, env=None) -> 
                 message = None
         elif event == "Stop":
             message = on_stop(root, payload, env)
-        elif event == "SubagentStop":   # a role finished: counted (agents worth keeping)
+        elif event == "SubagentStart":   # an agent of the team began: the workflow shows it running
+            aid = str(payload.get("agent_id") or "")
+            agents.record_run(root, "start", aid, str(payload.get("agent_type") or ""),
+                              agents.subagent_transcript(str(payload.get("transcript_path") or ""), aid))
+        elif event == "SubagentStop":   # a role finished: counted (agents worth keeping), and done in the workflow
             from . import agentlib
+            aid = str(payload.get("agent_id") or "")
+            agents.record_run(root, "stop", aid, str(payload.get("agent_type") or ""),
+                              str(payload.get("agent_transcript_path") or "")
+                              or agents.subagent_transcript(str(payload.get("transcript_path") or ""), aid))
             agentlib.finished(root, str(payload.get("agent_type") or ""))
         if message:
             emit(json.dumps({"systemMessage": message}))
@@ -694,7 +702,9 @@ HOOKS = (  # event, matcher, how it runs, what it does
      "notes the files Claude reads and, after an edit that changes the system's structure, one line on what it "
      "changed; and hands each agent what other agents published"),
     ("Stop", None, {"timeout": 30}, "after each turn, one line on what the turn changed in the system"),
-    ("SubagentStop", None, {"timeout": 15}, "counts each finished subagent's role, to suggest the ones worth keeping"),
+    ("SubagentStart", None, {"timeout": 15}, "notes when each agent of a team starts, for the workflow view"),
+    ("SubagentStop", None, {"timeout": 15}, "notes when each agent of a team finishes (the workflow view), and counts "
+     "its role, to suggest the ones worth keeping"),
 )
 
 

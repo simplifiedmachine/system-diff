@@ -507,6 +507,7 @@ def test_web_view_gives_each_view_as_structured_json_agreeing_with_the_pane(repo
     box.write_text(json.dumps({"id": "1", "text": "hi"}) + "\n", encoding="utf-8")
     kinds = {"notes": {"sign", "status", "text", "why", "ask"}, "steps": {"at", "kind", "sign", "text", "why", "file"},
              "lanes": {"name", "colour", "area", "live", "doing", "progress", "unread", "marks", "blocks"},
+             "workflow": set(),   # its board comes as "workflow" (stages, agents, steps) beside the items
              "chips": {"key", "title", "learning", "stdlib", "layer", "parts", "role", "what", "link"},
              "lines": {"text", "style"}}
     for view in ("now", "review", "agents", "topics"):

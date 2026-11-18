@@ -25,6 +25,21 @@ may define:
                                                             # its own server, for Studio sessions (run as
                                                             #   `python -m <its package>` when it imports here)
     def applies(root) -> bool                               # whether its server is worth starting in a repository
+    def workflow(ctx) -> {"steps": [step, ...], "waits": [{"from", "to", "why"}]}
+                                                            # its steps on the workflow board; a step: {"id", "title",
+                                                            #   "kind" (agent|run|check), "state" (waiting|running|done|
+                                                            #   failed|paused), "agent"?, "session"? (a Studio session),
+                                                            #   "log"? (text), "files"?, "actions"? (pause|resume|stop|
+                                                            #   retry), "detail"?, "started"?, "finished"?}; a wait: "to"
+                                                            #   waits for "from" to finish (step ids or agents' names)
+    def workflow_action(ctx, id, action) -> {"ok", "said"}  # pause, resume, stop or retry one of its steps
+    def step_log(ctx, id) -> {"entries": [{"at", "kind", "text"}], "about"}
+                                                            # a long log for the board's pop-up (else the step's "log")
+    WORKFLOW_KINDS = [{"kind", "title", "brief", "tools"?, "model"?}]
+                                                            # agents Claude can add to a team from the chat (add_agent)
+    WORKFLOW_TEMPLATES = [{"name", "description", "agents", "steps", "waits", "order"}]
+                                                            # ready-made workflows, offered where applies(root); it saves
+                                                            #   its own with system_diff.workflows.save(..., by=NAME)
     def home(ctx) -> {"view": "research", "system": "collapsed"} | None
                                                             # the view a repository opens on (a research repository:
                                                             #   its own), system-diff's tabs behind one "System" tab

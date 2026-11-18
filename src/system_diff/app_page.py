@@ -288,6 +288,11 @@ $("addform").addEventListener("submit", async e => {
         await loadProjects(); const p = findProject(x => x.id === got.id); if (p) openProject(p); }
   catch (err) { $("projnote").textContent = err.message; }
 });
+addEventListener("message", e => {   // the project's page: open a session it names (a workflow step's)
+  if (e.origin !== location.origin || !e.data || e.data.studio !== "session" || !e.data.id) return;
+  tab("session"); if (keep.get("chat", "1") === "0") $("togglechat").click();
+  follow(String(e.data.id));
+});
 addEventListener("message", async e => {   // the project's page asks to open another repository of its family
   if (e.origin !== location.origin || !e.data || e.data.studio !== "open") return;
   await loadProjects();
@@ -485,9 +490,53 @@ function tab(which) {
   $("agentsbox").hidden = which !== "agents"; if (which === "agents") loadAgents();
 }
 $("tabsession").addEventListener("click", () => tab("session")); $("tabagents").addEventListener("click", () => tab("agents"));
+async function ask(text) {   // a request to Claude, in the open session (one starts when none is open)
+  tab("session");
+  let s = S.session && S.session.status && !["closed", "failed"].includes(S.session.status) ? S.session : await start();
+  if (!s) return;
+  try { await api("api/sessions/" + s.id + "/send", { text }); } catch (e) { $("sstatus").textContent = e.message; }
+}
+async function loadWorkflows(box) {
+  let wf; try { wf = await api("api/workflows?project=" + S.project, undefined, 60000); } catch (e) { box.append(el("div", e.message, "ev err")); return; }
+  box.append(el("h3", "Workflows"));
+  const top = el("div", null, "acts");
+  const add = el("button", "Add an agent…"); add.type = "button"; add.title = "Ask Claude to add an agent to the team that is working";
+  add.addEventListener("click", () => {
+    const kinds = (wf.kinds || []).map(k => k.kind).slice(0, 12);
+    const what = prompt("What should the new agent do, and after whom?" + (kinds.length ? "\nKinds you can name: " + kinds.join(", ") : ""), "");
+    if (what) ask("Add an agent to the current team (system-diff add_agent): " + what);
+  });
+  top.append(add);
+  if (wf.current && (wf.current.agents || wf.current.steps)) {
+    const save = el("button", "Save this team as a workflow…"); save.type = "button";
+    save.addEventListener("click", async () => {
+      const name = prompt("A name for this workflow (letters, digits, dashes):", ""); if (!name) return;
+      const scope = prompt("Keep it for: project, everywhere, or a kind of project (research, software)?", "project") || "project";
+      try { await api("api/workflows/save", { project:S.project, name, scope, description:wf.current.task || "" }); loadAgents(); } catch (e) { alert(e.message); }
+    });
+    top.append(save);
+  }
+  box.append(top);
+  if (!(wf.workflows || []).length) box.append(el("div", "None saved yet: save the team that is working, or ask Claude to (save_workflow).", "ev meta"));
+  for (const w of wf.workflows || []) {
+    const a = el("div", null, "ag");
+    a.append(el("span", w.name, "t"), el("span", [w.agents.length ? w.agents.length + " agents" : "", w.steps.length ? w.steps.length + " steps" : "", w.stages > 1 ? w.stages + " stages" : "in parallel", w.by !== "system-diff" ? "from " + w.by : "", w.scope].filter(Boolean).join(" · "), "s"));
+    if (w.description) a.append(el("span", w.description, "s"));
+    const acts = el("div", null, "acts"), use = el("button", "Use…", "primary"); use.type = "button";
+    use.addEventListener("click", () => { const task = prompt("Run the " + w.name + " workflow for which task?", w.example_task || ""); if (task) ask("Run the saved system-diff workflow `" + w.name + "` (run_workflow) for: " + task); });
+    acts.append(use);
+    if (w.scope === "project" || w.by === "system-diff" && w.scope !== "extension") {
+      const f = el("button", "Forget", "danger"); f.type = "button";
+      f.addEventListener("click", async () => { if (!confirm("Forget the workflow " + w.name + "?")) return; try { await api("api/workflows/forget", { project:S.project, name:w.name, scope:w.scope === "project" ? "project" : "everywhere" }); loadAgents(); } catch (e) { alert(e.message); } });
+      acts.append(f);
+    }
+    a.append(acts); box.append(a);
+  }
+}
 async function loadAgents() {
   const box = $("agentsbox"); box.replaceChildren();
   if (!S.project) { box.append(el("div", "Pick a project first.", "ev meta")); return; }
+  await loadWorkflows(box);
   let lib; try { lib = await api("api/agents?project=" + S.project); } catch (e) { box.append(el("div", e.message, "ev err")); return; }
   const kinds = lib.kinds || ["software"];
   box.append(el("div", "This project is " + kinds.join(" and ") + ": it gets your library's " + kinds.join(" and ") + " agents.", "ev meta"));

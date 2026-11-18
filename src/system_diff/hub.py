@@ -284,19 +284,13 @@ def _free(port: int) -> bool:
 
 
 class Exclusive:
-    """A server socket that no other program can share. Python's HTTP servers ask for SO_REUSEADDR, which on Linux
-    and macOS only lets a server reopen a port whose last connections are still closing, but on Windows lets a second
-    program open a port that is in use: two engines (or an engine and the Studio) on one port, each request answered
-    by either. On Windows the port is taken with SO_EXCLUSIVEADDRUSE instead; elsewhere nothing changes."""
+    """A server socket no other program can share. Python's HTTP servers ask for SO_REUSEADDR: on Linux and macOS that
+    only lets a server reopen a port whose last connections are still closing, but on Windows it lets a second
+    program open a port that is in use (two engines, or an engine and the Studio, on one port, each request answered
+    by either). On Windows the socket is left as Windows makes it: since Windows Server 2003 a plain socket cannot
+    take a port in use, and, unlike SO_EXCLUSIVEADDRUSE, it can reopen one whose connections are still closing
+    (TIME_WAIT). Elsewhere nothing changes."""
     allow_reuse_address = os.name != "nt"
-
-    def server_bind(self) -> None:   # type: ignore[override]
-        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
-            try:
-                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-            except OSError:
-                pass
-        super().server_bind()   # type: ignore[misc]
 
 
 def hub_url(port: int) -> str:

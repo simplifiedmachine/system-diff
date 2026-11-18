@@ -388,7 +388,8 @@ class Session:
                 if isinstance(got, dict):
                     return got
             return {}
-        return {ev: [HookMatcher(hooks=[run])] for ev in ("UserPromptSubmit", "PostToolUse", "Stop", "SubagentStop")}
+        return {ev: [HookMatcher(hooks=[run])] for ev in ("UserPromptSubmit", "PostToolUse", "Stop", "SubagentStart",
+                                                          "SubagentStop")}
 
     def sdk_options(self) -> Any:
         import warnings

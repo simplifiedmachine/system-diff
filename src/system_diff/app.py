@@ -402,6 +402,14 @@ def handler(studio: Studio):
                 if path == "/api/agents":
                     from . import agentlib
                     return self._json(200, agentlib.library(self._root(q)))
+                if path == "/api/workflows":
+                    from . import agents as team, workflows
+                    root = self._root(q)
+                    wf = team.workflow(root)
+                    return self._json(200, {"workflows": [workflows.summary(w) for w in workflows.listing(root)],
+                                            "current": {"task": wf.get("task", ""), "agents": len(wf["agents"]),
+                                                        "steps": len(wf.get("steps") or [])},
+                                            "kinds": list(team.agent_kinds(root).values())})
                 if path == "/api/sessions":
                     root = self._root(q)
                     m = studio.manager
@@ -537,6 +545,15 @@ def handler(studio: Studio):
                                                      str(b.get("prompt") or ""), str(b.get("tools") or ""),
                                                      str(b.get("model") or ""), str(b.get("scope") or "project"),
                                                      root=root))
+            if path == "/api/workflows/save":
+                from . import workflows
+                root = self._root({"project": str(b.get("project") or "")})
+                return self._json(200, workflows.save(root, str(b.get("name") or ""), str(b.get("description") or ""),
+                                                      str(b.get("scope") or "project")))
+            if path == "/api/workflows/forget":
+                from . import workflows
+                root = self._root({"project": str(b.get("project") or "")})
+                return self._json(200, workflows.forget(root, str(b.get("name") or ""), str(b.get("scope") or "project")))
             if path == "/api/agents/install":
                 root = self._root({"project": str(b.get("project") or "")})
                 return self._json(200, agentlib.install(root, [str(n) for n in b.get("names") or []]))

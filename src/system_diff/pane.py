@@ -868,6 +868,58 @@ def owners(model: Dict[str, Any], who: Dict[str, Dict[str, Any]], colour: Dict[s
                 box["owner"] = colour[name]
 
 
+WF_SIGN = {"running": "▶", "done": "✓", "waiting": "⏳", "queued": "○", "paused": "Ⅱ", "failed": "✗"}
+
+
+def _workflow_rows(page: canvas.Page, root: Path, width: int) -> None:
+    """The workflow in the pane: a row per stage, each agent (and extension step) with its status."""
+    try:
+        wf = agents.workflow(root)
+    except Exception:  # noqa: BLE001
+        return
+    items = {a["name"]: a for a in wf["agents"]}
+    items.update({x["id"]: x for x in wf.get("steps") or []})
+    if not items or len(wf["stages"]) < 2 and len(items) < 2:
+        return
+    page.heading("Workflow", "stages run one after another; within one, in parallel · the web page shows each one's log")
+    now = time.time()
+    for i, names in enumerate(wf["stages"], 1):
+        runs = []
+        for n in names:
+            x = items.get(n) or {}
+            st = x.get("status", "queued")
+            extra = (f" {int(now - x['started']) // 60}m" if st == "running" and x.get("started") else
+                     " waits for " + ", ".join(x.get("waiting_on") or []) if st == "waiting" else "")
+            runs.append(f"{WF_SIGN.get(st, '·')} {x.get('title') if x.get('kind') == 'step' else n}{extra}")
+        page.para(" · ".join(runs), "", first=[f" {i}  ", "accent"])
+
+
+def _workflow_section(root: Path) -> Optional[Dict[str, Any]]:
+    """The team's workflow for the page: its stages, the agents and extensions' steps in them, who waits for whom,
+    each one's status; the saved workflows there are to start from. None with no plan and nothing saved."""
+    try:
+        wf = agents.workflow(root)
+    except Exception:  # noqa: BLE001 - the tab stands without it
+        return None
+    try:
+        from . import workflows
+        saved = [workflows.summary(w) for w in workflows.listing(root)]
+    except Exception:  # noqa: BLE001
+        saved = []
+    if not wf["agents"] and not wf.get("steps") and not saved:
+        return None
+    n = {"running": 0, "waiting": 0, "done": 0, "queued": 0}
+    for x in wf["agents"] + wf.get("steps", []):
+        n[x["status"]] = n.get(x["status"], 0) + 1
+    aside = (" · ".join(f"{v} {k}" for k, v in n.items() if v) + (" · click one for its session"
+                                                                   if wf["agents"] else "")) if (wf["agents"] or wf.get("steps")) \
+        else "no team yet: ask Claude to plan one, or to run a saved workflow"
+    out = _web_section("Workflow", "workflow", [], aside)
+    out["workflow"] = wf
+    out["saved"] = saved
+    return out
+
+
 def _library_sections(root: Path) -> List[Dict[str, Any]]:
     """The agents worth keeping and the saved ones (agentlib), for the Agents tab."""
     try:
@@ -900,6 +952,7 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
     who = team(root, events, code)
     page = canvas.Page(width)
     task = (st["plan"] or {}).get("task", "")
+    _workflow_rows(page, root, width)
     page.heading("The team", f"plan: {canvas.cut(task, width - 22)}" if task else
                  "no plan yet: Claude makes one with plan_agents")
     clash = collisions(root, events, code, cfg)
@@ -1628,6 +1681,9 @@ def _web_agents(root: Path, zoom: int) -> Dict[str, Any]:
                 f"{CHECK_SIGN.get(x['status'], ('?', ''))[0]} {x['text']}" for x in lane["checks"][:3])
     sections = [_web_section("The team", "lanes", lanes, f"plan: {task}" if task else
                              "no plan yet: Claude makes one with plan_agents")]
+    flow = _workflow_section(root)
+    if flow is not None:   # who runs, who waits for whom, each one's log: first
+        sections.insert(0, flow)
     if objs:
         some = sum(len(v) for v in checks.values())
         sections.append(_web_section("Objectives", "notes",

@@ -138,7 +138,14 @@ how long starting a program takes there, how long the hooks took, and why the en
 - **Ask Claude** "what is the API part?" or "what did this change do to the system?": it answers from system-diff's
   MCP tools, with a diagram.
 - **Teams of agents**: for work that spans the system, Claude plans a team with `plan_agents`, one agent per block;
-  they claim their blocks and tell each other what they change over a bus. Watch them in the Agents tab.
+  they claim their blocks and tell each other what they change over a bus. A team can run in stages: an agent that
+  uses what another one changes starts after it (`order="staged"`, or "web after api"). The Agents tab draws the
+  **workflow**: a column per stage (agents in one run in parallel), arrows for who waits for whom, each agent's status
+  (ready, waiting for…, running for 3m, done); click one for its session: the brief it got, what it said and did, its
+  messages and files, live while it runs. Ask in the chat for another agent ("add a migrations agent after the API
+  one": `add_agent`), and to keep a team for later ("save this as our feature workflow": `save_workflow`, for this
+  project, a kind of project, or everywhere), then "run the feature workflow for …" (`run_workflow`). Extensions add
+  their own steps, waits and agent kinds to the same view (research-diff's experiment runs, paper sections).
 - **Objectives**: system-diff learns what you keep asking for ("fast on large repos", "must work on Windows"), shows
   it, keeps it in front of Claude and every agent, and marks changes that touch it. `x` clears one you disagree with.
 
