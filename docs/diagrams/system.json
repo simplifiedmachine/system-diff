@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 12,
-   "lines": 4425,
+   "lines": 4448,
    "hub": false,
    "quiet": false
   },
@@ -644,7 +644,7 @@
   "src/system_diff>agent": 2,
   "src/system_diff>agents": 4,
   "src/system_diff>chat": 2,
-  "src/system_diff>cli": 2,
+  "src/system_diff>cli": 3,
   "src/system_diff>compare": 3,
   "src/system_diff>config": 7,
   "src/system_diff>diff": 1,

@@ -649,3 +649,25 @@ def test_the_studio_changes_mode_and_model_of_an_open_session(studio, repo):
         call(url + f"api/sessions/{s['id']}/mode", {"mode": "yolo"}, w)
     assert bad.value.code == 400
     assert call(url + f"api/sessions/{s['id']}/model", {"model": "haiku"}, w)["id"] == s["id"]
+
+
+def test_an_older_studio_is_replaced(monkeypatch, tmp_path, capsys):
+    """After an update the Studio running in the background still has the old code: system-diff app replaces it."""
+    folder = tmp_path / "state"
+    calls = {"stop": 0}
+    state = {"have": {"port": 1, "token": "t", "pid": 1}}
+    monkeypatch.setattr(app, "running", lambda f=None: state["have"])
+    monkeypatch.setattr(app, "studio_version", lambda have: "0.10.0")
+
+    def stopped(f=None, wait=15.0):
+        calls["stop"] += 1
+        state["have"] = None
+        return 0
+    monkeypatch.setattr(app, "stop", stopped)
+    started = []
+    monkeypatch.setattr(app, "serve", lambda *a, **k: started.append(a) or 0)
+    assert app.start(port=0, folder=None) == 0
+    assert calls["stop"] == 1 and started and "replacing the running Studio (0.10.0)" in capsys.readouterr().out
+    state["have"] = {"port": 1, "token": "t", "pid": 1}
+    monkeypatch.setattr(app, "studio_version", lambda have: app.__dict__.get("__version__") or __import__("system_diff").__version__)
+    assert app.start(port=0, folder=None) == 0 and calls["stop"] == 1 and "running at" in capsys.readouterr().out

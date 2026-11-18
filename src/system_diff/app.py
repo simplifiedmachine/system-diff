@@ -664,6 +664,14 @@ def start(port: int = FIRST, open_it: bool = False, folder: Optional[Path] = Non
     folder = folder if folder is not None else state_dir()
     have = running(folder)
     if have is not None:
+        from . import __version__
+        theirs = studio_version(have)
+        if theirs and _older(theirs):   # a Studio from before this install keeps its old code: this one replaces it
+            print(f"system-diff app: replacing the running Studio ({theirs}) with {__version__} (its sessions close)",
+                  flush=True)
+            stop(folder)
+            have = running(folder)
+    if have is not None:
         url = f"http://localhost:{have['port']}/"
         print(f"system-diff app: running at {url}  (system-diff app --stop stops it)", flush=True)
         if open_it:
@@ -706,6 +714,21 @@ def start(port: int = FIRST, open_it: bool = False, folder: Optional[Path] = Non
     print("system-diff app: it did not start" + (":\n  " + "\n  ".join(said) if said else "") +
           f"\n  (its output: {folder / APP_LOG}; system-diff app --foreground runs it here)", file=sys.stderr)
     return 1
+
+
+def studio_version(have: Dict[str, Any]) -> str:
+    """The version the running Studio says it is (GET /api/status, with its token), "" when it does not say."""
+    conn = http.client.HTTPConnection("127.0.0.1", int(have["port"]), timeout=5)
+    try:
+        conn.request("GET", "/api/status", headers={"X-Token": str(have.get("token") or ""),
+                                                    "Host": f"127.0.0.1:{have['port']}"})
+        r = conn.getresponse()
+        got = json.loads(r.read().decode("utf-8") or "{}") if r.status == 200 else {}
+        return str(got.get("version") or "")
+    except (OSError, ValueError, http.client.HTTPException):
+        return ""
+    finally:
+        conn.close()
 
 
 def stop(folder: Optional[Path] = None, wait: float = 15.0) -> int:
