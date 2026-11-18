@@ -152,3 +152,28 @@ def test_a_slow_extra_never_holds_the_page(monkeypatch):
     time.sleep(1.6)
     assert watch.soon(("test", "slow"), lambda: ["fresh"], wait=0.5) == ["fresh"]              # done: the new value
     assert watch.soon(("test", "fast"), lambda: 42) == 42 and calls == [1]
+
+
+def test_an_extensions_tabs_only_where_it_applies(monkeypatch, repo, files):
+    ext = types.SimpleNamespace(NAME="research", VIEWS=[("research", "Research", "s")],
+                                applies=lambda root: (root / "main.tex").exists())
+    monkeypatch.setattr(extensions, "_LOADED", [ext])
+    assert extensions.views() == [("research", "Research", "s")]           # no repository: every extension
+    assert extensions.views(repo) == []                                      # a software repository: none
+    assert 'data-view="research"' not in watch.page_html(repo)
+    assert pane.show(repo, 80, "now", take=False)["views"] == []
+    files(repo, {"main.tex": "\\\\section{A}\\n"})
+    subprocess.run(["git", "add", "main.tex"], cwd=repo, check=True, capture_output=True)   # the index moved: asked again
+    assert extensions.views(repo) == [("research", "Research", "s")]
+    cfg = (repo / "system-diff.toml").read_text(encoding="utf-8")
+    files(repo, {"system-diff.toml": "extensions = false\n" + cfg})
+    assert extensions.views(repo) == []                                      # the repository says no
+    files(repo, {"system-diff.toml": 'extensions = ["research"]\n' + cfg})
+    ext.applies = lambda root: False
+    assert extensions.views(repo) == [("research", "Research", "s")]         # the repository says yes
+
+
+def test_the_diagram_fits_its_box_and_hovering_moves_nothing():
+    page = watch.page_html()
+    assert "max-height:calc(100vh - 200px)" in page and "scrollbar-gutter:stable" in page
+    assert "#detail { padding:12px 16px; height:12.5em; overflow:auto;" in page and "vb[2] * 1.8" in page

@@ -243,7 +243,9 @@ that did not change keeps its place.
 
 ## Extensions
 
-Other packages can add views to system-diff's own engine, web page and pane, so one engine, one port, one page and one
+Other packages can add views to system-diff's own engine, web page and pane (in the repositories they apply to:
+research-diff's tabs where there is research; `extensions = false`, or a list of names, in `system-diff.toml`
+decides for a repository), so one engine, one port, one page and one
 pane serve them all, cached the same way and drawn with the same diagrams: research-diff's Evidence, Paper and
 Auto-research tabs sit beside Now, Review, Agents, Topics and History. An extension declares itself in its
 pyproject.toml:

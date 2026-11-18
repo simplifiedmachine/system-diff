@@ -1167,7 +1167,7 @@ def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = N
         h = None
     if h:
         out["home"] = h   # the pane opens on it (register.tsx), once
-    out["views"] = [list(v) for v in extensions.views()]   # the extensions' tabs, for the pane to add
+    out["views"] = [list(v) for v in extensions.views(root)]   # the tabs of the extensions that apply here
     out["zoom"] = ZOOM
     out["web"] = web_url(root)
     out["send"] = take_outbox(root) if take else []

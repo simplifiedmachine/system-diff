@@ -317,8 +317,7 @@ def _kind_of(root: Path) -> set:
         from . import extensions
         for ext in extensions.load():
             kind = str(getattr(ext, "KIND", "") or ("research" if getattr(ext, "NAME", "") == "research" else ""))
-            applies = getattr(ext, "applies", None)
-            if kind and applies is not None and applies(Path(root)):
+            if kind and getattr(ext, "applies", None) is not None and extensions.applies(ext, Path(root)):
                 kinds.add(kind)
     except Exception:  # noqa: BLE001
         pass

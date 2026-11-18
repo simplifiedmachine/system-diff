@@ -163,11 +163,15 @@ pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 .lit-ui { box-shadow:0 0 0 2px var(--work) !important; }
 .dia { padding:0; overflow:hidden; }
 .dia > h2 { padding:14px 16px 0; }
-#dia { background:var(--paper); border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px; overflow:auto; }
-#dia svg { display:block; width:100%; height:auto; max-width:100%; }
+/* the diagram fits its box: as wide as the box (a tiny one not blown up), never taller than the window */
+#dia { background:var(--paper); border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px; overflow:hidden; }
+#dia svg { display:block; width:100%; height:auto; max-width:100%; max-height:calc(100vh - 200px); margin:0 auto; }
 #dia.empty { color:var(--muted); font-size:13px; padding:24px; text-align:center; }
 #dia.enterable [data-id].can-enter { cursor:zoom-in; }
-#detail { padding:12px 16px; min-height:44px; white-space:pre-wrap; color:var(--ink2); font-size:13.5px; }
+/* one height whatever is hovered: the page never moves (and on Windows its scrollbar never comes and goes,
+   which would narrow the page and rescale the diagram) */
+#detail { padding:12px 16px; height:12.5em; overflow:auto; white-space:pre-wrap; color:var(--ink2); font-size:13.5px; }
+html { scrollbar-gutter:stable; }
 #detail .what { color:var(--muted); }
 #detail b { color:var(--ink); }
 #detail .ex { white-space:normal; display:grid; gap:10px; max-width:860px; }
@@ -1542,7 +1546,7 @@ function drawDiagram(g) {
     svg.removeAttribute("width"); svg.removeAttribute("height");
     const vb = (svg.getAttribute("viewBox") || "").split(/[ ,]+/).map(Number);
     if (vb.length === 4 && vb[2] > 0) {
-      svg.style.maxWidth = Math.round(vb[2] * 1.1) + "px"; svg.style.margin = "0";
+      svg.style.maxWidth = Math.round(vb[2] * 1.8) + "px";   // fills the box; a tiny diagram is not blown up
     }
   }
   for (const n of box.querySelectorAll("[data-id]")) {
@@ -2520,7 +2524,7 @@ PAGE = PAGE.replace("__PROJECT_HREF__", hub.HREF_JS)
 def page_html(root: Optional[Path] = None) -> str:
     """The page, with the extensions' tabs (and keys) beside system-diff's own, and the view `root` opens on when an
     extension says so (a research repository: research-diff's)."""
-    ext = extensions.views()
+    ext = extensions.views(root)
     try:
         home = extensions.home(root) if root is not None and ext else None
     except Exception:  # noqa: BLE001

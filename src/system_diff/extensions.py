@@ -114,10 +114,54 @@ def errors() -> List[str]:
     return list(_ERRORS)
 
 
-def views() -> List[Tuple[str, str, str]]:
-    """Every extension view: (name, label, key), without clashes with system-diff's or each other's."""
+_APPLIES: Dict[tuple, tuple] = {}
+
+
+def applies(ext: Any, root: Optional[Path]) -> bool:
+    """Whether an extension has something to do in this repository: system-diff.toml decides when it says
+    (`extensions = false`, or a list of names), else the extension (`applies(root)`; one without it, everywhere). Kept
+    while the repository's index and config are unchanged (an extension may ask git: a program start)."""
+    if root is None:
+        return True
+    name = str(getattr(ext, "NAME", "") or "")
+    try:
+        from .config import lenient
+        said = lenient(Path(root)).get("extensions")
+    except Exception:  # noqa: BLE001
+        said = None
+    if said is False:
+        return False
+    if isinstance(said, list):
+        return name in [str(x) for x in said]
+    fn = getattr(ext, "applies", None)
+    if fn is None:
+        return True
+    try:
+        from .projects import _stamp
+        stamp = _stamp(Path(root))
+    except Exception:  # noqa: BLE001
+        stamp = None
+    key = (str(Path(root).resolve()), name)
+    got = _APPLIES.get(key)
+    if stamp is not None and got is not None and got[0] == stamp:
+        return got[1]
+    try:
+        yes = bool(fn(Path(root)))
+    except Exception as exc:  # noqa: BLE001 - not shown where it cannot tell
+        failed(name + " applies", exc)
+        yes = False
+    if stamp is not None:
+        _APPLIES[key] = (stamp, yes)
+    return yes
+
+
+def views(root: Optional[Path] = None) -> List[Tuple[str, str, str]]:
+    """Every extension view: (name, label, key), without clashes with system-diff's or each other's; with `root`,
+    only those of the extensions that apply there (research-diff's in a repository with research, not elsewhere)."""
     out, names, keys = [], set(BUILTIN), set(TAKEN_KEYS)
     for ext in load():
+        if root is not None and not applies(ext, root):
+            continue
         for v in getattr(ext, "VIEWS", ()) or ():
             try:
                 name, label, key = str(v[0]), str(v[1]), str(v[2] or "")[:1]
@@ -182,10 +226,10 @@ def file_ok(path: str) -> bool:
 def home(root: Path) -> Optional[Dict[str, str]]:
     """The view this repository opens on, if an extension says so: {"view", "system"} ("collapsed": system-diff's own
     tabs behind one "System" tab), else None."""
-    mine = {v for v, _l, _k in views()}
+    mine = {v for v, _l, _k in views(root)}
     for ext in load():
         f = getattr(ext, "home", None)
-        if f is None:
+        if f is None or not applies(ext, root):
             continue
         try:
             got = f(context(root, "", ""))
