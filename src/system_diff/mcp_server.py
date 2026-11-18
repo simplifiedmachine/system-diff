@@ -6,6 +6,7 @@ exact text (headline, plan) for the model to explain from, and the picture's pat
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -432,9 +433,10 @@ def build() -> Server:
         return {"plan": st["plan"], "claims": st["claims"], "messages": agents.messages(root)[-20:]}
 
     from . import extensions
+    off = {n.strip() for n in os.environ.get("SYSTEM_DIFF_EXT_TOOLS_OFF", "").split(",") if n.strip()}
     for ext in extensions.load():                  # the extensions' own tools (research-diff's, …)
         add = getattr(ext, "mcp", None)
-        if add is not None:
+        if add is not None and str(getattr(ext, "NAME", "")) not in off:   # off: its own server brings them
             try:
                 add(server)
             except Exception as exc:  # noqa: BLE001

@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 9,
-   "lines": 2565,
+   "lines": 2677,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 467,
+   "lines": 469,
    "hub": false,
    "quiet": false
   },
@@ -648,6 +648,7 @@
   "src/system_diff>gitfs": 2,
   "src/system_diff>hub": 4,
   "src/system_diff>live": 2,
+  "src/system_diff>mcp": 1,
   "src/system_diff>panel": 3,
   "src/system_diff>sources": 9,
   "src/system_diff>watch": 1,
@@ -1591,6 +1592,9 @@
    "progress_text",
    "token_ok"
   ],
+  "src/system_diff>mcp": [
+   "Server"
+  ],
   "src/system_diff>panel": [
    "web_view",
    "take_outbox"
@@ -1782,6 +1786,9 @@
   ],
   "live": [
    "XDG_CONFIG_HOME"
+  ],
+  "mcp": [
+   "SYSTEM_DIFF_EXT_TOOLS_OFF"
   ],
   "narrate": [
    "PYTEST_CURRENT_TEST",
@@ -2038,6 +2045,7 @@
   },
   "mcp": {
    "mcp": 1,
+   "os": 1,
    "pathlib": 1,
    "pydantic": 1,
    "typing": 1
@@ -2138,6 +2146,7 @@
    "re": 4,
    "sys": 3,
    "threading": 3,
+   "importlib": 2,
    "urllib": 2,
    "asyncio": 1,
    "claude_agent_sdk": 1,
@@ -2145,7 +2154,6 @@
    "dataclasses": 1,
    "hashlib": 1,
    "http": 1,
-   "importlib": 1,
    "secrets": 1,
    "shutil": 1,
    "tomllib": 1,
@@ -2435,6 +2443,7 @@
    "mcp.server.fastmcp": 1,
    "mcp.server.mcpserver": 1,
    "mcp.types": 1,
+   "os": 1,
    "pathlib": 1,
    "pydantic": 1,
    "typing": 1
@@ -2546,6 +2555,7 @@
    "http.client": 1,
    "http.server": 1,
    "importlib.metadata": 1,
+   "importlib.util": 1,
    "secrets": 1,
    "shutil": 1,
    "tomllib": 1,

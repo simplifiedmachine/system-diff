@@ -59,22 +59,36 @@ its own (`system-diff tui`). All three show the same live picture.
 
 ## Install
 
-1. The engine (Python 3.11+):
+1. system-diff (Python 3.11+):
    ```sh
-   pip install "system-diff[mcp]"        # or: pipx install "system-diff[mcp]"
+   pip install "system-diff[mcp,app]"     # or: pipx install "system-diff[mcp,app]"
    ```
-2. The plugin, in Claude Code:
+2. Give Claude Code its tools, once for every repository:
+   ```sh
+   claude mcp add --scope user system-diff -- system-diff mcp
    ```
-   /plugin marketplace add simplifiedmachine/system-diff#stable
-   /plugin install system-diff
+3. In your repository, start it and open the page it prints:
+   ```sh
+   system-diff watch            # the web page, http://localhost:8765/
+   system-diff app --open       # or the Studio: every project, and Claude Code sessions run from the page
    ```
-3. Restart Claude Code, and type `/system-diff` to open the pane beside the chat. system-diff follows the system from
-   the start of every session either way (the web page shows it); `/system-diff autostart on` (or `/config`) opens
-   the pane with each session.
+
+**Optional: the Claude Code plugin**, for the pane beside the chat and the hooks that mark each turn and note each
+edit as it happens (without them the page still follows every change, by watching the files):
+```
+/plugin marketplace add simplifiedmachine/system-diff#stable
+/plugin install system-diff
+```
+The plugin brings the same MCP server, so with it skip step 2 (or remove it: `claude mcp remove system-diff`), and
+the tools are not there twice. Restart Claude Code, and type `/system-diff` to open the pane; `/system-diff
+autostart on` (or `/config`) opens it with every session.
+
+Extensions install the same way beside it: `pip install research-diff` adds its tabs to the same page and its tools to
+the same Studio sessions.
 
 **Stable and nightly.** The commands above install the latest [stable release](https://github.com/simplifiedmachine/system-diff/releases/latest)
 (PyPI, and the plugin from the `stable` branch). To test what is coming, run nightly from `main`:
-`pip install "system-diff[mcp] @ git+https://github.com/simplifiedmachine/system-diff@main"` and
+`pip install "system-diff[mcp,app] @ git+https://github.com/simplifiedmachine/system-diff@main"` and
 `/plugin marketplace add simplifiedmachine/system-diff`. Bugs found there are very welcome as issues.
 
 <details><summary>Windows, tmux, and a pane that opens above the chat</summary>

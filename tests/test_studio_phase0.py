@@ -194,3 +194,34 @@ def test_an_edit_inside_a_submodule_reaches_its_engine(family, monkeypatch):
     finally:
         up["server"].shutdown()
         t.join(5)
+
+
+def test_an_extensions_outline_gets_the_engines_files(monkeypatch, repo, files):
+    seen = []
+    ext = types.SimpleNamespace(NAME="paper", VIEWS=[], file_ok=lambda p: p.endswith(".tex"))
+
+    def outline(ctx, path, text):
+        seen.append(ctx.live)
+        return {"outline": {"chunks": []}, "summary": {"state": "done", "file": "x", "chunks": {}}}
+    ext.outline = outline
+    monkeypatch.setattr(extensions, "_LOADED", [ext])
+    files(repo, {"paper/main.tex": "\\section{A}\n"})
+    up = {}
+    t = threading.Thread(target=watch.serve, kwargs={"root": repo, "port": 0, "interval": 0.2,
+                                                     "ready": lambda url, server, w: up.update(url=url, server=server,
+                                                                                               w=w)}, daemon=True)
+    t.start()
+    deadline = time.time() + 15
+    while "w" not in up and time.time() < deadline:
+        time.sleep(0.05)
+    try:
+        engine = getattr(up["w"], "engine", None)
+        if engine is not None:
+            assert engine.done.wait(60)
+        req = urllib.request.Request(up["url"] + "file?path=paper/main.tex", headers={"X-Token": up["w"].token})
+        got = json.loads(urllib.request.urlopen(req, timeout=60).read())
+        assert got["summary"]["state"] == "done"
+        assert seen and (seen[-1] is not None or engine is None) and getattr(seen[-1], "source", None) is not None
+    finally:
+        up["server"].shutdown()
+        t.join(5)

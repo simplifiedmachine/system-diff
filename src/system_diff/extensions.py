@@ -20,7 +20,11 @@ may define:
     def outline(ctx, path, text) -> {"outline": {"chunks": [{"line", "end", "depth", "qual", "name", "kind"}]},
                                      "summary": {"state", "file", "by", "chunks": {qual: {"what", "how", "watch"}}}}
                                                             # the viewer's outline and summary for a file it owns
-    def mcp(server) -> None                                 # MCP tools of its own
+    def mcp(server) -> None                                 # MCP tools of its own, on system-diff's server
+    MCP_SERVER = {"command": "research-diff", "args": ["mcp"]}
+                                                            # its own server, for Studio sessions (run as
+                                                            #   `python -m <its package>` when it imports here)
+    def applies(root) -> bool                               # whether its server is worth starting in a repository
     def resolve(ctx, text) -> {"id", "file"} | None         # its own ids, for point_to, note and answers' links
     def source(ctx, block) -> {"files": [{"path", "line"}], "config": ...} | None
                                                             # where its block comes from (ui_source)

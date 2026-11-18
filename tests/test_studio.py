@@ -347,3 +347,66 @@ def test_one_system_diff_server_when_the_plugin_is_on(manager, repo, tmp_path):
     (home / "settings.json").write_text(json.dumps({"enabledPlugins": {"system-diff@system-diff": True}}), encoding="utf-8")
     assert sessions.plugin_enabled(repo, ["user"], home) and not sessions.plugin_enabled(repo, ["project"], home)
     assert not sessions.plugin_enabled(repo, [], home)
+
+
+# ── extensions' own MCP servers in a session ─────────────────────────────────────────────────────────────────────
+def _research_ext(applies=True):
+    import types
+    ext = types.ModuleType("research_fake.system_diff_ext")
+    ext.NAME = "research"
+    ext.MCP_SERVER = {"command": "research-diff", "args": ["mcp"]}
+    ext.applies = lambda root: applies
+
+    def mcp(server):
+        server.tool(name="research_autoresearch_start")(lambda: {})
+        from mcp.types import ToolAnnotations
+        server.tool(name="research_evidence", annotations=ToolAnnotations.model_validate({"readOnlyHint": True}))(
+            lambda claim="": {"claim": claim})
+    ext.mcp = mcp
+    return ext
+
+
+def test_an_extensions_own_server_joins_a_session_once(monkeypatch, repo, tmp_path):
+    pytest.importorskip("mcp")
+    from system_diff import extensions
+    monkeypatch.setattr(extensions, "_LOADED", [_research_ext()])
+    sessions._READ_ONLY.clear()
+    got = sessions.extension_servers(repo, set(), sd_ours=True)
+    assert got["servers"]["research"] == {"type": "stdio", "command": "research-diff", "args": ["mcp"]}
+    assert got["off"] == ["research"] and "mcp__research__research_evidence" in got["allowed"]
+    assert "mcp__research__research_autoresearch_start" not in got["allowed"]
+    assert sessions.extension_servers(repo, {"research-diff"}, True)["servers"] == {}   # claude mcp add research-diff
+    assert sessions.extension_servers(repo, set(), sd_ours=False)["servers"] == {}      # the plugin's server has them
+    monkeypatch.setattr(extensions, "_LOADED", [_research_ext(applies=False)])
+    assert sessions.extension_servers(repo, set(), True)["servers"] == {}               # not a research repository
+    home = tmp_path / "h"
+    home.mkdir()
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": {"system-diff": {}},
+                                                   "projects": {str(repo.resolve()): {"mcpServers": {"research": {}}}}}),
+                                       encoding="utf-8")
+    (repo / ".mcp.json").write_text(json.dumps({"mcpServers": {"db": {}}}), encoding="utf-8")
+    assert sessions.configured_servers(repo, ["user", "project", "local"], home) == {"system-diff", "research", "db"}
+    assert sessions.configured_servers(repo, ["project"], home) == {"db"}
+
+
+def test_the_session_options_carry_the_extensions_server(monkeypatch, manager, repo):
+    pytest.importorskip("claude_agent_sdk")
+    from system_diff import extensions
+    monkeypatch.setattr(extensions, "_LOADED", [_research_ext()])
+    monkeypatch.setattr(sessions, "plugin_enabled", lambda *a, **k: False)
+    monkeypatch.setattr(sessions, "configured_servers", lambda *a, **k: set())
+    o = sessions.Session(manager, repo, {}).sdk_options()
+    assert set(o.mcp_servers) == {"system-diff", "research"}
+    assert o.mcp_servers["system-diff"]["env"] == {"SYSTEM_DIFF_EXT_TOOLS_OFF": "research"}
+    assert "mcp__research__research_evidence" in o.allowed_tools
+
+
+def test_system_diffs_server_leaves_out_tools_another_server_brings(monkeypatch):
+    pytest.importorskip("mcp")
+    import asyncio as aio
+    from system_diff import extensions, mcp_server
+    monkeypatch.setattr(extensions, "_LOADED", [_research_ext()])
+    names = lambda: {t.name for t in aio.run(mcp_server.build().list_tools())}   # noqa: E731
+    assert "research_evidence" in names()
+    monkeypatch.setenv("SYSTEM_DIFF_EXT_TOOLS_OFF", "research")
+    assert "research_evidence" not in names() and "ui_view" in names()

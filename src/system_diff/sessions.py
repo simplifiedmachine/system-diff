@@ -56,6 +56,103 @@ def plugin_enabled(project: Path, sources: List[str], home: Optional[Path] = Non
     return False
 
 
+def configured_servers(project: Path, sources: List[str], home: Optional[Path] = None) -> set:
+    """The MCP servers the session's own settings already bring, by name: `claude mcp add` at user scope and local
+    scope (~/.claude.json) and project scope (.mcp.json), as far as the sources it loads reach."""
+    home = home if home is not None else Path.home()
+    names: set = set()
+    try:
+        cj = json.loads((home / ".claude.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cj = {}
+    if isinstance(cj, dict):
+        if "user" in sources:
+            names |= set((cj.get("mcpServers") or {}).keys())
+        if "local" in sources:
+            proj = (cj.get("projects") or {}).get(str(Path(project).resolve())) or {}
+            names |= set((proj.get("mcpServers") or {}).keys()) if isinstance(proj, dict) else set()
+    if "project" in sources:
+        try:
+            mj = json.loads((Path(project) / ".mcp.json").read_text(encoding="utf-8"))
+            names |= set((mj.get("mcpServers") or {}).keys()) if isinstance(mj, dict) else set()
+        except (OSError, ValueError):
+            pass
+    return {str(n) for n in names}
+
+
+_READ_ONLY: Dict[str, List[str]] = {}
+
+
+def extension_read_only(ext: Any) -> List[str]:
+    """The tools an extension marks read-only (its MCP annotations), found by registering them on a throwaway server."""
+    name = str(getattr(ext, "NAME", "") or "")
+    if name in _READ_ONLY:
+        return _READ_ONLY[name]
+    out: List[str] = []
+    add = getattr(ext, "mcp", None)
+    if add is not None:
+        def probe() -> None:
+            try:
+                from .mcp_server import Server
+                srv = Server("probe")
+                add(srv)
+                for t in asyncio.run(srv.list_tools()):
+                    a = t.model_dump(by_alias=True, exclude_none=True).get("annotations") or {}
+                    if a.get("readOnlyHint"):
+                        out.append(t.name)
+            except Exception:  # noqa: BLE001 - then none is allowed outright: each asks
+                pass
+        th = threading.Thread(target=probe, daemon=True)   # its own loop: the caller may be inside one
+        th.start()
+        th.join(10)
+    _READ_ONLY[name] = out
+    return out
+
+
+def extension_servers(project: Path, configured: set, sd_ours: bool) -> Dict[str, Any]:
+    """The extensions' own MCP servers for a session: {"servers": {name: config}, "allowed": [tool names], "off":
+    [extension names whose tools system-diff's own server leaves out, since their own server brings them]}. One is
+    added when it applies to this repository and the settings do not bring a server of that name already; one whose
+    tools system-diff's server carries and cannot leave out (the plugin's, or one the person added) is not added."""
+    import importlib.util
+    out: Dict[str, Any] = {"servers": {}, "allowed": [], "off": []}
+    try:
+        from . import extensions
+        exts = extensions.load()
+    except Exception:  # noqa: BLE001
+        return out
+    for ext in exts:
+        spec = getattr(ext, "MCP_SERVER", None)
+        name = str(getattr(ext, "NAME", "") or "")
+        if not isinstance(spec, dict) or not name or not spec.get("command"):
+            continue
+        applies = getattr(ext, "applies", None)
+        try:
+            if applies is not None and not applies(Path(project)):
+                continue
+        except Exception:  # noqa: BLE001
+            continue
+        command = str(spec["command"])
+        known = {name, str(spec.get("name") or ""), Path(command).stem} - {""}
+        if known & configured:
+            continue   # the person's settings bring it already
+        has_tools = getattr(ext, "mcp", None) is not None
+        if has_tools and not sd_ours:
+            continue   # system-diff's server (the plugin's, or the person's) carries its tools already
+        args = [str(a) for a in spec.get("args") or []]
+        top = getattr(ext, "__name__", "").split(".")[0]
+        try:
+            runnable = bool(top) and importlib.util.find_spec(top + ".__main__") is not None
+        except (ImportError, ValueError):
+            runnable = False
+        argv = [sys.executable, "-m", top, *args] if runnable else [command, *args]
+        out["servers"][name] = {"type": "stdio", "command": argv[0], "args": argv[1:]}
+        if has_tools:
+            out["off"].append(name)
+        out["allowed"] += [f"mcp__{name}__{t}" for t in extension_read_only(ext)]
+    return out
+
+
 def sdk_available() -> Optional[str]:
     """The installed Agent SDK's version, or None."""
     try:
@@ -290,12 +387,23 @@ class Session:
             "system_prompt": {"type": "preset", "preset": "claude_code", "append": APPEND},
             "env": {"SYSTEM_DIFF_APP_SESSION": "1"},
         }
-        if plugin_enabled(self.project, sources):   # the plugin brings the same server: one, not two
-            kw["allowed_tools"] = [f"mcp__plugin_system-diff_system-diff__{t}" for t in READ_ONLY_TOOLS]
+        configured = configured_servers(self.project, sources)
+        plugin = plugin_enabled(self.project, sources)
+        sd_ours = not plugin and "system-diff" not in configured
+        ext = extension_servers(self.project, configured, sd_ours)
+        servers: Dict[str, Any] = dict(ext["servers"])
+        if plugin:   # the plugin brings the same server: one, not two
+            allowed = [f"mcp__plugin_system-diff_system-diff__{t}" for t in READ_ONLY_TOOLS]
         else:
-            kw["mcp_servers"] = {"system-diff": {"type": "stdio", "command": sys.executable,
-                                                 "args": ["-m", "system_diff", "mcp"]}}
-            kw["allowed_tools"] = [f"mcp__system-diff__{t}" for t in READ_ONLY_TOOLS]
+            if sd_ours:
+                servers["system-diff"] = {"type": "stdio", "command": sys.executable,
+                                          "args": ["-m", "system_diff", "mcp"],
+                                          **({"env": {"SYSTEM_DIFF_EXT_TOOLS_OFF": ",".join(ext["off"])}}
+                                             if ext["off"] else {})}
+            allowed = [f"mcp__system-diff__{t}" for t in READ_ONLY_TOOLS]
+        kw["allowed_tools"] = allowed + ext["allowed"]
+        if servers:
+            kw["mcp_servers"] = servers
         if o.get("model"):
             kw["model"] = str(o["model"])
         if o.get("settings"):
