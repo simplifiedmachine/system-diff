@@ -433,6 +433,14 @@ def handler(studio: Studio):
             if not self._host():
                 self._drain()
                 return self._send(403, b"forbidden", "text/plain")
+            if path == "/api/quit":   # `system-diff app --stop`: the token from app.json, never from a page
+                from .live import token_ok
+                self._drain()
+                if not token_ok(self.headers.get("X-Token"), studio.token) or self.headers.get("Origin") is not None:
+                    return self._json(403, {"error": "forbidden"})
+                self._json(200, {"ok": True, "stopping": True})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return None
             if path.startswith("/p/"):
                 return self._proxy("POST", path)
             if not self._writer():
@@ -617,6 +625,88 @@ class _Server(ThreadingHTTPServer):
         if isinstance(exc, (ConnectionError, socket.timeout, TimeoutError)):
             return
         super().handle_error(request, client_address)
+
+
+APP_LOG = "app.log"   # what the Studio started in the background prints (its start's errors, mainly)
+
+
+def start(port: int = FIRST, open_it: bool = False, folder: Optional[Path] = None, wait: float = 30.0) -> int:
+    """`system-diff app`: the Studio in the background, run by Python itself (never through the system-diff
+    command: on Windows a running system-diff.exe cannot be replaced, so `pip install -U` would fail while the Studio
+    runs), then its address. One that runs already is opened instead."""
+    folder = folder if folder is not None else state_dir()
+    have = running(folder)
+    if have is not None:
+        url = f"http://localhost:{have['port']}/"
+        print(f"system-diff app: running at {url}  (system-diff app --stop stops it)", flush=True)
+        if open_it:
+            hub._open(url)
+        return 0
+    if folder is None:   # nowhere to keep app.json (the tests): in this process
+        return serve(port, open_it, folder)
+    import subprocess
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    log = open(folder / APP_LOG, "w", encoding="utf-8")
+    kw: Dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": log, "stderr": subprocess.STDOUT,
+                          "cwd": str(Path.home()), "close_fds": True}
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000   # CREATE_NO_WINDOW
+    else:
+        kw["start_new_session"] = True
+    try:
+        child = subprocess.Popen([sys.executable, "-m", "system_diff", "app", "--foreground", "--port", str(port)], **kw)
+    finally:
+        log.close()
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        have = running(folder)
+        if have is not None:
+            url = f"http://localhost:{have['port']}/"
+            print(f"system-diff app: {url}  (running in the background; system-diff app --stop stops it)", flush=True)
+            name, domain = os.environ.get("CODESPACE_NAME", ""), os.environ.get("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", "")
+            if name and domain:
+                print(f"  from your own browser: https://{name}-{have['port']}.{domain}/", flush=True)
+            if open_it:
+                hub._open(url)
+            return 0
+        if child.poll() is not None:
+            break
+        time.sleep(0.2)
+    try:
+        said = (folder / APP_LOG).read_text(encoding="utf-8", errors="replace").strip().splitlines()[-8:]
+    except OSError:
+        said = []
+    print("system-diff app: it did not start" + (":\n  " + "\n  ".join(said) if said else "") +
+          f"\n  (its output: {folder / APP_LOG}; system-diff app --foreground runs it here)", file=sys.stderr)
+    return 1
+
+
+def stop(folder: Optional[Path] = None, wait: float = 15.0) -> int:
+    """`system-diff app --stop`: ask the running Studio to stop (its sessions close), and wait until it has."""
+    folder = folder if folder is not None else state_dir()
+    have = running(folder)
+    if have is None:
+        print("system-diff app: not running", flush=True)
+        return 0
+    conn = http.client.HTTPConnection("127.0.0.1", int(have["port"]), timeout=10)
+    try:
+        conn.request("POST", "/api/quit", body=b"{}", headers={"X-Token": str(have.get("token") or ""),
+                                                             "Host": f"127.0.0.1:{have['port']}",
+                                                             "Content-Type": "application/json"})
+        conn.getresponse().read()
+    except (OSError, http.client.HTTPException) as exc:
+        print(f"system-diff app: could not reach it ({type(exc).__name__})", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        if running(folder) is None:
+            print("system-diff app: stopped", flush=True)
+            return 0
+        time.sleep(0.2)
+    print("system-diff app: asked it to stop; it is still running", file=sys.stderr)
+    return 1
 
 
 def serve(port: int = FIRST, open_it: bool = False, folder: Optional[Path] = None, ready=None,

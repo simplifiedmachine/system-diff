@@ -590,3 +590,29 @@ def test_a_studio_session_gets_its_kinds_library_agents(monkeypatch, manager, re
     o = sessions.Session(manager, repo, {}).sdk_options()
     assert set(o.agents) == {"api-tester"} and o.agents["api-tester"].tools == ["Read", "Bash"]
     assert o.agents["api-tester"].model == "haiku"
+
+
+def test_the_studio_runs_in_the_background_and_stops(monkeypatch, tmp_path, capsys):
+    """`system-diff app` starts it with Python itself (never holding system-diff.exe, which pip must replace on
+    Windows), says where, opens the running one when asked again, and `--stop` stops it."""
+    import os
+    import signal
+    folder = tmp_path / "state"
+    monkeypatch.setenv("SYSTEM_DIFF_APP_STATE", str(folder))
+    try:
+        assert app.start(port=0, folder=folder, wait=60) == 0
+        have = app.running(folder)
+        assert have is not None and "running in the background" in capsys.readouterr().out
+        assert app.start(port=0, folder=folder) == 0 and "running at" in capsys.readouterr().out   # one per user
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", int(have["port"]), timeout=10)
+        conn.request("POST", "/api/quit", body=b"{}", headers={"X-Token": have["token"], "Origin": "http://evil.example",
+                                                             "Host": f"127.0.0.1:{have['port']}"})
+        assert conn.getresponse().status == 403            # a web page cannot stop it
+        conn.close()
+        assert app.stop(folder) == 0 and app.running(folder) is None
+        assert app.stop(folder) == 0 and "not running" in capsys.readouterr().out
+    finally:
+        left = app._read(folder / app.APP)
+        if isinstance(left, dict) and left.get("pid") and app.running(folder) is not None:
+            os.kill(int(left["pid"]), signal.SIGTERM)

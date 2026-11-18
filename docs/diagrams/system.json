@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 580,
+   "lines": 587,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 10,
-   "lines": 3432,
+   "lines": 3522,
    "hub": false,
    "quiet": false
   },
@@ -648,7 +648,7 @@
   "src/system_diff>extract": 5,
   "src/system_diff>gitfs": 2,
   "src/system_diff>hub": 3,
-  "src/system_diff>live": 2,
+  "src/system_diff>live": 3,
   "src/system_diff>mcp": 1,
   "src/system_diff>panel": 3,
   "src/system_diff>sources": 12,
@@ -929,7 +929,9 @@
   ],
   "cli>src/system_diff": [
    "line",
-   "serve"
+   "serve",
+   "start",
+   "stop"
   ],
   "cli>statusline": [
    "statusline"
@@ -1585,17 +1587,17 @@
    "read_index"
   ],
   "src/system_diff>hub": [
-   "projects",
    "_open",
+   "projects",
    "branch",
    "_alive",
    "allowed",
    "engines_dir"
   ],
   "src/system_diff>live": [
+   "token_ok",
    "client_progress",
-   "progress_text",
-   "token_ok"
+   "progress_text"
   ],
   "src/system_diff>mcp": [
    "Server"
@@ -2166,6 +2168,7 @@
    "secrets": 1,
    "shutil": 1,
    "socket": 1,
+   "subprocess": 1,
    "tomllib": 1,
    "uuid": 1,
    "warnings": 1
@@ -2570,6 +2573,7 @@
    "secrets": 1,
    "shutil": 1,
    "socket": 1,
+   "subprocess": 1,
    "tomllib": 1,
    "urllib.error": 1,
    "urllib.request": 1,

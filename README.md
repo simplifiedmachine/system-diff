@@ -65,12 +65,14 @@ its own (`system-diff tui`). All three show the same live picture.
    ```
 2. Give Claude Code its tools, once for every repository:
    ```sh
-   claude mcp add --scope user system-diff -- system-diff mcp
+   claude mcp add --scope user system-diff -- system-diff mcp           # macOS, Linux
+   claude mcp add --scope user system-diff -- python -m system_diff mcp # Windows (see below: updates)
    ```
 3. In your repository, start it and open the page it prints:
    ```sh
    system-diff watch            # the web page, http://localhost:8765/
-   system-diff app --open       # or the Studio: every project, and Claude Code sessions run from the page
+   system-diff app --open       # or the Studio, in the background: every project, and Claude Code sessions
+   system-diff app --stop       # stops the Studio
    ```
 
 **Optional: the Claude Code plugin**, for the pane beside the chat and the hooks that mark each turn and note each
@@ -100,6 +102,13 @@ instead, turn that layout on, then open a new terminal and start Claude Code aga
 setx CLAUDE_CODE_NO_FLICKER 1                                    # Windows (PowerShell or cmd)
 echo 'export CLAUDE_CODE_NO_FLICKER=1' >> ~/.bashrc              # macOS and Linux (~/.zshrc for zsh)
 ```
+
+**Updating on Windows.** Windows cannot replace a program that is running, so `pip install -U` fails with
+`WinError 32 ... system-diff.exe` while something runs `system-diff.exe`: Claude Code's MCP server when it was added as
+`system-diff mcp` (or by the plugin), or a `system-diff watch` you started by hand. Close Claude Code and run
+`system-diff app --stop` before updating, or add the MCP server as `python -m system_diff mcp` (above) and nothing
+holds it: the Studio, the engines and the pane run as `python -m system_diff` already. `Get-Process system-diff`
+shows what still runs it.
 
 On Windows, `python -m pip install "system-diff[mcp]"` works where `pip` is not on PATH. The plugin's MCP server is
 started as `system-diff mcp`, directly (no shell), so the `system-diff` command must be on PATH: pip prints where it put

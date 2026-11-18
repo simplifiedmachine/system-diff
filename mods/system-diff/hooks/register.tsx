@@ -15,7 +15,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.11.0.dev4' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.11.0.dev5' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't'],
@@ -34,10 +34,12 @@ const ZOOM_WORD = ['full', 'compact', 'tiny']
 // that has it; where there is no sh (Windows), the same places directly.
 const LAUNCHER = 'exec sh "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/cache/system-diff/system-diff/' + VERSION +
   '}/scripts/run.sh" "$@"'
+// Python itself before the system-diff command: on Windows (no sh) a look through system-diff.exe holds that file for
+// as long as it runs (a long poll: 25 s), and pip cannot replace it then, so an update would fail while the pane is open.
 const RUNNERS: string[][] = [
   ['sh', '-c', LAUNCHER, 'system-diff'],
-  ['.venv/bin/python', '-m', 'system_diff'], ['.venv/Scripts/python.exe', '-m', 'system_diff'], ['system-diff'],
-  ['python3', '-m', 'system_diff'], ['python', '-m', 'system_diff'], ['py', '-3', '-m', 'system_diff'],
+  ['.venv/bin/python', '-m', 'system_diff'], ['.venv/Scripts/python.exe', '-m', 'system_diff'],
+  ['python', '-m', 'system_diff'], ['py', '-3', '-m', 'system_diff'], ['python3', '-m', 'system_diff'], ['system-diff'],
 ]
 const COLORS: Record<string, string> = {
   accent: 'blue', focus: 'blue', attention: 'yellow', changed: 'yellow', good: 'green', added: 'green',

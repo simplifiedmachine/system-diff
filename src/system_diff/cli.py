@@ -269,6 +269,9 @@ def parser() -> argparse.ArgumentParser:
                                     "in one local web app (sessions need the [app] extra)")
     st.add_argument("--port", type=int, default=8765, help="the first port to try (ten are tried)")
     st.add_argument("--open", action="store_true", help="open it in the browser too")
+    st.add_argument("--stop", action="store_true", help="stop the running Studio (its sessions close)")
+    st.add_argument("--foreground", action="store_true",
+                    help="run it here until Ctrl-C, not in the background (to see what it prints)")
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
@@ -455,7 +458,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
     if args.cmd == "app":   # every repository's, not one: no repository needed
         from . import app
-        return app.serve(port=args.port, open_it=args.open)
+        if args.stop:
+            return app.stop()
+        if args.foreground:
+            return app.serve(port=args.port, open_it=args.open)
+        return app.start(port=args.port, open_it=args.open)
     if args.cmd == "hub":   # every repository's, not one: no repository needed
         from . import hub
         return hub.main(open_it=args.open, serve=not args.no_serve)

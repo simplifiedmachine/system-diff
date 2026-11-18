@@ -209,10 +209,10 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,248 220,248" marker-end="url(#ar-call-same)"><title>src/system_diff → watch</title></path>
 <path class="be k-call s-same" d="M478,1508 C544,1508 544,112 484,112" marker-end="url(#ar-call-same)"><title>src/system_diff → compare</title></path>
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,308 220,308" marker-end="url(#ar-call-same)"><title>src/system_diff → hub</title></path>
+<path class="be k-call s-same" d="M478,1508 C544,1508 544,52 484,52" marker-end="url(#ar-call-same)"><title>src/system_diff → live</title></path>
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,368 220,368" marker-end="url(#ar-call-same)"><title>src/system_diff → panel</title></path>
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,172 220,172" marker-end="url(#ar-call-same)"><title>src/system_diff → agent</title></path>
 <path class="be k-call s-same" d="M478,1508 C544,1508 544,788 484,788" marker-end="url(#ar-call-same)"><title>src/system_diff → chat</title></path>
-<path class="be k-call s-same" d="M478,1508 C507,1508 507,52 536,52" marker-end="url(#ar-call-same)"><title>src/system_diff → gitfs</title></path>
 <path class="be k-call s-same" d="M214,548 C246,548 246,339 278,339 L478,339 C507,339 507,172 536,172" marker-end="url(#ar-call-same)"><title>statusline → activity</title></path>
 <path class="be k-call s-same" d="M214,548 C243,548 243,188 272,188" marker-end="url(#ar-call-same)"><title>statusline → config</title></path>
 <path class="be k-call s-same" d="M214,548 C243,548 243,248 272,248" marker-end="url(#ar-call-same)"><title>statusline → extract</title></path>
