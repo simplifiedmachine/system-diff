@@ -109,6 +109,7 @@ def test_the_page_lists_the_family_and_guards_opening_one(family):
     try:
         web = json.loads(urllib.request.urlopen(url + "web?view=now", timeout=60).read())
         assert [r["rel"] for r in web["repos"]][:2] == ["", "1_tradeoff"]
+        assert web["repos"][0]["port"] == up["server"].server_address[1]   # its engine runs: the list knows where
         with pytest.raises(urllib.error.HTTPError) as no:
             urllib.request.urlopen(urllib.request.Request(url + "repos/open?rel=1_tradeoff", data=b"", method="POST"),
                                    timeout=30)

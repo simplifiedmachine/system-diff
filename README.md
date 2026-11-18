@@ -217,6 +217,15 @@ studies of a repository with several papers), and a diagram's file may open at g
 The contract is in
 [src/system_diff/extensions.py](src/system_diff/extensions.py). `SYSTEM_DIFF_EXTENSIONS=off` loads none.
 
+## Claude sees and steers the page
+
+The MCP server gives Claude the page as tools, in a terminal session as in the Studio: `ui_view` (what you are
+looking at: the view, the part, the block you picked or hover), `ui_graph` (a view's diagram as data, extensions'
+views too), `ui_source` (the files and the `system-diff.toml` entry behind a block), `ui_config_preview` (the diagram an
+edit of the config would give, written nowhere) and `ui_show` (moves your page to what Claude explains, with a banner
+offering Back; untick "Let Claude move my page" and it only offers). The diagrams stay computed from the code and the
+config: Claude renames or groups a box by editing `system-diff.toml`, and the page redraws.
+
 ## Repositories inside a repository
 
 Git submodules and nested repositories (a folder with its own `.git`) are systems of their own. The web page lists

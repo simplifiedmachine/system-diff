@@ -21,6 +21,9 @@ may define:
                                      "summary": {"state", "file", "by", "chunks": {qual: {"what", "how", "watch"}}}}
                                                             # the viewer's outline and summary for a file it owns
     def mcp(server) -> None                                 # MCP tools of its own
+    def resolve(ctx, text) -> {"id", "file"} | None         # its own ids, for point_to, note and answers' links
+    def source(ctx, block) -> {"files": [{"path", "line"}], "config": ...} | None
+                                                            # where its block comes from (ui_source)
 
 A view's JSON (web) may carry "nav": [{"id", "title", "sub", "badge", "active", "target": {"view", "part"}}]: a
 pinned list on the left of the page (a row of pickable blocks in the pane); a diagram's "files" may map a block to

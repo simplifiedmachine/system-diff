@@ -411,4 +411,4 @@ def test_the_tools_that_only_read_say_so():
     tools = asyncio.run(mcp_server.build().list_tools())
     marked = {t.name for t in tools
               if (t.model_dump(by_alias=True, exclude_none=True).get("annotations") or {}).get("readOnlyHint")}
-    assert marked == {"explain", "objectives", "team"}
+    assert marked == {"explain", "objectives", "team", "ui_view", "ui_graph", "ui_source", "ui_config_preview"}

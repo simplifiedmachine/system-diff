@@ -112,7 +112,7 @@ def _engine(repo: Path) -> Dict[str, Any]:
     """Where this repository's engine listens, if one runs: {"url", "port"} from its web.json, else {}."""
     try:
         from .sources import git_dir
-        f = git_dir(repo) / "system-diff" / "web.json"
+        f = git_dir(repo) / "web.json"
         got = json.loads(f.read_text(encoding="utf-8"))
         from .hub import _alive
         if got.get("pid") and not _alive(int(got["pid"])):

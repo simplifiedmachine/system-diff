@@ -268,6 +268,10 @@ form.send label { font-weight:600; font-size:13px; align-self:center; white-spac
 #sendnote { color:var(--muted); font-size:12.5px; max-width:30vw; }
 #sendnote.bad { color:var(--attn); }
 .hint { color:var(--muted); font-size:12px; text-align:center; padding:0 0 10px; }
+#shown { position:sticky; top:0; z-index:30; display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:8px 16px;
+  background:var(--card); border-bottom:2px solid var(--accent); font-size:14px; }
+#shown .why { flex:1 1 280px; min-width:0; overflow-wrap:anywhere; } #shown label { font-size:12px; color:var(--muted); }
+#shown button { font:inherit; padding:3px 10px; border-radius:7px; border:1px solid var(--line); background:var(--bg); color:inherit; cursor:pointer; }
 nav.projects { display:flex; gap:2px; align-items:flex-end; padding:6px 20px 0; background:var(--bg);
                border-bottom:1px solid var(--line); overflow-x:auto; scrollbar-width:thin; }
 nav.projects a { display:flex; gap:7px; align-items:baseline; padding:5px 12px 6px; border:1px solid transparent;
@@ -383,6 +387,7 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
   <button id="chatbtn" type="button" aria-pressed="false" aria-controls="chat" title="Show or hide the conversation with Claude (c)">Conversation<span class="count" id="chatcount"></span></button>
   <button id="theme" type="button" title="Light, dark, or as your system is">◐ auto</button>
 </header>
+<div id="shown" role="status" hidden></div>
 <div class="withnav">
 <nav id="leftnav" aria-label="Repositories and lists" hidden></nav>
 <main>
@@ -938,6 +943,50 @@ async function openRepo(r, b) {
   }
   if (s) s.textContent = "Its engine did not start: see system-diff doctor in it";
 }
+// What this page shows, told to the engine (Claude's ui_view reads it); Claude's ui_show requests, acted on.
+const PAGE_ID = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)).slice(0, 36);
+const seen = { said:"", at:0, hover:"", shown:"", moved:false, busyAt:0, loaded:Date.now(), handled:new Set() };
+for (const ev of ["keydown", "wheel", "mousemove", "touchstart", "input"]) addEventListener(ev, () => { seen.busyAt = Date.now(); }, { passive:true, capture:true });
+document.addEventListener("mouseover", e => { const n = e.target.closest && e.target.closest("#dia [data-id]"); seen.hover = n ? n.getAttribute("data-id") : ""; });
+function tellState() {
+  const st = { page:PAGE_ID, view:ui.view, part:ui.part, zoom:ui.zoom, picked:ui.pick || "", hover:seen.hover,
+               visible:document.visibilityState === "visible", shown:seen.shown, moved:seen.moved };
+  const said = JSON.stringify(st);
+  if (said === seen.said && Date.now() - seen.at < 60000) return;
+  seen.said = said; seen.at = Date.now();
+  fetch("ui/state", { method:"POST", headers:{ "X-Token":TOKEN, "Content-Type":"application/json" }, body:said }).catch(() => {});
+}
+setInterval(tellState, 300);
+document.addEventListener("visibilitychange", tellState);
+function movesAllowed() { try { return localStorage.getItem("sd-claude-moves") !== "off"; } catch (e) { return true; } }
+function showBanner(text, buttons) {
+  const b = $("shown"); b.replaceChildren(el("span", text, "why"));
+  for (const [label, fn] of buttons) { const x = el("button", label); x.type = "button"; x.addEventListener("click", fn); b.append(x); }
+  const lab = el("label"), box = el("input"); box.type = "checkbox"; box.checked = movesAllowed();
+  box.addEventListener("change", () => { try { localStorage.setItem("sd-claude-moves", box.checked ? "on" : "off"); } catch (e) {} });
+  lab.append(box, " Let Claude move my page"); b.append(lab); b.hidden = false;
+}
+function hideBanner() { $("shown").hidden = true; }
+function takeShow(sh) {
+  if (!sh || !sh.id || seen.handled.has(sh.id)) return;
+  if ((+sh.at || 0) * 1000 < seen.loaded - 60000) { seen.handled.add(sh.id); return; }   // from before this page opened
+  if (Date.now() - seen.busyAt < 3000) { setTimeout(() => takeShow(sh), 1000); return; }   // the person is busy here
+  seen.handled.add(sh.id);
+  const where = sh.view + (sh.part ? " · " + sh.part : "") + (sh.pick ? " · " + sh.pick : "");
+  const why = "Claude showed you: " + where + (sh.note ? " — " + sh.note : "");
+  const move = () => {
+    const from = { view:ui.view, part:ui.part };
+    go(sh.view, sh.part || "");
+    if (sh.pick) { ui.pick = sh.pick.includes(":") ? sh.pick : "b:" + sh.pick; ui.mine = true; }
+    seen.shown = sh.id; seen.moved = true; tellState();
+    showBanner(why, [["Back", () => { hideBanner(); go(from.view, from.part); }], ["Stay here", hideBanner]]);
+  };
+  if (movesAllowed()) move();
+  else {
+    seen.shown = sh.id; seen.moved = false; tellState();
+    showBanner("Claude wants to show you: " + where + (sh.note ? " — " + sh.note : ""), [["Go there", move], ["Not now", hideBanner]]);
+  }
+}
 function closeCode() {
   clearTimeout(cv.timer); cv.path = ""; hideCodeCard();
   $("code").hidden = true; $("code").replaceChildren(); talk.file = ""; paintAbout();
@@ -1321,6 +1370,7 @@ function render(d) {
   if (changed("after", after)) { $("after").replaceChildren(...after.map(section)); redrawn = true; }
   if (ui.hover && !ui.hover.from.isConnected) ui.hover = null;   // its lane or chip was just redrawn
   if (d.chat && changed("chat", d.chat)) { renderTalk(d.chat); redrawn = true; }
+  if (d.chat && d.chat.show) takeShow(d.chat.show);
   if (redrawn || !ui.mine) applyPick();
   if (ui.openAfter && g.svg) { const f = ui.openAfter; ui.openAfter = ""; showCode(f, true); }
   if (changed("files", g.files || {})) prefetch([...new Set(Object.values(g.files || {}).map(v => fileOf(v).path))].slice(0, 8), false);
@@ -1812,6 +1862,10 @@ def handler(w: Watcher):
                     return self._json(404, got)
                 extra = file_extras(w, got["path"], got["text"], prefetch=q.get("prefetch") == "1")
                 return self._json(200, {"path": got["path"], "summary": extra["summary"]})
+            if path == "/ui/state":   # what each open page (and the pane) shows: for Claude's ui_view tool
+                if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                    return self._json(403, {"error": "forbidden"})
+                return self._json(200, {"pages": ui_pages(w, full=self._query().get("full") == "1")})
             if path == "/progress":   # where the engine is, at once however busy it is (the pane shows it meanwhile)
                 if not self._authorized():
                     return self._json(403, {"error": "forbidden"})
@@ -1940,6 +1994,10 @@ def handler(w: Watcher):
                 if take:   # drawn once per version; what was sent to Claude is taken fresh for each ask
                     from . import pane
                     page = {**page, "send": pane.take_outbox(w.root)}
+                ui_note(w, {"view": view, "part": part, "zoom": zoom}, page="pane")
+                asked = chat.showing(w.root)   # Claude asked to show something: the pane goes there too
+                if asked:
+                    page = {**page, "show": asked}
             except Exception as exc:  # noqa: BLE001 - the pane shows it and asks again
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
             return self._json(200, {"version": version, "page": page})
@@ -2002,6 +2060,25 @@ def handler(w: Watcher):
                 return False
             r = urlsplit(referer)
             return f"{r.scheme}://{r.netloc}" in own
+
+        def _post_ui_state(self):
+            """POST /ui/state {"page", "view", "part", "picked", "hover", "study", "zoom", "visible", "shown", "moved"}:
+            what one open page shows now (memory only, the latest per page)."""
+            if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                self._drain()
+                return self._json(403, {"error": "forbidden"})
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if not 0 < n <= 8192:
+                    self._drain()
+                    return self._json(400, {"error": "a small JSON object"})
+                got = json.loads(self.rfile.read(n).decode("utf-8"))
+                if not isinstance(got, dict):
+                    raise ValueError("not an object")
+            except (ValueError, UnicodeDecodeError):
+                return self._json(400, {"error": "a small JSON object"})
+            ui_note(w, got)
+            return self._json(200, {"ok": True})
 
         def _post_repo(self):
             """POST /repos/open?rel=<path in the family>: that repository's engine (started if it is not running):
@@ -2125,6 +2202,8 @@ def handler(w: Watcher):
                 return self._post_hook()
             if urlsplit(self.path).path == "/mark":
                 return self._post_mark()
+            if urlsplit(self.path).path == "/ui/state":
+                return self._post_ui_state()
             if urlsplit(self.path).path == "/repos/open":
                 return self._post_repo()
             if urlsplit(self.path).path == "/send":
@@ -2243,6 +2322,57 @@ def chat_view(w: "Watcher", page: Optional[Dict[str, Any]] = None) -> Dict[str, 
         return _CHAT_CACHE["value"]
     except Exception as exc:  # noqa: BLE001 - the panel is extra; the page goes on
         return {"stamp": "", "items": [], "pointing": None, "notes": {}, "error": f"{type(exc).__name__}: {exc}"}
+
+
+UI_KEEP = 120.0   # a page not heard from for this long is closed
+UI_FIELDS = {"view": 40, "part": 200, "picked": 200, "hover": 200, "study": 200, "shown": 40, "project": 400}
+
+
+def ui_note(w: "Watcher", got: Dict[str, Any], page: str = "") -> None:
+    """Keep what one page (or the pane: page "pane") shows now; forget pages not heard from for UI_KEEP."""
+    pid = str(page or got.get("page") or "")[:40]
+    if not pid:
+        return
+    rec = {k: str(got.get(k) or "")[:most] for k, most in UI_FIELDS.items()}
+    rec.update(page=pid, kind="pane" if pid == "pane" else "web", visible=bool(got.get("visible", True)),
+               moved=bool(got.get("moved")), zoom=int(got.get("zoom") or 0) if str(got.get("zoom") or "0").lstrip(
+                   "-").isdigit() else 0, at=time.time())
+    with UI_LOCK:
+        pages = getattr(w, "ui_pages", None)
+        if pages is None:
+            pages = w.ui_pages = {}
+        old = pages.get(pid) or {}
+        if not rec["shown"] and old.get("shown"):   # what it last did with a request stays known
+            rec["shown"], rec["moved"] = old["shown"], old.get("moved", False)
+        pages[pid] = rec
+        for k in [k for k, v in pages.items() if time.time() - v["at"] > UI_KEEP]:
+            del pages[k]
+
+
+def ui_pages(w: "Watcher", full: bool = False) -> List[Dict[str, Any]]:
+    """The open pages, newest first; with `full`, the picked and hovered blocks' titles and headlines."""
+    with UI_LOCK:
+        pages = [dict(v) for v in (getattr(w, "ui_pages", None) or {}).values() if time.time() - v["at"] <= UI_KEEP]
+    pages.sort(key=lambda v: -v["at"])
+    if full:
+        for p in pages:
+            try:
+                key = ("web", p["view"] or "now", p.get("zoom") or 0, p["part"])
+                _v, page = _page_of(w, key)
+                det = ((page or {}).get("diagram") or {}).get("details") or {}
+                p["title"] = (page or {}).get("title", "")
+                for k in ("picked", "hover"):
+                    bid = p.get(k) or ""
+                    d = det.get(bid) or det.get("b:" + bid)
+                    if d:
+                        p[k + "_about"] = ({x: d[x] for x in ("title", "headline", "what") if d.get(x)}
+                                           if isinstance(d, dict) else str(d)[:300])
+            except Exception:  # noqa: BLE001 - the bare state is still worth having
+                pass
+    return pages
+
+
+UI_LOCK = threading.Lock()
 
 
 def repos_view(w: "Watcher") -> List[Dict[str, Any]]:

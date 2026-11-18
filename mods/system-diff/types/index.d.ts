@@ -20,6 +20,7 @@ export type PageBlock = {
 }
 export type Page = {
   protocol: 2
+  show?: { id: string; view: string; part?: string; note?: string; at?: number } // Claude asked to show this
   views?: [string, string, string][] // the tabs of extensions installed beside system-diff: [view, label, key]
   view: string
   part: string

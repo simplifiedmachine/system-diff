@@ -28,6 +28,8 @@ DELIVERED = "delivered.jsonl"
 ASKING = "asking.json"
 ANSWERS = "answers.jsonl"
 POINTING = "pointing.json"
+SHOW = "show.json"          # Claude asks the page to show a view: {"id", "view", "part", "pick", "note", "at"}
+SHOW_FOR = 600.0            # a request older than this is not acted on
 NOTES = "notes.json"
 OUTBOX = "outbox.jsonl"
 
@@ -261,6 +263,24 @@ def point(root: Path, parts: List[str], note: str = "") -> Dict[str, Any]:
     return rec
 
 
+def show_page(root: Path, view: str, part: str = "", pick: str = "", note: str = "") -> Dict[str, Any]:
+    """Claude asks the person's page to show a view (zoomed into a part, a block picked): the page moves there at its
+    next look (or offers to, if the person said so), with a banner saying why and a way back."""
+    import uuid
+    from .extract import redact
+    rec = {"id": uuid.uuid4().hex[:12], "view": str(view)[:40], "part": str(part or "")[:200],
+           "pick": str(pick or "")[:200], "note": redact(str(note or ""))[:NOTE_MAX], "by": "claude",
+           "at": round(time.time(), 3)}
+    _replace(_dir(root) / SHOW, json.dumps(rec, ensure_ascii=False))
+    return rec
+
+
+def showing(root: Path, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    got = _json(_dir(root) / SHOW, {})
+    now = time.time() if now is None else now
+    return got if got.get("id") and now - float(got.get("at") or 0) < SHOW_FOR else None
+
+
 def pointing(root: Path) -> Optional[Dict[str, Any]]:
     got = _json(_dir(root) / POINTING, {})
     return got if got.get("parts") else None
@@ -450,7 +470,27 @@ class Index:
         for label, bid in self.labels.items():   # a label in other words: one contains the other
             if len(low) >= 4 and (low in label.lower() or label.lower() in low):
                 return {**out, "id": bid}
-        return out
+        got = self._extension(raw)
+        return {**out, **got} if got else out
+
+    def _extension(self, raw: str) -> Optional[Dict[str, Any]]:
+        """An extension's own ids (research-diff's C1, tab:main, study@C1): its resolve(ctx, text) -> {"id", "file"}."""
+        try:
+            from . import extensions
+            exts = extensions.load()
+        except Exception:  # noqa: BLE001
+            return None
+        for ext in exts:
+            find = getattr(ext, "resolve", None)
+            if find is None:
+                continue
+            try:
+                got = find(extensions.context(self.root, "", "") if self.root else None, raw)
+            except Exception:  # noqa: BLE001 - one extension's failure never hides a name
+                continue
+            if isinstance(got, dict) and got.get("id"):
+                return {"id": str(got["id"]), "file": str(got.get("file") or "")}
+        return None
 
     def links(self, text: str) -> List[Dict[str, Any]]:
         """The names of the system an answer mentions, each once: [{"text", "id", "file", "code"}]. "code": only as
@@ -498,7 +538,7 @@ def stamp(root: Path) -> str:
     """Changes when anything the panel shows does (a few stats, no reads)."""
     d = _dir(root)
     parts = []
-    for name in (OUTBOX, DELIVERED, ASKING, ANSWERS, POINTING, NOTES):
+    for name in (OUTBOX, DELIVERED, ASKING, ANSWERS, POINTING, NOTES, SHOW):
         try:
             s = os.stat(d / name)
             parts.append(f"{s.st_mtime_ns:x}.{s.st_size:x}")
@@ -555,4 +595,4 @@ def view(root: Path, index: Optional[Index] = None, now: Optional[float] = None)
                      "parts": [index.resolve(x) for x in p.get("parts") or []]}
     ns = notes(root)
     _resolve_notes(root, ns, index)
-    return {"stamp": st, "items": shown, "pointing": point_out, "notes": notes_by_block(ns)}
+    return {"stamp": st, "items": shown, "pointing": point_out, "notes": notes_by_block(ns), "show": showing(root, now)}

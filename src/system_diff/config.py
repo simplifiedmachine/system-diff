@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import tomllib
+from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
@@ -96,9 +98,54 @@ def parse(text: str, name: str) -> Dict[str, Any]:
     return data.get("tool", {}).get("system-diff", {}) if name.endswith("pyproject.toml") else data
 
 
+_PREVIEW = threading.local()   # settings a preview lays over the project's, in this thread only (ui_config_preview)
+
+
+def merge_entries(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
+    """`over` on `base` as a person editing system-diff.toml means it: tables merge, and the [[components]] and
+    [[externals]] it lists change the entries of the same id (or add one), keeping the others."""
+    out = deepcopy(base)
+    for k, v in (over or {}).items():
+        if k in ("components", "externals") and isinstance(v, list):
+            have = [dict(e) for e in out.get(k) or [] if isinstance(e, dict)]
+            for e in v:
+                if not isinstance(e, dict):
+                    continue
+                hit = next((h for h in have if e.get("id") and h.get("id") == e.get("id")), None)
+                if hit is not None:
+                    hit.update(deepcopy(e))
+                else:
+                    have.append(deepcopy(e))
+            out[k] = have
+        elif isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = merge_entries(out[k], v)
+        else:
+            out[k] = deepcopy(v)
+    return out
+
+
+@contextmanager
+def preview(over: Dict[str, Any]):
+    """While it lasts, every load in this thread gives the project's settings with `over` laid on them (nothing is
+    written): what the diagram would be after an edit of system-diff.toml."""
+    before = getattr(_PREVIEW, "over", None)
+    _PREVIEW.over = over
+    try:
+        yield
+    finally:
+        _PREVIEW.over = before
+
+
 def load(source=None, root: Optional[Path] = None, path: Optional[str] = None) -> Dict[str, Any]:
     """The project's settings over the defaults. `source` is what is being read (a commit or a directory): its own
     system-diff.toml wins over the one on disk, so an old commit is described by the file it had."""
+    over = getattr(_PREVIEW, "over", None)
+    if over:
+        _PREVIEW.over = None
+        try:
+            return merge_entries(load(source, root, path), over)
+        finally:
+            _PREVIEW.over = over
     if path:
         p = Path(path)
         return merge(DEFAULTS, parse(p.read_text(encoding="utf-8"), p.name))

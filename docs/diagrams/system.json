@@ -81,7 +81,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 558,
+   "lines": 598,
    "hub": false,
    "quiet": false
   },
@@ -105,7 +105,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 127,
+   "lines": 174,
    "hub": false,
    "quiet": false
   },
@@ -164,8 +164,8 @@
    "order": 36,
    "container": "",
    "declared": false,
-   "files": 3,
-   "lines": 432,
+   "files": 4,
+   "lines": 708,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 392,
+   "lines": 443,
    "hub": false,
    "quiet": false
   },
@@ -333,7 +333,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2641,
+   "lines": 2648,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2710,
+   "lines": 2840,
    "hub": false,
    "quiet": false
   }
@@ -479,8 +479,9 @@
   "architecture>sources": 1,
   "canvas>pictures": 1,
   "chat>activity": 1,
-  "chat>extract": 2,
+  "chat>extract": 3,
   "chat>sources": 1,
+  "chat>src/system_diff": 1,
   "cli>activity": 1,
   "cli>agent": 4,
   "cli>compare": 1,
@@ -594,7 +595,7 @@
   "mcp>objectives": 2,
   "mcp>pictures": 1,
   "mcp>sources": 1,
-  "mcp>src/system_diff": 1,
+  "mcp>src/system_diff": 6,
   "mcp>textmap": 1,
   "names>graph": 1,
   "narrate>sources": 1,
@@ -637,13 +638,15 @@
   "regroup>narrate": 1,
   "regroup>sources": 1,
   "sources>gitfs": 3,
+  "src/system_diff>chat": 1,
   "src/system_diff>compare": 1,
-  "src/system_diff>config": 1,
-  "src/system_diff>extract": 1,
-  "src/system_diff>gitfs": 1,
-  "src/system_diff>hub": 2,
+  "src/system_diff>config": 3,
+  "src/system_diff>extract": 2,
+  "src/system_diff>gitfs": 2,
+  "src/system_diff>hub": 3,
   "src/system_diff>live": 1,
-  "src/system_diff>sources": 2,
+  "src/system_diff>panel": 2,
+  "src/system_diff>sources": 5,
   "statusline>activity": 1,
   "statusline>config": 1,
   "statusline>extract": 1,
@@ -818,6 +821,10 @@
   ],
   "chat>sources": [
    "git_dir"
+  ],
+  "chat>src/system_diff": [
+   "context",
+   "load"
   ],
   "cli>activity": [
    "after_checkpoint"
@@ -1315,8 +1322,12 @@
    "repo_root"
   ],
   "mcp>src/system_diff": [
-   "failed",
-   "load"
+   "config_preview",
+   "graph",
+   "show",
+   "source",
+   "view",
+   "failed"
   ],
   "mcp>textmap": [
    "plain",
@@ -1528,29 +1539,39 @@
    "git_dir",
    "locate"
   ],
+  "src/system_diff>chat": [
+   "show_page"
+  ],
   "src/system_diff>compare": [
    "Live",
    "live"
   ],
   "src/system_diff>config": [
-   "lenient"
+   "lenient",
+   "preview"
   ],
   "src/system_diff>extract": [
    "Code"
   ],
   "src/system_diff>gitfs": [
-   "locate"
+   "locate",
+   "read_index"
   ],
   "src/system_diff>hub": [
    "_alive",
-   "branch"
+   "branch",
+   "projects"
   ],
   "src/system_diff>live": [
    "client_progress",
    "progress_text"
   ],
+  "src/system_diff>panel": [
+   "web_view"
+  ],
   "src/system_diff>sources": [
-   "git_dir"
+   "git_dir",
+   "DirSource"
   ],
   "statusline>activity": [
    "now",
@@ -1613,6 +1634,7 @@
    "stamp",
    "view",
    "clear_note",
+   "showing",
    "with_about"
   ],
   "watch>cli": [
@@ -1833,10 +1855,12 @@
    "typing": 1
   },
   "config": {
+   "contextlib": 1,
    "copy": 1,
    "json": 1,
    "pathlib": 1,
    "re": 1,
+   "threading": 1,
    "tomllib": 1,
    "typing": 1
   },
@@ -2073,17 +2097,19 @@
    "typing": 1
   },
   "src/system_diff": {
+   "pathlib": 4,
+   "typing": 4,
+   "json": 3,
    "os": 3,
-   "pathlib": 3,
-   "typing": 3,
-   "json": 2,
+   "time": 2,
    "configparser": 1,
    "dataclasses": 1,
    "importlib": 1,
    "re": 1,
    "sys": 1,
    "threading": 1,
-   "time": 1
+   "tomllib": 1,
+   "urllib": 1
   },
   "statusline": {
    "json": 1,
@@ -2214,10 +2240,12 @@
    "typing": 1
   },
   "config": {
+   "contextlib": 1,
    "copy": 1,
    "json": 1,
    "pathlib": 1,
    "re": 1,
+   "threading": 1,
    "tomllib": 1,
    "typing": 1
   },
@@ -2459,17 +2487,21 @@
    "typing": 1
   },
   "src/system_diff": {
+   "pathlib": 4,
+   "typing": 4,
+   "json": 3,
    "os": 3,
-   "pathlib": 3,
-   "typing": 3,
-   "json": 2,
+   "time": 2,
    "configparser": 1,
    "dataclasses": 1,
    "importlib.metadata": 1,
    "re": 1,
    "sys": 1,
    "threading": 1,
-   "time": 1
+   "tomllib": 1,
+   "urllib.error": 1,
+   "urllib.parse": 1,
+   "urllib.request": 1
   },
   "statusline": {
    "json": 1,
@@ -2549,6 +2581,7 @@
   "tests/test_names.py": 1,
   "tests/test_objectives.py": 1,
   "tests/test_objectives_ui.py": 1,
+  "tests/test_page_tools.py": 1,
   "tests/test_regroup.py": 1,
   "tests/test_slow_start.py": 1,
   "tests/test_studio_phase0.py": 1,

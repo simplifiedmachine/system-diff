@@ -15,7 +15,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.10.0.dev2' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.10.0.dev3' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't'],
@@ -204,8 +204,19 @@ let drawnKey = '' // the ask it was drawn for
 
 // Draw a page answered for `key`, unless the person has moved on since (then only what it brought to send is kept),
 // or it is older than the one drawn for the same ask.
+let shownId = '' // the last request of Claude's to show a view that the pane acted on
+const paneStarted = Date.now()
+
 async function apply($: EngineInterface, out: string, data: Page, key: string): Promise<boolean> {
   deliver($, data.send)
+  const sh = data.show
+  if (sh && sh.id && sh.id !== shownId) { // Claude's ui_show: go there (Back returns), once, if it is recent
+    shownId = sh.id
+    if ((sh.at ?? 0) * 1000 > paneStarted - 60000 && sh.view) {
+      void goTo($, sh.view, sh.part ?? '')
+      return false
+    }
+  }
   if (key !== (await asking($)).key) return false
   const v = typeof data.version === 'number' ? data.version : -1
   if (v >= 0 && v < drawnVersion && key === drawnKey) return false

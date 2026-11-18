@@ -1253,7 +1253,14 @@ def _web_diagram(c, model: Dict[str, Any], title: str, aside: str, zoom: int, pi
             ex["inside"] = "Click to read its code"      # a module of a part zoomed in on: its code, one click away
         elif bid not in on:
             ex["inside"] = ""
-    return {"svg": svg or "", "title": title, "aside": aside, "lights": dict(g.lights), "files": files,
+    keep = ("id", "col", "title", "sub", "type", "status", "agent")
+    graph = {"columns": [list(c) for c in model.get("columns") or []],
+             "nodes": [{**{k: n[k] for k in keep if n.get(k) not in (None, "")},
+                        **({"items": [{k: i[k] for k in ("id", "title", "status") if i.get(k)} for i in n["items"]]}
+                           if n.get("items") else {})} for n in model["nodes"]],
+             "edges": [{k: e[k] for k in ("from", "to", "kind", "status", "label") if e.get(k) not in (None, "")}
+                       for e in model["edges"]]}
+    return {"svg": svg or "", "title": title, "aside": aside, "lights": dict(g.lights), "files": files, "graph": graph,
             "details": {bid: full.get(bid) or text for bid, (_lead, text) in said.items()},
             "enter": {bid: o["enter"]["zoom"] for bid, o in on.items()},
             "pick": next((b for b in pick if b in ids), "")}

@@ -35,7 +35,10 @@ INSTRUCTIONS = (
     "the person has been optimising for (learned from their requests); when you evaluate or test one, report it with "
     "check_objective. When the person asks from the system-diff web page (their prompt says so, or starts with '[About: '), "
     "call point_to with the parts you are explaining so the page lights them in its diagram, and note to keep a "
-    "short finding about a part beside it."
+    "short finding about a part beside it. The person sees the system-diff page beside the chat: read ui_view when "
+    "they say 'this', 'here' or 'the one I picked'; ui_graph gives a view's diagram as data; while explaining, ui_show "
+    "and point_to what you name. The diagrams are computed from the code and system-diff.toml: to rename, group or "
+    "move a box, find its source with ui_source, preview with ui_config_preview, then edit the file."
 )
 WIDTH = 100  # the columns a diagram is drawn for
 
@@ -358,6 +361,46 @@ def build() -> Server:
         return tool_note(_root(), part, text)
 
     @_read_only(server)
+    def ui_view(project: str = "") -> Dict[str, Any]:
+        """What the person is looking at now on the system-diff page (and pane): per open page the project, view, part,
+        the block they picked or hover (its title and headline), whether the page is visible; and the views there
+        are. Look here when they say "this", "here", "the one I picked"."""
+        from . import uitools
+        return _safe(lambda: uitools.view(_root(), project))
+
+    @_read_only(server)
+    def ui_graph(view: str = "now", part: str = "", project: str = "", limit: int = 60) -> Dict[str, Any]:
+        """A view's diagram as data (system-diff's views and every extension's): nodes (id, title, sub, status, type,
+        column), edges (from, to, kind, status, label), each block's details, what each zooms into, and the view's
+        sections as text. Changed, picked and worked-on blocks first; `limit` nodes at most."""
+        from . import uitools
+        return _safe(lambda: uitools.graph(_root(), view, part, project, limit))
+
+    @_read_only(server)
+    def ui_source(block: str, project: str = "") -> Dict[str, Any]:
+        """Where a block of the diagram comes from, to change the right thing: the files behind it and the
+        system-diff.toml entry that names or places it (or the one to add). The diagram is computed from these:
+        change them, never claim a change the page does not show."""
+        from . import uitools
+        return _safe(lambda: uitools.source(_root(), block, project))
+
+    @_read_only(server)
+    def ui_config_preview(changes: str, view: str = "now", part: str = "", project: str = "") -> Dict[str, Any]:
+        """The diagram an edit of system-diff.toml would give, and how it differs from now, without writing anything.
+        `changes`: a TOML snippet as it would go in the file (a [[components]] entry with the same id changes that
+        entry: label renames a box, paths move files into it, layer or container group it). Then edit the file."""
+        from . import uitools
+        return _safe(lambda: uitools.config_preview(_root(), changes, view, part, project))
+
+    @server.tool()
+    def ui_show(view: str, part: str = "", pick: str = "", note: str = "", project: str = "") -> Dict[str, Any]:
+        """Move the person's system-diff page (and pane) to a view, zoomed into `part`, with `pick` picked and `note`
+        on a banner that offers Back. Use it while explaining, as each block is named. Changes only what the page
+        shows; a page the person is busy on takes it when they pause, or offers it if they said so."""
+        from . import uitools
+        return _safe(lambda: uitools.show(_root(), view, part, pick, note, project))
+
+    @_read_only(server)
     def team() -> Dict[str, Any]:
         """The plan, who claims which block, and the latest messages on the bus."""
         root = _root()
@@ -373,6 +416,14 @@ def build() -> Server:
             except Exception as exc:  # noqa: BLE001
                 extensions.failed(getattr(ext, "NAME", "extension") + " tools", exc)
     return server
+
+
+def _safe(fn) -> Dict[str, Any]:
+    """A tool's answer, or what went wrong as its answer (a bad project name, an engine away)."""
+    try:
+        return fn()
+    except ValueError as exc:
+        return {"error": str(exc)}
 
 
 def _read_only(server):
