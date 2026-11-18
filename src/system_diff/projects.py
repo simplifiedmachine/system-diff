@@ -39,9 +39,13 @@ def _files(root: Path) -> List[str]:
 def _stamp(root: Path) -> tuple:
     try:
         from .sources import git_dir
+        import hashlib
         idx = git_dir(root).parent / "index"
         cfg = Path(root) / "system-diff.toml"
-        return (idx.stat().st_mtime_ns if idx.exists() else 0, cfg.stat().st_mtime_ns if cfg.exists() else 0)
+        st = idx.stat() if idx.exists() else None
+        # the config by its content: two edits within one tick of a coarse clock (Windows) have the same time
+        said = hashlib.sha1(cfg.read_bytes()).hexdigest() if cfg.exists() else ""
+        return ((st.st_mtime_ns, st.st_size) if st else (0, 0), said)
     except Exception:  # noqa: BLE001
         return (0, 0)
 
