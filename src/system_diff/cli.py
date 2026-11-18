@@ -273,6 +273,9 @@ def parser() -> argparse.ArgumentParser:
     st.add_argument("--status", action="store_true", help="what the Studio sees: its projects, the engines, and why")
     st.add_argument("--foreground", action="store_true",
                     help="run it here until Ctrl-C, not in the background (to see what it prints)")
+    sp = sub.add_parser("stop", help="stop the Studio and every system-diff engine of yours (they start again when "
+                                     "needed)")
+    sp.add_argument("--dry-run", action="store_true", help="say what it would stop, and stop nothing")
     up = sub.add_parser("update", help="update system-diff in one step: stop what would block it, install the latest "
                                        "(the same channel), register Claude Code's MCP server, update the plugin")
     which = up.add_mutually_exclusive_group()
@@ -467,6 +470,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "hook":   # no git: the hook finds the repository in Python (a git start costs seconds on some machines)
         from . import agent
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
+    if args.cmd == "stop":   # every repository's engine, not one
+        from . import update
+        return update.stop_everything(dry=args.dry_run)
     if args.cmd == "update":   # the installation, not a repository
         from . import update
         return update.run(channel=args.channel or "", yes=args.yes, dry=args.dry_run, mcp=not args.no_mcp,

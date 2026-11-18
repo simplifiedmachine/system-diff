@@ -43,6 +43,7 @@ def test_a_windows_update_stops_what_holds_the_exe_and_asks_first(monkeypatch, t
     monkeypatch.setattr(update.Path, "home", lambda: home)
     monkeypatch.setattr(update, "windows", lambda: True)
     monkeypatch.setattr(update, "holders", lambda: [4120])
+    monkeypatch.setattr(update, "leftover_pids", lambda: [])
     monkeypatch.setattr(update.shutil, "which", lambda name: {"claude": r"C:\npm\claude.CMD"}.get(name))
     said = []
     assert update.run(dry=True, say=said.append, ask=lambda q: "n") == 1          # asked (dry: no), not updated
@@ -64,3 +65,18 @@ def test_on_windows_the_launcher_hands_over_to_python(monkeypatch):
     assert not update.from_launcher(r"C:\Python312\python.exe")
     monkeypatch.setattr(update, "windows", lambda: False)
     assert not update.from_launcher("/usr/local/bin/system-diff")
+
+
+def test_stop_ends_engines_left_running(monkeypatch):
+    monkeypatch.setattr(update, "leftover_pids", lambda: [4321])
+    said = []
+    assert update.stop_everything(say=said.append, dry=True) == 0
+    assert any("pid 4321" in x for x in said)
+    assert update._ps_pids("1234\r\n 5678\r\n") == [1234, 5678]
+
+
+def test_ports_are_taken_exclusively_on_windows():
+    from system_diff import app, hub, watch
+    for server in (watch._Server, app._Server, hub._HubServer):
+        assert issubclass(server, hub.Exclusive)
+    assert hub.Exclusive.allow_reuse_address is (__import__("os").name != "nt")

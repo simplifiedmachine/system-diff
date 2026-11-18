@@ -83,8 +83,8 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,788 C507,788 507,172 536,172" marker-end="url(#ar-call-same)"><title>chat → activity</title></path>
 <path class="be k-call s-same" d="M478,788 C507,788 507,112 536,112" marker-end="url(#ar-call-same)"><title>chat → sources</title></path>
 <path class="be k-call s-same" d="M478,788 C544,788 544,1508 484,1508" marker-end="url(#ar-call-same)"><title>chat → src/system_diff</title></path>
-<path class="be k-call s-same" d="M214,52 C260,52 260,172 220,172" marker-end="url(#ar-call-same)"><title>cli → agent</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,1508 272,1508" marker-end="url(#ar-call-same)"><title>cli → src/system_diff</title></path>
+<path class="be k-call s-same" d="M214,52 C260,52 260,172 220,172" marker-end="url(#ar-call-same)"><title>cli → agent</title></path>
 <path class="be k-call s-same" d="M214,52 C280,52 280,368 220,368" marker-end="url(#ar-call-same)"><title>cli → panel</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,188 272,188" marker-end="url(#ar-call-same)"><title>cli → config</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,248 272,248" marker-end="url(#ar-call-same)"><title>cli → extract</title></path>
@@ -207,8 +207,8 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,1508 C544,1508 544,188 484,188" marker-end="url(#ar-call-same)"><title>src/system_diff → config</title></path>
 <path class="be k-call s-same" d="M478,1508 C544,1508 544,248 484,248" marker-end="url(#ar-call-same)"><title>src/system_diff → extract</title></path>
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,248 220,248" marker-end="url(#ar-call-same)"><title>src/system_diff → watch</title></path>
-<path class="be k-call s-same" d="M478,1508 C544,1508 544,112 484,112" marker-end="url(#ar-call-same)"><title>src/system_diff → compare</title></path>
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,308 220,308" marker-end="url(#ar-call-same)"><title>src/system_diff → hub</title></path>
+<path class="be k-call s-same" d="M478,1508 C544,1508 544,112 484,112" marker-end="url(#ar-call-same)"><title>src/system_diff → compare</title></path>
 <path class="be k-call s-same" d="M478,1508 C544,1508 544,52 484,52" marker-end="url(#ar-call-same)"><title>src/system_diff → live</title></path>
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,368 220,368" marker-end="url(#ar-call-same)"><title>src/system_diff → panel</title></path>
 <path class="be k-call s-same" d="M278,1508 C249,1508 249,172 220,172" marker-end="url(#ar-call-same)"><title>src/system_diff → agent</title></path>

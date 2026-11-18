@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 604,
+   "lines": 610,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 11,
-   "lines": 3881,
+   "lines": 3970,
    "hub": false,
    "quiet": false
   },
@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 415,
+   "lines": 482,
    "hub": false,
    "quiet": false
   },
@@ -237,7 +237,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 499,
+   "lines": 519,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2966,
+   "lines": 2967,
    "hub": false,
    "quiet": false
   }
@@ -504,7 +504,7 @@
   "cli>png": 1,
   "cli>readme": 1,
   "cli>sources": 1,
-  "cli>src/system_diff": 4,
+  "cli>src/system_diff": 5,
   "cli>statusline": 1,
   "cli>textmap": 1,
   "cli>tui": 1,
@@ -648,11 +648,11 @@
   "src/system_diff>diff": 1,
   "src/system_diff>extract": 6,
   "src/system_diff>gitfs": 2,
-  "src/system_diff>hub": 3,
+  "src/system_diff>hub": 4,
   "src/system_diff>live": 3,
   "src/system_diff>mcp": 1,
   "src/system_diff>panel": 3,
-  "src/system_diff>sources": 12,
+  "src/system_diff>sources": 13,
   "src/system_diff>watch": 5,
   "statusline>activity": 1,
   "statusline>config": 1,
@@ -774,9 +774,9 @@
    "lenient"
   ],
   "agents>design": [
+   "and_list",
    "depends",
    "kinds",
-   "and_list",
    "fan_in",
    "summarize"
   ],
@@ -931,10 +931,10 @@
   "cli>src/system_diff": [
    "line",
    "run",
+   "stop_everything",
    "serve",
    "start",
-   "status",
-   "stop"
+   "status"
   ],
   "cli>statusline": [
    "statusline"
@@ -1594,11 +1594,11 @@
   ],
   "src/system_diff>hub": [
    "_open",
-   "projects",
-   "branch",
    "engines_dir",
-   "_alive",
-   "_read"
+   "projects",
+   "_read",
+   "branch",
+   "Exclusive"
   ],
   "src/system_diff>live": [
    "token_ok",
@@ -1718,11 +1718,11 @@
   ],
   "watch>hub": [
    "host_ok",
+   "Exclusive",
    "branch",
    "HREF_JS",
    "hub_page",
-   "project_name",
-   "projects"
+   "project_name"
   ],
   "watch>learn": [
    "story",
@@ -2167,6 +2167,7 @@
    "threading": 3,
    "claude_agent_sdk": 2,
    "hashlib": 2,
+   "http": 2,
    "shutil": 2,
    "subprocess": 2,
    "urllib": 2,
@@ -2174,8 +2175,8 @@
    "configparser": 1,
    "dataclasses": 1,
    "html": 1,
-   "http": 1,
    "secrets": 1,
+   "signal": 1,
    "socket": 1,
    "tomllib": 1,
    "uuid": 1,
@@ -2569,6 +2570,7 @@
    "threading": 3,
    "claude_agent_sdk": 2,
    "hashlib": 2,
+   "http.client": 2,
    "importlib.util": 2,
    "shutil": 2,
    "subprocess": 2,
@@ -2577,10 +2579,10 @@
    "configparser": 1,
    "dataclasses": 1,
    "html": 1,
-   "http.client": 1,
    "http.server": 1,
    "importlib.metadata": 1,
    "secrets": 1,
+   "signal": 1,
    "socket": 1,
    "tomllib": 1,
    "urllib.error": 1,

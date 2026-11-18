@@ -311,10 +311,35 @@ def _areas(c) -> List[Dict[str, Any]]:
     return list(areas.values())
 
 
-def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str] = ()) -> Dict[str, Any]:
+def stages_of(waits: Dict[str, set]) -> Dict[str, int]:
+    """Each agent's stage: 1 when it waits for nobody, else one after the latest of those it waits for. Agents that
+    wait for each other in a circle cannot be ordered: they share a stage (they run together, on the bus)."""
+    stage: Dict[str, int] = {}
+    left = {n: set(w) for n, w in waits.items()}
+    level = 1
+    while left:
+        ready = [n for n, w in left.items() if not (w & set(left))]
+        if not ready:   # a circle: whatever is left runs together
+            for n in left:
+                stage[n] = level
+            break
+        for n in ready:
+            stage[n] = level
+            del left[n]
+        level += 1
+    return stage
+
+
+def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str] = (), order: str = "parallel",
+         after: Optional[Dict[str, List[str]]] = None, preset: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """Split `task` across agents by the system's blocks: the areas (containers, else parts) the task names or that
     `focus` gives, one agent each (at most `most`, the rest joining the closest), each with the blocks it claims, the
-    blocks it depends on (its subscriptions) and a brief; and how to run them. Saved, and the claims made."""
+    blocks it depends on (its subscriptions) and a brief; and how to run them. Saved, and the claims made.
+
+    The order they run in: "parallel" (all at once, coordinating on the bus), or "staged" (an agent whose blocks use
+    another agent's starts after that one has finished); `after` adds waits by name ({"web": ["api"]}). Agents that
+    wait for each other in a circle run together. `preset`: the agents of a saved workflow (workflows.py) instead of
+    the areas found: [{"name", "area", "blocks", "waits_for"}]."""
     bp = c.after
     words = set(WORD.findall(task.lower()))
     deps = design.depends(bp)
@@ -329,6 +354,11 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
         scored = sorted(((sum(into.get(b, 0) for b in a["blocks"]) + 1, a) for a in _areas(c)), key=lambda s: -s[0])
     areas = [a for _s, a in sorted(scored, key=lambda s: (-s[0], s[1]["id"]))]
     picked, rest = areas[:most], areas[most:]
+    if preset:   # a saved workflow: its agents, on the blocks of theirs the system still has
+        picked = [{"id": str(p.get("name") or "agent"), "title": str(p.get("area") or p.get("name") or "agent"),
+                   "name": str(p.get("name") or ""), "blocks": [b for b in p.get("blocks") or [] if b in bp["components"]]}
+                  for p in preset if isinstance(p, dict)]
+        rest = []
     for a in rest:   # joins the picked area it is most connected to
         best = max(picked, key=lambda p: sum(1 for b in a["blocks"] for d in deps.get(b, ()) if d in p["blocks"])
                    + sum(1 for b in p["blocks"] for d in deps.get(b, ()) if d in a["blocks"]))
@@ -341,7 +371,7 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
     except Exception:  # noqa: BLE001 - the plan stands without it
         keep = ""
     for a in picked:
-        name = re.sub(r"[^a-z0-9]+", "-", a["title"].lower()).strip("-") or "agent"
+        name = a.get("name") or re.sub(r"[^a-z0-9]+", "-", a["title"].lower()).strip("-") or "agent"
         needs = sorted({d for b in a["blocks"] for d in deps.get(b, ()) if d not in a["blocks"]})
         needed_by = sorted({b2 for b2, ds in deps.items() for d in ds if d in a["blocks"] and b2 not in a["blocks"]})
         talks_to = sorted({re.sub(r"[^a-z0-9]+", "-", next(p["title"] for p in picked if p["id"] == owned[x]).lower())
@@ -360,11 +390,48 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
             brief += "\n" + keep
         agents.append({"name": name, "area": a["title"], "blocks": a["blocks"], "subscribes": needs,
                        "talks_to": talks_to, "brief": brief})
-    how = ("Launch these agents now, in parallel, each as its own subagent with its brief as the prompt (one message "
-           "with several Task/Agent tool calls). Do not do their work yourself. When they finish, read the system-diff "
-           "`inbox` tool as \"main\" and integrate: resolve what they published, then check the whole with "
-           "`system_diff`." if len(agents) > 1 else
-           "One area: do it yourself; no team needed.")
+    # the order: who waits for whom (an agent using blocks another one changes, when staged; and what `after` or a
+    # saved workflow says), then the stages that gives
+    owner_of = {b: g["name"] for g in agents for b in g["blocks"]}
+    names = {g["name"] for g in agents}
+    said = {str(p.get("name")): list(p.get("waits_for") or []) for p in preset or [] if isinstance(p, dict)}
+    waits: Dict[str, set] = {}
+    for g in agents:
+        w = set()
+        if order == "staged":
+            w |= {owner_of[d] for d in g["subscribes"] if d in owner_of}
+        w |= set((after or {}).get(g["name"]) or []) | set(said.get(g["name"]) or [])
+        waits[g["name"]] = {x for x in w if x in names and x != g["name"]}
+    stage_of = stages_of(waits)
+    for g in agents:
+        g["waits_for"] = sorted(waits[g["name"]])
+        g["stage"] = stage_of[g["name"]]
+        if g["waits_for"]:
+            g["brief"] += (f"\nYou start after {design.and_list(g['waits_for'], 6)} "
+                           f"{'has' if len(g['waits_for']) == 1 else 'have'} finished: first read the system-diff "
+                           f"`inbox` tool as \"{g['name']}\" for what they changed.")
+    staged = max([g["stage"] for g in agents] or [1]) > 1
+    if len(agents) <= 1:
+        how = "One area: do it yourself; no team needed."
+    elif not staged:
+        how = ("Launch these agents now, in parallel, each as its own subagent with its brief as the prompt (one "
+               "message with several Task/Agent tool calls). Do not do their work yourself. When they finish, read the "
+               "system-diff `inbox` tool as \"main\" and integrate: resolve what they published, then check the whole "
+               "with `system_diff`.")
+    else:
+        steps = []
+        for n in range(1, max(g["stage"] for g in agents) + 1):
+            here = [g for g in agents if g["stage"] == n]
+            if not here:
+                continue
+            what = ", ".join(g["name"] for g in here)
+            steps.append(f"stage {n}: {what}" + (" (in parallel)" if len(here) > 1 else "")
+                         + ("" if n == 1 else " once the agents they wait for have finished"))
+        how = ("Run these agents in stages, each as its own subagent with its brief as the prompt; launch the agents of "
+               "one stage together (one message with several Task/Agent tool calls), and the next stage when the "
+               "agents it waits for have finished: " + "; ".join(steps) + ". Do not do their work yourself. At the "
+               "end, read the system-diff `inbox` tool as \"main\" and integrate, then check the whole with "
+               "`system_diff`.")
     at = round(time.time(), 3)
     publish(root, "all", f"Plan: {len(agents)} agent{'' if len(agents) == 1 else 's'} for: {task}", sender=MAIN,
             kind="plan")
@@ -377,7 +444,7 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
     data["claims"], data["ids"], data["warned"] = {}, {}, {}
     # "after": the last message number at the plan, the plan's own announcement included: what counts as since the
     # plan (times alone tie within a millisecond)
-    data["plan"] = {"task": task, "at": at, "after": last,
+    data["plan"] = {"task": task, "at": at, "after": last, "order": order,
                     "agents": [{k: v for k, v in g.items() if k != "brief"} for g in agents]}
     for g in agents:
         a = _agent(data, g["name"])

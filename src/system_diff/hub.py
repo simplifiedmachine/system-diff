@@ -283,6 +283,22 @@ def _free(port: int) -> bool:
             return False
 
 
+class Exclusive:
+    """A server socket that no other program can share. Python's HTTP servers ask for SO_REUSEADDR, which on Linux
+    and macOS only lets a server reopen a port whose last connections are still closing, but on Windows lets a second
+    program open a port that is in use: two engines (or an engine and the Studio) on one port, each request answered
+    by either. On Windows the port is taken with SO_EXCLUSIVEADDRUSE instead; elsewhere nothing changes."""
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self) -> None:   # type: ignore[override]
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            try:
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            except OSError:
+                pass
+        super().server_bind()   # type: ignore[misc]
+
+
 def hub_url(port: int) -> str:
     return f"http://localhost:{port}/projects/page"
 
@@ -390,6 +406,10 @@ def hub_page(token: str) -> bytes:
 
 # ── `system-diff hub` ───────────────────────────────────────────────────────────────────────────────────────────────
 
+class _HubServer(Exclusive, ThreadingHTTPServer):
+    daemon_threads = True
+
+
 def serve_hub(port: int = FIRST, ready: Optional[Callable[..., None]] = None) -> None:
     """Serve the project list page by itself (no engine runs to serve it), until interrupted: on the first free port
     from `port`. `ready(url, server)` once it listens (tests use port 0)."""
@@ -425,7 +445,7 @@ def serve_hub(port: int = FIRST, ready: Optional[Callable[..., None]] = None) ->
     server = None
     for p in ([port] if port == 0 else range(port, port + 10)):
         try:
-            server = ThreadingHTTPServer(("127.0.0.1", p), Handler)
+            server = _HubServer(("127.0.0.1", p), Handler)
             break
         except OSError:
             continue

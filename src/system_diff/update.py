@@ -74,6 +74,103 @@ def holders() -> List[int]:
         return []
 
 
+def _ps_pids(text: str) -> List[int]:
+    return [int(x) for x in text.split() if x.strip().isdigit()]
+
+
+def leftover_pids() -> List[int]:
+    """The processes still running system-diff's engine or Studio (by their command line), this one excepted: what
+    `system-diff stop` ends when asking them to stop did not (an engine that lost its web.json, one from a version
+    from before /quit)."""
+    me = os.getpid()
+    pids: List[int] = []
+    try:
+        if windows():
+            ps = ("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match "
+                  "'system_diff.*\\s(watch|app)\\b|system-diff(\\.exe)?\"?\\s+(--repo\\s+\\S+\\s+)?(watch|app)\\b' } "
+                  "| Select-Object -ExpandProperty ProcessId")
+            got = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                                 timeout=60, creationflags=0x08000000)
+            pids = _ps_pids(got.stdout)
+        elif Path("/proc").is_dir():
+            for d in Path("/proc").iterdir():
+                if not d.name.isdigit():
+                    continue
+                try:
+                    cmd = (d / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+                except OSError:
+                    continue
+                if ("system_diff" in cmd or "system-diff" in cmd) and (" watch" in cmd or " app" in cmd):
+                    pids.append(int(d.name))
+        else:
+            got = subprocess.run(["ps", "-ax", "-o", "pid=,command="], capture_output=True, text=True, timeout=30)
+            for line in got.stdout.splitlines():
+                pid, _, cmd = line.strip().partition(" ")
+                if pid.isdigit() and ("system_diff" in cmd or "system-diff" in cmd) and (" watch" in cmd or " app" in cmd):
+                    pids.append(int(pid))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    return [p for p in pids if p != me and p != os.getppid()]
+
+
+def stop_everything(say=print, dry: bool = False) -> int:
+    """`system-diff stop`: the Studio and every engine of this user, asked to stop (POST /quit, each with its own
+    token); what is left of them (by command line) ended. Claude Code's MCP servers are not touched. The number
+    stopped."""
+    import http.client
+    from . import app, hub
+    n = 0
+    try:
+        if app.running() is not None:
+            say("Stopping the Studio")
+            if not dry:
+                app.stop(say=say) if "say" in app.stop.__code__.co_varnames else app.stop()
+            n += 1
+    except Exception as exc:  # noqa: BLE001
+        say(f"  the Studio: {type(exc).__name__}: {exc}")
+    folder = hub.engines_dir()
+    for f in sorted(folder.glob("*.json")) if folder is not None and folder.is_dir() else []:
+        e = hub._read(f)
+        if e is None or not e.get("root"):
+            continue
+        try:
+            from .sources import git_dir
+            info = json.loads((git_dir(Path(e["root"])) / "web.json").read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            info = {}
+        token = str(info.get("token") or "") if info.get("port") == e["port"] else ""
+        say(f"Stopping the engine of {e['name'] or e['root']} (port {e['port']})")
+        n += 1
+        if dry or not token:
+            continue
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", e["port"], timeout=5)
+            conn.request("POST", "/quit", body=b"{}", headers={"X-Token": token, "Content-Type": "application/json"})
+            conn.getresponse().read()
+            conn.close()
+        except (OSError, http.client.HTTPException):
+            pass
+    if not dry:
+        time.sleep(1.0)
+    for pid in leftover_pids():
+        say(f"Ending a system-diff process left running (pid {pid})")
+        n += 1
+        if dry:
+            continue
+        try:
+            if windows():
+                subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=30,
+                               creationflags=0x08000000)
+            else:
+                import signal
+                os.kill(pid, signal.SIGTERM)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    say("Nothing of system-diff's was running" if not n else "Stopped: the next look of the pane (or system-diff watch, "
+        "or system-diff app) starts what is needed again")
+    return 0
+
+
 def in_pipx() -> bool:
     return "pipx" in Path(sys.prefix).as_posix().lower().split("/")
 
@@ -168,15 +265,8 @@ def run(channel: str = "", yes: bool = False, dry: bool = False, mcp: bool = Tru
     channel = channel or channel_of(__version__)
     say(f"system-diff {__version__} → the latest {channel} ({spec_for(channel)})")
 
-    # 1. what would stop pip
-    try:
-        from . import app
-        if app.running() is not None:
-            say("Stopping the Studio (system-diff app; start it again afterwards)")
-            if not dry:
-                app.stop()
-    except Exception as exc:  # noqa: BLE001
-        say(f"  (the Studio: {type(exc).__name__}: {exc})")
+    # 1. what would stop pip, and what would keep running the old version: the Studio and the engines
+    stop_everything(say, dry)
     held = holders()
     if held:
         say(f"{len(held)} process{'es' if len(held) > 1 else ''} still run system-diff.exe (pid {', '.join(map(str, held))}):"

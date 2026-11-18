@@ -97,9 +97,11 @@ the same Studio sessions.
 system-diff update             # macOS, Linux
 python -m system_diff update   # Windows (system-diff update works too: it continues in a window of its own)
 ```
-It stops what would block the install (the Studio; on Windows anything still running `system-diff.exe`, after asking),
+It stops what would block the install or keep running the old version (the Studio and the engines; on Windows also
+anything still running `system-diff.exe`, after asking),
 installs the latest, registers Claude Code's MCP server the right way for your machine (once: no second one beside the
 plugin's), and updates the plugin. `--dry-run` shows what it would do; `--nightly` or `--stable` switches channel.
+`system-diff stop` stops the Studio and every engine of yours (each starts again when needed).
 
 **Stable and nightly.** The commands above install the latest [stable release](https://github.com/simplifiedmachine/system-diff/releases/latest)
 (PyPI, and the plugin from the `stable` branch). To test what is coming, run nightly from `main`:

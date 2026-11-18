@@ -2829,9 +2829,10 @@ WATCHDOG_EVERY = 2.0  # seconds between two looks of the watchdog at the engine'
 FATAL_GRACE = 2.0     # seconds the server still answers (the page learns why) before it stops
 
 
-class _Server(ThreadingHTTPServer):
+class _Server(hub.Exclusive, ThreadingHTTPServer):
     """The HTTP server, logging what a request's handler raised (engine.log) instead of printing it to a stderr no
-    one reads. A browser or a client closing the connection early is not an error."""
+    one reads. A browser or a client closing the connection early is not an error. Its port is its own, also on
+    Windows (hub.Exclusive): a second engine never shares it."""
     daemon_threads = True
     root: Optional[Path] = None
 

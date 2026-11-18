@@ -614,9 +614,8 @@ def handler(studio: Studio):
     return Handler
 
 
-class _Server(ThreadingHTTPServer):
+class _Server(hub.Exclusive, ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = os.name != "nt"
 
     def handle_error(self, request, client_address) -> None:
         """A browser that leaves before its answer is written (WinError 10053, a reset, a broken pipe) is not an error."""
