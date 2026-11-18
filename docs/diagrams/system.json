@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 610,
+   "lines": 615,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 12,
-   "lines": 4309,
+   "lines": 4425,
    "hub": false,
    "quiet": false
   },
@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 965,
+   "lines": 963,
    "hub": false,
    "quiet": false
   },
@@ -309,7 +309,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 257,
+   "lines": 323,
    "hub": false,
    "quiet": false
   },
@@ -333,7 +333,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2749,
+   "lines": 2754,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 3213,
+   "lines": 3300,
    "hub": false,
    "quiet": false
   }
@@ -504,7 +504,7 @@
   "cli>png": 1,
   "cli>readme": 1,
   "cli>sources": 1,
-  "cli>src/system_diff": 5,
+  "cli>src/system_diff": 6,
   "cli>statusline": 1,
   "cli>textmap": 1,
   "cli>tui": 1,
@@ -600,7 +600,8 @@
   "mcp>src/system_diff": 13,
   "mcp>textmap": 1,
   "names>graph": 1,
-  "narrate>sources": 1,
+  "narrate>live": 1,
+  "narrate>sources": 2,
   "objectives>activity": 1,
   "objectives>agents": 1,
   "objectives>compare": 1,
@@ -652,6 +653,7 @@
   "src/system_diff>hub": 4,
   "src/system_diff>live": 3,
   "src/system_diff>mcp": 1,
+  "src/system_diff>narrate": 1,
   "src/system_diff>panel": 3,
   "src/system_diff>sources": 13,
   "src/system_diff>watch": 5,
@@ -670,7 +672,7 @@
   "watch>agent": 1,
   "watch>agents": 1,
   "watch>chat": 1,
-  "watch>cli": 4,
+  "watch>cli": 3,
   "watch>compare": 1,
   "watch>config": 3,
   "watch>diff": 1,
@@ -680,6 +682,7 @@
   "watch>hub": 1,
   "watch>learn": 1,
   "watch>live": 1,
+  "watch>narrate": 2,
   "watch>panel": 3,
   "watch>pictures": 1,
   "watch>sources": 1,
@@ -940,9 +943,9 @@
    "line",
    "run",
    "stop_everything",
+   "OPEN_VIEW",
    "serve",
-   "start",
-   "status"
+   "start"
   ],
   "cli>statusline": [
    "statusline"
@@ -1367,7 +1370,11 @@
   "names>graph": [
    "connections"
   ],
+  "narrate>live": [
+   "log"
+  ],
   "narrate>sources": [
+   "git_dir",
    "run_hidden"
   ],
   "objectives>activity": [
@@ -1625,6 +1632,9 @@
   "src/system_diff>mcp": [
    "Server"
   ],
+  "src/system_diff>narrate": [
+   "QUIET"
+  ],
   "src/system_diff>panel": [
    "web_view",
    "take_outbox"
@@ -1756,6 +1766,10 @@
    "Engine",
    "FIRST_WAIT",
    "Pages"
+  ],
+  "watch>narrate": [
+   "QUIET",
+   "status"
   ],
   "watch>panel": [
    "show",
@@ -2109,6 +2123,7 @@
    "subprocess": 1,
    "sys": 1,
    "tempfile": 1,
+   "time": 1,
    "typing": 1,
    "urllib": 1
   },
@@ -2180,7 +2195,7 @@
    "pathlib": 11,
    "typing": 11,
    "json": 10,
-   "os": 9,
+   "os": 10,
    "re": 7,
    "time": 7,
    "sys": 4,
@@ -2235,6 +2250,7 @@
   },
   "watch": {
    "dataclasses": 1,
+   "hashlib": 1,
    "html": 1,
    "http": 1,
    "json": 1,
@@ -2512,6 +2528,7 @@
    "subprocess": 1,
    "sys": 1,
    "tempfile": 1,
+   "time": 1,
    "typing": 1,
    "urllib.error": 1,
    "urllib.parse": 1,
@@ -2585,7 +2602,7 @@
    "pathlib": 11,
    "typing": 11,
    "json": 10,
-   "os": 9,
+   "os": 10,
    "re": 7,
    "time": 7,
    "sys": 4,
@@ -2644,6 +2661,7 @@
   },
   "watch": {
    "dataclasses": 1,
+   "hashlib": 1,
    "html": 1,
    "http.client": 1,
    "http.server": 1,
@@ -2687,6 +2705,7 @@
   "tests/test_human.py": 1,
   "tests/test_incremental.py": 1,
   "tests/test_live.py": 1,
+  "tests/test_llm_status.py": 1,
   "tests/test_names.py": 1,
   "tests/test_objectives.py": 1,
   "tests/test_objectives_ui.py": 1,

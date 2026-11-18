@@ -894,6 +894,11 @@ def _workflow_rows(page: canvas.Page, root: Path, width: int) -> None:
         page.para(" · ".join(runs), "", first=[f" {i}  ", "accent"])
 
 
+def workflow_section(root: Path) -> Optional[Dict[str, Any]]:
+    """The workflow board as a page section (public: extensions put it on their own tabs, as research-diff's Agents)."""
+    return _workflow_section(root)
+
+
 def _workflow_section(root: Path) -> Optional[Dict[str, Any]]:
     """The team's workflow for the page: its stages, the agents and extensions' steps in them, who waits for whom,
     each one's status; the saved workflows there are to start from. None with no plan and nothing saved."""

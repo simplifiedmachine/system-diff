@@ -31,7 +31,10 @@ TEXT_MOST = 4000            # a tool's input or result as shown: cut past this
 READ_ONLY_TOOLS = ("ui_view", "ui_graph", "ui_source", "ui_config_preview", "explain", "objectives", "team",
                    "system_map", "system_diff")
 APPEND = (
-    "You run inside system-diff's Studio: the person sees the system-diff page beside this chat, with the system's "
+    "You run inside system-diff's Studio, a web page: there is no Shift+Tab or /permissions here; the person sets the "
+    "permission mode and the model in the Studio's Session options, which apply to this session at once, and allows "
+    "or denies each action on a card on the page. "
+    "The person sees the system-diff page beside this chat, with the system's "
     "diagram. Read ui_view when they say 'this', 'here' or 'the one I picked'. While explaining, ui_show and point_to "
     "the parts you name. The diagrams are computed from the code and system-diff.toml: change them through their "
     "sources (ui_source finds them, ui_config_preview shows the result first), and never claim a change the page does "
@@ -250,6 +253,7 @@ class Session:
 
     def head(self) -> Dict[str, Any]:
         return {"id": self.id, "project": str(self.project), "status": self.status, "claude_session": self.claude_id,
+                "mode": getattr(self, "mode", "") or self.options.get("permission_mode") or "",
                 "model": self.model or self.options.get("model") or "", "options": self.public_options(),
                 "title": self.title, "created": self.created, "error": self.error,
                 "pending": [{"request": k, **{x: v[x] for x in ("tool", "view")}} for k, v in self.pending.items()]}
@@ -326,7 +330,7 @@ class Session:
             self.options["permission_mode"] = mode
             said.append(f"permissions {mode}")
         if said:
-            self.emit("note", text="Now using the all-projects choices: " + ", ".join(said))
+            self.emit("note", text="Now: " + ", ".join(said) + " (this session, from here on)")
 
     def close(self) -> None:
         if self.status == "closed":
@@ -477,9 +481,18 @@ class Session:
             if getattr(msg, "subtype", "") == "init" and isinstance(data, dict):
                 self.claude_id = str(data.get("session_id") or self.claude_id)
                 self.model = str(data.get("model") or self.model)
+                self.mode = str(data.get("permissionMode") or self.options.get("permission_mode") or "")
+                wanted = str(self.options.get("permission_mode") or "")
+                if wanted and self.mode and self.mode != wanted and self.client is not None \
+                        and hasattr(self.client, "set_permission_mode"):
+                    # a settings file chose another mode (its defaultMode): the one chosen here is the one it runs in
+                    self.manager.call(self.client.set_permission_mode(wanted))
+                    self.emit("note", text=f"Claude Code started in {self.mode} (from your settings); now {wanted}, "
+                                           "as chosen here")
+                    self.mode = wanted
                 self.emit("system", subtype="init", model=self.model, claude_session=self.claude_id,
-                          tools=len(data.get("tools") or []), mcp=[s.get("name") for s in data.get("mcp_servers") or []
-                                                                   if isinstance(s, dict)])
+                          tools=len(data.get("tools") or []), permission_mode=self.mode,
+                          mcp=[s.get("name") for s in data.get("mcp_servers") or [] if isinstance(s, dict)])
             return
         if kind == "ResultMessage":
             self.claude_id = str(getattr(msg, "session_id", "") or self.claude_id)

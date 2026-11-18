@@ -523,7 +523,8 @@ def test_open_sessions_take_the_model_and_permissions_live(manager, repo):
     assert until(lambda: s.status == "idle")
     s.apply_live("haiku", "plan")
     assert until(lambda: getattr(s.client, "mode", "") == "plan" and s.client.model == "haiku")
-    assert s.options["model"] == "haiku" and any("all-projects" in e.get("text", "") for e in s.events_since(0)["events"])
+    assert s.options["model"] == "haiku" and any(e.get("text", "").startswith("Now: model haiku")
+                                                 for e in s.events_since(0)["events"])
 
 
 # ── the agent library, by kind of project ────────────────────────────────────────────────────────────────────────
@@ -616,3 +617,35 @@ def test_the_studio_runs_in_the_background_and_stops(monkeypatch, tmp_path, caps
         left = app._read(folder / app.APP)
         if isinstance(left, dict) and left.get("pid") and app.running(folder) is not None:
             os.kill(int(left["pid"]), signal.SIGTERM)
+
+
+
+def test_the_mode_chosen_here_wins_over_a_settings_files(manager, repo):
+    class Auto(FakeClient):
+        async def set_permission_mode(self, m):
+            self.mode = m
+
+        async def receive_response(self):
+            yield SystemMessage({"session_id": "c1", "model": "m", "tools": [], "mcp_servers": [], "permissionMode": "auto"})
+            yield ResultMessage()
+    manager.client_factory = Auto
+    s = manager.start(repo, {"permission_mode": "default"})
+    assert until(lambda: s.status == "idle")
+    s.send("go")
+    assert until(lambda: getattr(s.client, "mode", "") == "default")
+    assert s.mode == "default" and any("from your settings" in e.get("text", "") for e in s.events_since(0)["events"])
+    assert "no Shift+Tab" in sessions.APPEND
+
+
+def test_the_studio_changes_mode_and_model_of_an_open_session(studio, repo):
+    url, tok = studio["url"], studio["studio"].token
+    w = {"X-Token": tok, "Origin": url.rstrip("/")}
+    pid = call(url + "api/projects", {"path": str(repo)}, w)["id"]
+    s = call(url + "api/sessions", {"project": pid, "permission_mode": "auto"}, w)
+    assert until(lambda: studio["studio"].manager.get(s["id"]).status == "idle")
+    got = call(url + f"api/sessions/{s['id']}/mode", {"mode": "default"}, w)
+    assert got["mode"] == "default"
+    with pytest.raises(urllib.error.HTTPError) as bad:
+        call(url + f"api/sessions/{s['id']}/mode", {"mode": "yolo"}, w)
+    assert bad.value.code == 400
+    assert call(url + f"api/sessions/{s['id']}/model", {"model": "haiku"}, w)["id"] == s["id"]

@@ -20,6 +20,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -201,6 +202,66 @@ def narrate(d: dict, commits: str, root: Path, cfg: Dict[str, Any], timeout: int
 
 
 LAST_ERROR = [""]   # why the last ask failed, for the page to say
+QUIET = [False]     # in the engine and the Studio: a failure goes to the engine's log and the page, not the terminal
+PAUSE = 300.0       # after a failure, no LLM is asked from this repository for this long (each try may start a program)
+STATUS = "llm-status.json"
+_PAUSED: Dict[str, Tuple[float, str]] = {}
+_PRINTED: set = set()
+
+
+def _status_file(root: Path) -> Optional[Path]:
+    try:
+        from .sources import git_dir
+        return git_dir(root) / STATUS
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _failed(root: Path, said: str) -> None:
+    """An LLM could not be reached: kept for the page (llm-status.json), logged, said once on the terminal (not at all
+    in the engine), and no LLM is asked again from here for PAUSE seconds."""
+    msg = said.removeprefix("system-diff: ")
+    LAST_ERROR[0] = said
+    _PAUSED[str(root)] = (time.time() + PAUSE, msg)
+    f = _status_file(root)
+    if f is not None:
+        try:
+            f.write_text(json.dumps({"error": msg, "at": round(time.time(), 3)}), encoding="utf-8")
+        except OSError:
+            pass
+    if QUIET[0]:
+        try:
+            from .live import log
+            log(root, f"the LLM could not be reached: {msg}")
+        except Exception:  # noqa: BLE001
+            pass
+    elif msg not in _PRINTED:
+        _PRINTED.add(msg)
+        print(said, file=sys.stderr)
+
+
+def _worked(root: Path) -> None:
+    _PAUSED.pop(str(root), None)
+    f = _status_file(root)
+    if f is not None and f.exists():
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
+
+def status(root: Path, fresh: float = 1800.0) -> Optional[Dict[str, Any]]:
+    """The LLM's last failure here, if no answer came since and it is recent: {"error", "at", "until"} (until: when it
+    is tried again)."""
+    f = _status_file(root)
+    try:
+        got = json.loads(f.read_text(encoding="utf-8")) if f is not None else None
+    except (OSError, ValueError):
+        return None
+    if not isinstance(got, dict) or time.time() - float(got.get("at") or 0) > fresh:
+        return None
+    return {"error": str(got.get("error") or ""), "at": float(got.get("at") or 0),
+            "until": float(got.get("at") or 0) + PAUSE}
 
 
 def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: int = 120,
@@ -209,7 +270,19 @@ def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: i
     Asks Claude Code's gateway, else one set in the shell, else the `claude` CLI; none with SYSTEM_DIFF_LLM=off."""
     if off():
         return None
+    paused = _PAUSED.get(str(root))
+    if paused and time.time() < paused[0]:   # it failed a moment ago: not again yet (the page says why)
+        LAST_ERROR[0] = "system-diff: " + paused[1]
+        return None
     LAST_ERROR[0] = ""
+    got = _complete(user, system, root, cfg, timeout, limit)
+    if got is not None:
+        _worked(root)
+    return got
+
+
+def _complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: int,
+              limit: int) -> Optional[Tuple[str, str]]:
     claude = claude_llm(root, cfg.get("narrate", {}).get("settings", []))
     if claude:
         # With a thinking budget first (some gateways' reasoning models need one); without it if refused.
@@ -219,13 +292,10 @@ def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: i
             except urllib.error.HTTPError as exc:
                 if exc.code == 400 and attempt.get("thinking"):
                     continue  # this model or gateway takes no thinking parameter
-                LAST_ERROR[0] = f"system-diff: {claude['model']} via {claude['source']}: HTTP {exc.code}"
-                print(f"system-diff: {claude['model']} via {claude['source']}: HTTP {exc.code}", file=sys.stderr)
+                _failed(root, f"system-diff: {claude['model']} via {claude['source']}: HTTP {exc.code}")
                 break
             except (OSError, ValueError) as exc:  # not reachable from here, or not JSON
-                LAST_ERROR[0] = f"system-diff: {claude['model']} via {claude['source']}: {type(exc).__name__}: {str(exc)[:120]}"
-                print(f"system-diff: {claude['model']} via {claude['source']}: {type(exc).__name__}: {str(exc)[:120]}",
-                      file=sys.stderr)
+                _failed(root, f"system-diff: {claude['model']} via {claude['source']}: {type(exc).__name__}: {str(exc)[:120]}")
                 break
             if text:
                 return text[:limit], f"{claude['model']} ({claude['source']})"
@@ -235,9 +305,7 @@ def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: i
             try:
                 text = ask(shell, user, tokens, timeout, system)
             except (OSError, ValueError) as exc:
-                LAST_ERROR[0] = f"system-diff: {shell['model']} via {shell['base_url']}: {type(exc).__name__}: {str(exc)[:120]}"
-                print(f"system-diff: {shell['model']} via {shell['base_url']}: {type(exc).__name__}: {str(exc)[:120]}",
-                      file=sys.stderr)
+                _failed(root, f"system-diff: {shell['model']} via {shell['base_url']}: {type(exc).__name__}: {str(exc)[:120]}")
                 break
             if text:
                 return text[:limit], f"{shell['model']} (an LLM set in this shell)"
@@ -248,9 +316,7 @@ def complete(user: str, system: str, root: Path, cfg: Dict[str, Any], timeout: i
         try:
             text, model = ask_cli(cli, user, timeout, system)
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            LAST_ERROR[0] = f"system-diff: claude -p --model {cli['model']}: {type(exc).__name__}: {str(exc)[:160]}"
-            print(f"system-diff: claude -p --model {cli['model']}: {type(exc).__name__}: {str(exc)[:160]}",
-                  file=sys.stderr)
+            _failed(root, f"system-diff: claude -p --model {cli['model']}: {type(exc).__name__}: {str(exc)[:160]}")
             return None
         if text:
             return text[:limit], f"{model} (your Claude Code)"

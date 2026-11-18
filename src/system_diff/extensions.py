@@ -7,7 +7,11 @@ An extension is found through the entry-point group "system_diff.extensions" (in
 may define:
 
     NAME = "research"                                       # its routes are /x/<NAME>/...
-    VIEWS = [("evidence", "Evidence", "e"), ...]            # (view, tab label, key); keys n r a t h b f m c are taken
+    VIEWS = [("evidence", "Evidence", "e"), ...]            # (view, tab label, key); keys n r a t h b f m c are taken;
+                                                            #   a 4th element: the system tab it stands for ("now",
+                                                            #   "review", "agents", "history"): in its own set of tabs it
+                                                            #   takes that tab's key
+    TITLE = "Research"                                      # its set's name on the switch ("Research ▸")
     def pane(ctx) -> dict                                   # the pane's page: canvas.Page(...).json(view=..., part=...)
     def web(ctx) -> dict                                    # the web page's: pane.web_view's shape ("diagram" with
                                                             #   architecture_svg, "sections" of the known kinds, and
@@ -115,6 +119,8 @@ def errors() -> List[str]:
 
 
 _APPLIES: Dict[tuple, tuple] = {}
+OPEN_VIEW: Optional[str] = None   # the view a page started by hand opens on: `system-diff watch` "now", --view VIEW
+SYSTEM_TABS = ("now", "review", "agents", "topics", "history")
 
 
 def applies(ext: Any, root: Optional[Path]) -> bool:
@@ -174,6 +180,23 @@ def views(root: Optional[Path] = None) -> List[Tuple[str, str, str]]:
             keys.add(key)
             out.append((name, label, key))
     return out
+
+
+def views_full(root: Optional[Path] = None) -> List[Dict[str, str]]:
+    """views(root), each with its extension's NAME and the system-diff tab it stands for (a VIEWS entry's 4th
+    element: research-diff's Now stands for "now"), "" for none."""
+    out = []
+    for name, label, key in views(root):
+        ext = owner(name)
+        entry = next((v for v in getattr(ext, "VIEWS", ()) or () if str(v[0]) == name), ()) if ext is not None else ()
+        stands = str(entry[3]) if len(entry) > 3 and str(entry[3]) in SYSTEM_TABS else ""
+        out.append({"view": name, "label": label, "key": key, "stands": stands,
+                    "ext": str(getattr(ext, "NAME", "") or "")})
+    return out
+
+
+def title_of(ext: Any) -> str:
+    return str(getattr(ext, "TITLE", "") or str(getattr(ext, "NAME", "") or "extension").replace("-", " ").title())
 
 
 def owner(view: str) -> Optional[Any]:
@@ -237,7 +260,8 @@ def home(root: Path) -> Optional[Dict[str, str]]:
             failed(getattr(ext, "NAME", "extension") + " home", exc)
             continue
         if isinstance(got, dict) and got.get("view") in mine:
-            return {"view": str(got["view"]), "system": "collapsed" if got.get("system") == "collapsed" else ""}
+            return {"view": str(got["view"]), "system": "collapsed" if got.get("system") == "collapsed" else "",
+                    "set": str(getattr(ext, "NAME", "") or ""), "title": title_of(ext)}
     return None
 
 

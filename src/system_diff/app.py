@@ -494,6 +494,17 @@ def handler(studio: Studio):
                         text = f"Use the `{agent}` subagent (Task tool, subagent_type {agent!r}) for this:\n\n{text}"
                     s.send(text)
                     return self._json(200, {"ok": True})
+                if act == "mode":   # its permission mode, now (auto behind a gateway refuses every action)
+                    mode = str(b.get("mode") or "")
+                    from .sessions import PERMISSION_MODES
+                    if mode not in PERMISSION_MODES:
+                        raise ValueError(f"mode is one of {', '.join(PERMISSION_MODES)}")
+                    s.apply_live("", mode)
+                    s.mode = mode
+                    return self._json(200, s.head())
+                if act == "model":   # its model, now
+                    s.apply_live(str(b.get("model") or "")[:100], "")
+                    return self._json(200, s.head())
                 if act == "interrupt":
                     s.interrupt()
                     return self._json(200, {"ok": True})
@@ -811,6 +822,8 @@ def serve(port: int = FIRST, open_it: bool = False, folder: Optional[Path] = Non
             hub._open(url)
         return 0
     studio = Studio(folder, manager=manager)
+    from . import narrate
+    narrate.QUIET[0] = True   # an LLM's failure goes to the page and the logs, not the terminal
     server = None
     for p in ([port] if port == 0 else range(port, port + 10)):
         try:

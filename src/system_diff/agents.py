@@ -726,9 +726,7 @@ def workflow(root: Path) -> Dict[str, Any]:
     data = _load(root)
     pl = data["plan"] or {}
     agents_ = [g for g in pl.get("agents") or [] if isinstance(g, dict) and g.get("name")]
-    if not agents_:
-        return {"task": "", "agents": [], "stages": []}
-    since = float(pl.get("at") or 0)
+    since = float(pl.get("at") or 0)   # with no team plan: the extensions' steps alone (auto-research's runs)
     ids = dict(data["ids"])
     names = {g["name"] for g in agents_}
     info: Dict[str, Dict[str, Any]] = {g["name"]: {"started": 0.0, "finished": 0.0, "transcript": "", "ids": [],

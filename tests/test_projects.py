@@ -125,9 +125,9 @@ def test_a_research_repository_opens_on_research(monkeypatch, repo):
     ext.home = lambda ctx: {"view": "research", "system": "collapsed"}
     ext.pane = lambda ctx: {"protocol": 2, "rows": [[["research", ""]]], "blocks": [], "width": 80, "wide": 80}
     monkeypatch.setattr(extensions, "_LOADED", [ext])
-    assert extensions.home(repo) == {"view": "research", "system": "collapsed"}
+    assert extensions.home(repo) == {"view": "research", "system": "collapsed", "set": "research", "title": "Research"}
     page = watch.page_html(repo)
-    assert 'const HOME = {"view": "research", "system": "collapsed"}' in page and "System ▸" in page
+    assert '"view": "research", "system": "collapsed"' in page and "System ▸" in page
     assert pane.show(repo, 80, "now", take=False)["home"]["view"] == "research"
     ext.home = lambda ctx: {"view": "not-a-view"}
     assert extensions.home(repo) is None
@@ -177,3 +177,47 @@ def test_the_diagram_fits_its_box_and_hovering_moves_nothing():
     page = watch.page_html()
     assert "max-height:calc(100vh - 200px)" in page and "scrollbar-gutter:stable" in page
     assert "#detail { padding:12px 16px; height:12.5em; overflow:auto;" in page and "vb[2] * 1.8" in page
+
+
+def test_research_and_system_tabs_one_set_at_a_time(monkeypatch, repo):
+    ext = types.SimpleNamespace(NAME="research", TITLE="Research", applies=lambda root: True,
+                                VIEWS=[("research", "Now", "s", "now"), ("evidence", "Evidence", "e"),
+                                       ("check", "Review", "v", "review"), ("timeline", "History", "y", "history")])
+    ext.home = lambda ctx: {"view": "research", "system": "collapsed"}
+    monkeypatch.setattr(extensions, "_LOADED", [ext])
+    monkeypatch.setattr(extensions, "OPEN_VIEW", None)            # the Studio, a background engine: the home
+    page = watch.page_html(repo)
+    assert '"set": "research"' in page and '"title": "Research"' in page
+    assert '["research", "Now", "s", "now"]' in page and '["evidence", "Evidence", "e", ""]' in page
+    assert 'data-view="research">Now<kbd>n</kbd>' in page and 'data-view="check">Review<kbd>r</kbd>' in page
+    assert "const OPEN = null;" in page and "function counterpart(view, to)" in page and "function keymap()" in page
+    monkeypatch.setattr(extensions, "OPEN_VIEW", "now")           # system-diff watch, by hand: system-diff's Now
+    assert 'const OPEN = "now";' in watch.page_html(repo)
+    monkeypatch.setattr(extensions, "OPEN_VIEW", "research")      # system-diff watch --view research
+    assert 'const OPEN = "research";' in watch.page_html(repo)
+    monkeypatch.setattr(extensions, "OPEN_VIEW", "nowhere")
+    assert "const OPEN = null;" in watch.page_html(repo)
+    from system_diff import cli
+    assert cli.parser().parse_args(["watch", "--view", "research"]).view == "research"
+    assert extensions.views_full(repo)[0]["stands"] == "now" and extensions.views_full(repo)[1]["stands"] == ""
+
+
+def test_the_page_has_one_ago_and_its_own_duration():
+    page = watch.page_html()
+    assert page.count("function ago(") == 1 and "function dur(sec)" in page and "go(histView()," in page
+
+
+def test_two_starts_at_once_start_one_engine(monkeypatch, repo):
+    """The start marker is claimed before it is written: a second caller in between waits for that start instead of
+    taking the empty marker for a stale one and starting a second engine (two engines on one repository)."""
+    from system_diff.sources import git_dir
+    marker = git_dir(repo) / watch.STARTING
+    marker.write_text("", encoding="utf-8")                 # claimed, not written yet
+    assert watch._starting(repo) is not None and marker.exists()
+    started = []
+    monkeypatch.setattr(watch.subprocess, "Popen", lambda *a, **k: started.append(a) or None)
+    assert watch.start_detached(repo, wait=0) is None and started == []
+    old = time.time() - watch.STARTING_FOR - 5
+    import os
+    os.utime(marker, (old, old))                            # an empty marker left for long: stale, removed
+    assert watch._starting(repo) is None and not marker.exists()

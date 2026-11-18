@@ -245,6 +245,9 @@ def parser() -> argparse.ArgumentParser:
     w.add_argument("--base", default="checkpoint")
     w.add_argument("--port", type=int, default=8765)
     w.add_argument("--interval", type=float, default=2.0, help="seconds between looks at the files")
+    w.add_argument("--view", default="", help="the view the page opens on, and its set of tabs (research-diff's: "
+                                              "--view research); by default system-diff's own Now")
+    w.add_argument("--auto", action="store_true", help=argparse.SUPPRESS)   # started in the background (hooks, pane)
     tu = sub.add_parser("tui", help="the pane's views (Now, Review, Agents, Topics) in a terminal tab or window "
                                     "of their own")
     tu.add_argument("--view", default="now", choices=["now", "review", "agents", "topics"])
@@ -511,7 +514,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "history":
         return _history(args, root)
     if args.cmd == "watch":
-        from . import watch
+        from . import extensions, watch
+        if not args.auto:   # started by hand: it opens on system-diff's own tabs, or on the view asked for
+            extensions.OPEN_VIEW = args.view.strip() or "now"
         watch.serve(root, args.base, args.port, args.config, args.interval)
         return 0
     if args.cmd == "tui":

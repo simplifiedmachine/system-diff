@@ -95,6 +95,9 @@ main > * { min-width:0; }
 .withnav { display:grid; grid-template-columns:1fr; max-width:1520px; margin:0 auto; }
 .withnav.on { grid-template-columns:minmax(180px, 240px) minmax(0, 1fr); }
 .withnav.on main { max-width:none; margin:0; }
+/* the page's column is as wide as its place, whatever it holds: a grid item with auto margins is sized by its content,
+   so the hover details (or an update) widened and narrowed it, and the diagram, as wide as the column, with it */
+.withnav > main { width:100%; }
 #leftnav { position:sticky; top:8px; align-self:start; max-height:calc(100vh - 16px); overflow:auto; padding:18px 0 18px 16px;
   display:grid; gap:14px; }
 #leftnav h3 { margin:0 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
@@ -316,6 +319,9 @@ dialog#agentlog h2 { margin:0; font-size:17px; } .alogmeta { color:var(--muted);
 .alog pre { margin:0; font:12px/1.45 var(--mono, monospace); background:var(--paper); border-radius:8px; padding:7px 9px; white-space:pre-wrap; max-height:240px; overflow:auto; }
 .alog.result.err pre { border-left:3px solid #d1453b; }
 html.in-studio, html.in-studio body { background:transparent; }
+/* inside the Studio its session column is the conversation: this page's own chat and Send box step aside */
+html.in-studio form.send, html.in-studio #chatbtn, html.in-studio aside.chat { display:none !important; }
+html.in-studio body.chat-open { padding-right:0 !important; }
 html.in-studio header.top { background:color-mix(in srgb, var(--card) 62%, transparent); -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px); }
 #shown { position:sticky; top:0; z-index:30; display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:8px 16px;
   background:var(--card); border-bottom:2px solid var(--accent); font-size:14px; }
@@ -336,6 +342,9 @@ nav.projects a.all { margin-left:auto; font-size:12.5px; padding:5px 4px 6px 12p
 /* the conversation with Claude: pinned on the right (a bottom sheet on narrow screens) */
 #chatbtn[aria-pressed="true"] { border-color:var(--work); color:var(--work); background:var(--work-bg); }
 #chatbtn .count { font-size:11px; margin-left:4px; color:var(--muted); }
+#chatbtn.llm-down::after { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:#d1453b; margin-left:6px; vertical-align:1px; }
+aside.chat li.llmerr { border-left:3px solid #d1453b; padding:8px 10px; margin:6px 10px; border-radius:8px; background:rgba(209,69,59,.07); list-style:none; overflow-wrap:anywhere; }
+aside.chat li.llmerr .meta { color:var(--muted); font-size:12px; margin-top:3px; }
 aside.chat { position:fixed; z-index:25; right:0; top:0; bottom:var(--sendh, 76px); width:min(400px, 34vw); display:flex;
              flex-direction:column; background:var(--card); border-left:1px solid var(--line); box-shadow:-4px 0 16px rgba(0,0,0,.05); }
 body.chat-open { padding-right:min(400px, 34vw); }
@@ -467,11 +476,39 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
   <span id="sendnote" aria-live="polite"></span><button id="sendbtn" class="primary" type="submit">Send</button></form>
 <script>
 const TOKEN = "__TOKEN__";
+// inside the Studio (system-diff app): told once, as the page loads (its address changes as you move around)
+const IN_STUDIO = window.parent !== window && /(^|[?&])studio=1(&|$)/.test(location.search);
 const $ = id => document.getElementById(id);
 const VIEWS = ["now", "review", "agents", "topics", "history"].concat(__EXT_VIEWS__);
 const EXT_KEYS = __EXT_KEYS__;   // an extension's tab keys: {key: view}
 const HOME = __HOME__;           // the view this repository opens on, when an extension says so (research: its own)
 const SYSTEM_VIEWS = ["now", "review", "agents", "topics", "history"];
+const SETS = __SETS__;           // where an extension is home: its tabs, a set of their own, [view, label, key, stands for]
+const OPEN = __OPEN__;           // a page started by hand opens here (system-diff watch: Now; --view research: research's)
+const PKEY = "__PKEY__";         // this project, for what is remembered per project
+const SYSKEY = { now:"n", review:"r", agents:"a", topics:"t", history:"h" };
+const SETMODE = !!(HOME && HOME.system === "collapsed" && SETS[HOME.set]);
+function setOf(view) {
+  if (SYSTEM_VIEWS.includes(view)) return "system";
+  for (const [n, st] of Object.entries(SETS)) if (st.views.some(v => v[0] === view)) return n;
+  return "";
+}
+function counterpart(view, to) {   // the place in the other set: research's Now for Now, and back
+  if (to === "system") { const v = (SETS[setOf(view)] || { views:[] }).views.find(v => v[0] === view); return (v && v[3]) || "now"; }
+  const v = SETS[to].views.find(v => v[3] === view); return v ? v[0] : HOME.view;
+}
+function rememberSet(n) { try { localStorage.setItem("sd-set:" + PKEY, n); } catch (e) {} }
+function rememberedSet() { try { return localStorage.getItem("sd-set:" + PKEY) || ""; } catch (e) { return ""; } }
+function histView() { return SYSTEM_VIEWS.includes(ui.view) ? "history" : ui.view; }
+function keymap() {   // the keys of the row shown: an extension's tab takes the key of the tab it stands for
+  if (SETMODE && setOf(ui.view) === HOME.set) {
+    const m = {};
+    for (const v of SETS[HOME.set].views) { if (v[2]) m[v[2]] = v[0]; if (v[3]) m[SYSKEY[v[3]]] = v[0]; }
+    return m;
+  }
+  const m = { n:"now", r:"review", a:"agents", t:"topics", h:"history" };
+  return SETMODE ? m : { ...m, ...EXT_KEYS };
+}
 const ui = { view:"now", part:"", scope:"", homed:false, zoom:-1, history:[], data:null, last:{}, pick:"", mine:false, hover:null, seq:0, cmp:[] };
 const projects = { list:[] };
 // the conversation with Claude: the panel, what Claude points at, what the person is looking at (sent with a question)
@@ -481,8 +518,13 @@ const talk = { open:false, data:null, stamp:null, point:[], pointAt:0, dismissed
   if (VIEWS.includes(h.get("view"))) ui.view = h.get("view");
   ui.part = h.get("part") || "";
   ui.scope = h.get("scope") || "";
-  ui.homed = !!h.get("view");   // a view asked for: the extension's home does not override it
-  if (!ui.homed && HOME && VIEWS.includes(HOME.view) && !(HOME.system === "collapsed" && (() => { try { return localStorage.getItem("sd-system-first:" + location.port) === "1"; } catch (e) { return false; } })())) ui.view = HOME.view;
+  ui.homed = !!h.get("view");   // a view in the address: it wins
+  if (!ui.homed) {   // else the command's (a page started by hand), else the set chosen last here, else the home
+    const set = rememberedSet();
+    if (OPEN && VIEWS.includes(OPEN)) ui.view = OPEN;
+    else if (SETMODE && set === "system") ui.view = "now";
+    else if (HOME && VIEWS.includes(HOME.view) && (SETMODE || !set)) ui.view = HOME.view;
+  }
   const z = parseInt(h.get("zoom"), 10); if (z >= -1 && z <= 2) ui.zoom = z;
 })();
 function el(tag, text, cls) {
@@ -639,7 +681,7 @@ function historyList(s) {
       const first = (s.items || []).find(h => h.eid === ui.cmp[0]);
       bar.append(el("span", "◆ from " + (first ? first.when : "") + ": tick another change to compare, or"));
       const now = el("button", "compare with now"); now.type = "button";
-      now.onclick = () => go("history", compareKey(block, ui.cmp[0], "now"));
+      now.onclick = () => go(histView(), compareKey(block, ui.cmp[0], "now"));
       const clear = el("button", "clear"); clear.type = "button";
       clear.onclick = () => { ui.cmp = []; ui.last.before = ""; render(ui.data); };
       bar.append(now, clear);
@@ -659,11 +701,11 @@ function historyList(s) {
       lab.addEventListener("click", e => e.stopPropagation());
       box.addEventListener("change", () => {
         if (box.checked) ui.cmp = [...ui.cmp.filter(x => x !== h.eid), h.eid]; else ui.cmp = ui.cmp.filter(x => x !== h.eid);
-        if (ui.cmp.length >= 2) { const [a, b] = ui.cmp.slice(-2); ui.cmp = []; go("history", compareKey(block, a, b)); }
+        if (ui.cmp.length >= 2) { const [a, b] = ui.cmp.slice(-2); ui.cmp = []; go(histView(), compareKey(block, a, b)); }
         else { ui.last.before = ""; render(ui.data); }
       });
       const now = el("button", "Compare with now", "withnow"); now.type = "button";
-      now.addEventListener("click", e => { e.stopPropagation(); ui.cmp = []; go("history", compareKey(block, h.eid, "now")); });
+      now.addEventListener("click", e => { e.stopPropagation(); ui.cmp = []; go(histView(), compareKey(block, h.eid, "now")); });
       head.append(lab, now);
     }
     li.append(head, el("div", h.asked, "asked" + (h.request ? "" : " plain")));
@@ -677,7 +719,7 @@ function historyList(s) {
     const off = () => { ui.hover = null; applyPick(); };
     li.addEventListener("mouseenter", on); li.addEventListener("focus", on);
     li.addEventListener("mouseleave", off); li.addEventListener("blur", off);
-    const open = () => go("history", block + "#" + (h.eid || h.id.slice(3)));
+    const open = () => go(histView(), block + "#" + (h.eid || h.id.slice(3)));
     li.addEventListener("click", open);
     li.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); open(); } });
     ul.append(li);
@@ -700,7 +742,7 @@ function compareHead(s) {
   if (h.reading) box.append(el("div", "Reading the system at that point… this fills in when it is read.", "note"));
   else if (h.gone) box.append(el("div", "The system at that point is no longer kept: the requests made in between are below.", "note"));
   const acts = el("div", null, "acts"), back = el("button", "← Back to the history"); back.type = "button";
-  back.onclick = () => go("history", h.block || "");
+  back.onclick = () => go(histView(), h.block || "");
   acts.append(back);
   if (h.to && !h.to.now && h.from) {
     const now = el("button", "Compare “from” with now"); now.type = "button";
@@ -731,7 +773,7 @@ function hideTip() { clearTimeout(tip.timer); tip.for = null; if (tip.box) tip.b
 function showTipSoon(n) {
   const card = hoverOf(hoverId(n));
   if (!card) { hideTip(); return; }
-  if (tip.for === n && !tip.box.hidden) return;
+  if (tip.for === n && tip.box && !tip.box.hidden) return;   // the box is made on first use
   clearTimeout(tip.timer); tip.for = n;
   tip.timer = setTimeout(() => {
     if (tip.for !== n || !n.isConnected) return;
@@ -779,10 +821,10 @@ function frame(s) {
 RENDER.frame = frame;
 // ---- the team's workflow: stages (in parallel within one), who waits for whom, each one's session on click ----
 const SVGNS = "http://www.w3.org/2000/svg";
-function ago(sec) { sec = Math.max(0, Math.round(sec)); return sec < 60 ? sec + "s" : sec < 3600 ? Math.floor(sec / 60) + "m " + (sec % 60) + "s" : Math.floor(sec / 3600) + "h " + Math.floor(sec % 3600 / 60) + "m"; }
+function dur(sec) { sec = Math.max(0, Math.round(sec)); return sec < 60 ? sec + "s" : sec < 3600 ? Math.floor(sec / 60) + "m " + (sec % 60) + "s" : Math.floor(sec / 3600) + "h " + Math.floor(sec % 3600 / 60) + "m"; }
 function wfStatusText(x) {
   if (x.status === "running") return "running";
-  if (x.status === "done") return "done" + (x.started && x.finished ? " in " + ago(x.finished - x.started) : "");
+  if (x.status === "done") return "done" + (x.started && x.finished ? " in " + dur(x.finished - x.started) : "");
   if (x.status === "waiting") return "waits for " + (x.waiting_on || x.waits_for || []).join(", ");
   if (x.status === "queued") return x.kind === "step" ? "next" : "ready to launch";
   return x.status || "";
@@ -793,7 +835,7 @@ function wfNode(x) {
   if (x.by && x.kind === "step") nm.append(el("span", x.by, "by"));
   if (x.added) nm.append(el("span", "added", "by"));
   const st = el("span", wfStatusText(x), "st");
-  if (x.status === "running" && x.started) { const t = el("span", " · " + ago(Date.now() / 1000 - x.started), "ticker"); t.dataset.since = x.started; st.append(t); }
+  if (x.status === "running" && x.started) { const t = el("span", " · " + dur(Date.now() / 1000 - x.started), "ticker"); t.dataset.since = x.started; st.append(t); }
   b.append(nm, st);
   const meta = x.kind === "step" ? (x.detail || (x.kind_of_step || "")) :
     [x.area !== x.name ? x.area : "", x.edits ? x.edits + " edit" + (x.edits > 1 ? "s" : "") : "", x.reads ? x.reads + " read" + (x.reads > 1 ? "s" : "") : ""].filter(Boolean).join(" · ");
@@ -862,7 +904,7 @@ function workflowCard(s) {
   return c;
 }
 RENDER.workflow = workflowCard;
-setInterval(() => { for (const t of document.querySelectorAll(".ticker[data-since]")) t.textContent = " · " + ago(Date.now() / 1000 - +t.dataset.since); }, 1000);
+setInterval(() => { for (const t of document.querySelectorAll(".ticker[data-since]")) t.textContent = " · " + dur(Date.now() / 1000 - +t.dataset.since); }, 1000);
 const alog = { name:"", tab:"session", timer:0, data:null };
 async function openAgentLog(name) {
   alog.name = name; alog.tab = "session"; alog.data = null;
@@ -1356,6 +1398,14 @@ function renderTalk(c) {
   const list = $("chatlist"), atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
   list.replaceChildren();
   const items = Array.isArray(c.items) ? c.items : [];
+  const llm = c.llm;
+  $("chatbtn").classList.toggle("llm-down", !!(llm && llm.error));
+  if (llm && llm.error) {   // the model system-diff's own LLM features use (summaries, descriptions) could not be reached
+    const li = el("li", null, "llmerr");
+    li.append(el("b", "Your model could not be reached"), el("span", " (" + new Date(llm.at * 1000).toLocaleTimeString() + "): "), el("span", llm.error));
+    li.append(el("div", "File summaries and descriptions wait; system-diff tries again after " + new Date(llm.until * 1000).toLocaleTimeString() + ".", "meta"));
+    list.append(li);
+  }
   if (!items.length) list.append(el("li", "What you send to Claude below shows here with its answer, and the parts it names light up in the diagram.", "empty-note"));
   for (const it of items) {
     const li = el("li", null, "q st-" + String(it.status || "").replace(/\s+/g, "-"));
@@ -1524,12 +1574,19 @@ function aboutText() {
   if (ui.mine && ui.pick && ui.pick.startsWith("b:")) {
     const card = hoverOf(ui.pick), g = (ui.data && ui.data.diagram) || {}, x = keyed(g.details, ui.pick);
     parts.push(String((card && card.title) || (x && x.title) || rawId(ui.pick)).split("  @")[0]);
+  } else if (ui.part && SYSTEM_VIEWS.includes(ui.view)) {   // nothing picked: the part zoomed into is what you look at
+    const card = hoverOf("b:" + ui.part);
+    parts.push(String((card && card.title) || ui.part).split("  @")[0]);
   }
   if (talk.file && !parts.includes(talk.file)) parts.push(talk.file);
   return parts.join(" › ");
 }
 function paintAbout() {
   const t = aboutText(), box = $("about");
+  if (IN_STUDIO) {
+    // inside the Studio its session column is the chat: what you look at goes there, with your message
+    try { parent.postMessage({ studio:"about", about:t || "" }, location.origin); } catch (e) {}
+  }
   box.hidden = !t || talk.aboutOff === t;
   $("abouttext").textContent = t ? "About: " + t : "";
   box.title = t ? "Sent with your question, so Claude knows what you are looking at" : "";
@@ -1609,31 +1666,38 @@ function render(d) {
   if (changed("files", g.files || {})) prefetch([...new Set(Object.values(g.files || {}).map(v => fileOf(v).path))].slice(0, 8), false);
   if (changed("nav", [d.nav || [], d.repos || [], d.projects || {}, ui.scope])) paintNav(d.nav || [], d.repos || [], d.projects || {});
 }
-function systemFirst() { try { return localStorage.getItem("sd-system-first:" + location.port) === "1"; } catch (e) { return false; } }
 function paintChrome() {
-  const fold = !!(HOME && HOME.system === "collapsed") && !systemFirst() && !SYSTEM_VIEWS.includes(ui.view);
-  for (const b of document.querySelectorAll("#tabs button")) {
+  // where an extension is home (a research repository): one set of tabs at a time, a switch both ways
+  const cur = SETMODE ? (setOf(ui.view) || "system") : "";
+  for (const b of document.querySelectorAll("#tabs button[data-view]")) {
     b.setAttribute("aria-selected", String(b.dataset.view === ui.view));
-    if (SYSTEM_VIEWS.includes(b.dataset.view)) b.hidden = fold;
+    const own = setOf(b.dataset.view);
+    b.hidden = SETMODE && (own === "system" || own === HOME.set) && own !== cur;
   }
-  let sys = $("systab");
-  if (fold && !sys) {   // system-diff's own tabs behind one: a research repository opens on research
-    sys = el("button", "System ▸"); sys.id = "systab"; sys.type = "button"; sys.title = "The system's views: Now, Review, Agents, Topics, History";
-    sys.addEventListener("click", () => { try { localStorage.setItem("sd-system-first:" + location.port, "1"); } catch (e) {} go("now", ""); });
-    $("tabs").prepend(sys);
+  let sw = $("settab");
+  if (SETMODE && !sw) {
+    sw = el("button"); sw.id = "settab"; sw.type = "button";
+    sw.addEventListener("click", () => {
+      const to = (setOf(ui.view) || "system") === "system" ? HOME.set : "system";
+      rememberSet(to); go(counterpart(ui.view, to), "");
+    });
+    $("tabs").prepend(sw);
   }
-  if (sys) sys.hidden = !fold;
+  if (sw) {
+    sw.textContent = cur === "system" ? SETS[HOME.set].title + " ▸" : "System ▸";
+    sw.title = cur === "system" ? "Back to " + SETS[HOME.set].title + "'s tabs" : "The system's views: Now, Review, Agents, Topics, History";
+  }
   $("back").disabled = !ui.history.length;
   $("zoomlabel").textContent = ui.zoom < 0 ? "auto" : ["detailed", "compact", "outline"][ui.zoom];
   $("in").disabled = ui.zoom === 0; $("out").disabled = ui.zoom === 2;
   const h = new URLSearchParams({ view:ui.view }); if (ui.part) h.set("part", ui.part); if (ui.scope) h.set("scope", ui.scope); if (ui.zoom >= 0) h.set("zoom", ui.zoom);
-  history.replaceState(null, "", "#" + h);
+  history.replaceState(null, "", location.pathname + location.search + "#" + h);   // the query stays (?studio=1)
   paintProjects();
 }
 // ---- the project tabs: one per running engine, plain links to each engine's own page, keeping the view ----
 __PROJECT_HREF__
 // inside the Studio (system-diff app): its own column lists the projects
-const STUDIO = window.parent !== window && /(^|[?&])studio=1(&|$)/.test(location.search);
+const STUDIO = IN_STUDIO;
 if (STUDIO) document.documentElement.classList.add("in-studio");   // the Studio's glass shows through
 function paintProjects() {
   const nav = $("projects"), key = JSON.stringify([projects.list, ui.view]);
@@ -1738,7 +1802,7 @@ function zoomBy(d) {
   if (z === ui.zoom) return;
   ui.zoom = z; ui.last = {}; ui.version = null; paintChrome(); load();
 }
-for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => go(b.dataset.view, "");
+for (const b of document.querySelectorAll("#tabs button[data-view]")) b.onclick = () => go(b.dataset.view, "");
 $("back").onclick = back;
 $("follow").onclick = () => go("now", "");
 $("out").onclick = () => zoomBy(1);
@@ -1776,11 +1840,11 @@ document.addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
   if (t && (t.isContentEditable || /^(TEXTAREA|INPUT|SELECT)$/.test(t.tagName))) return;   // typing, not a shortcut
-  const tab = { n:"now", r:"review", a:"agents", t:"topics", ...EXT_KEYS }[e.key];
-  if (tab) go(tab, "");
-  else if (e.key === "h") go("history", ui.mine && ui.pick && ui.pick.startsWith("b:") ? rawId(ui.pick) : "");
+  const tab = keymap()[e.key];   // the keys of the row shown
+  if (tab === "history") go("history", ui.mine && ui.pick && ui.pick.startsWith("b:") ? rawId(ui.pick) : "");
+  else if (tab) go(tab, "");
   else if (e.key === "b" || e.key === "Backspace") back();
-  else if (e.key === "f") go("now", "");
+  else if (e.key === "f") go(SETMODE && setOf(ui.view) === HOME.set ? HOME.view : "now", "");
   else if (e.key === "c") setTalk(!talk.open);
   else if (e.key === "[") switchProject(-1);
   else if (e.key === "]") switchProject(1);
@@ -2529,11 +2593,26 @@ def page_html(root: Optional[Path] = None) -> str:
         home = extensions.home(root) if root is not None and ext else None
     except Exception:  # noqa: BLE001
         home = None
+    full = extensions.views_full(root) if ext else []
+    sets: Dict[str, Any] = {}
+    if home and home.get("system") == "collapsed" and home.get("set"):
+        sets[home["set"]] = {"title": home.get("title") or home["set"],
+                             "views": [[v["view"], v["label"], v["key"], v["stands"]] for v in full if v["ext"] == home["set"]]}
+    keys = {"now": "n", "review": "r", "agents": "a", "topics": "t", "history": "h"}
+    shown_key = {v["view"]: (keys[v["stands"]] if v["ext"] in sets and v["stands"] else v["key"]) for v in full}
+    known = set(VIEWS) | {v for v, _l, _k in ext}
+    opening = extensions.OPEN_VIEW if extensions.OPEN_VIEW in known else None
+    import hashlib
+    pkey = hashlib.sha1(str(Path(root).resolve()).encode("utf-8", "surrogateescape")).hexdigest()[:10] if root else ""
     tabs = "".join(f'<button role="tab" data-view="{html.escape(v)}">{html.escape(label)}'
-                   + (f"<kbd>{html.escape(k)}</kbd>" if k else "") + "</button>" for v, label, k in ext)
+                   + (f"<kbd>{html.escape(shown_key.get(v, k))}</kbd>" if shown_key.get(v, k) else "") + "</button>"
+                   for v, label, k in ext)
     return (PAGE.replace("__EXT_TABS__", tabs).replace("__EXT_VIEWS__", json.dumps([v for v, _l, _k in ext]))
             .replace("__EXT_KEYS__", json.dumps({k: v for v, _l, k in ext if k}))
-            .replace("__HOME__", json.dumps(home).replace("</", "<\\/")))
+            .replace("__HOME__", json.dumps(home).replace("</", "<\\/"))
+            .replace("__SETS__", json.dumps(sets).replace("</", "<\\/"))
+            .replace("__OPEN__", json.dumps(opening))
+            .replace("__PKEY__", pkey))
 PANE_LOCK = threading.Lock()
 
 
@@ -2626,7 +2705,10 @@ def chat_view(w: "Watcher", page: Optional[Dict[str, Any]] = None) -> Dict[str, 
         if _CHAT_CACHE.get("key") != key:
             _CHAT_CACHE["value"] = chat.view(w.root, chat_index(w, page))
             _CHAT_CACHE["key"] = key
-        return _CHAT_CACHE["value"]
+        out = dict(_CHAT_CACHE["value"])
+        from . import narrate
+        out["llm"] = narrate.status(w.root)   # your model could not be reached: said here, not in the terminal
+        return out
     except Exception as exc:  # noqa: BLE001 - the panel is extra; the page goes on
         return {"stamp": "", "items": [], "pointing": None, "notes": {}, "error": f"{type(exc).__name__}: {exc}"}
 
@@ -2937,7 +3019,11 @@ def _starting(root: Path) -> Optional[dict]:
     that is still there (where that can be told). A stale one is removed."""
     f = git_dir(root) / STARTING
     try:
-        info = json.loads(f.read_text(encoding="utf-8"))
+        raw = f.read_text(encoding="utf-8")
+        if not raw.strip():   # claimed a moment ago, not written yet: a start under way, not a stale file
+            if time.time() - f.stat().st_mtime < STARTING_FOR:
+                return {"pid": 0, "port": 0, "at": f.stat().st_mtime}
+        info = json.loads(raw)
         if time.time() - float(info["at"]) < STARTING_FOR and _alive(int(info["pid"])):
             return info
     except FileNotFoundError:
@@ -2995,7 +3081,7 @@ def start_detached(root: Path, port: int = 8765, wait: float = 3.0) -> Optional[
             kw["start_new_session"] = True
         try:
             child = subprocess.Popen([sys.executable, "-m", "system_diff", "--repo", str(root), "watch",
-                                      "--port", str(free)], **kw)
+                                      "--port", str(free), "--auto"], **kw)
             os.write(fd, json.dumps({"pid": child.pid, "port": free, "at": time.time()}).encode())
         except Exception:
             os.close(fd)
@@ -3135,7 +3221,8 @@ def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: O
     Why it stops is kept in .git/system-diff/engine.log (live.log): its start, its stop and the reason, and every
     error its threads meet, with the traceback. A thread that keeps failing, or the engine's reading thread ending,
     stops the whole server cleanly (web.json removed), so the next look starts a fresh one."""
-    from . import __version__
+    from . import __version__, narrate
+    narrate.QUIET[0] = True   # the LLM's failures go to engine.log and the page, never this terminal
     try:
         w = Watcher(root, base, config_path, interval)
         server = None

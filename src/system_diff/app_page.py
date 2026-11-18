@@ -120,7 +120,11 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
 .compose { border-top:1px solid var(--line); padding:10px 12px 12px; display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
 .compose .row .st { min-width:0; }
 .compose textarea { width:100%; min-height:64px; max-height:40vh; resize:vertical; border-radius:14px; padding:9px 12px; }
-.compose .row { display:flex; gap:6px; align-items:center; } .compose .row .st { flex:1; color:var(--muted); font-size:12px; }
+.compose .row { display:flex; gap:6px; align-items:center; }
+.aboutchip { justify-self:start; display:flex; gap:6px; align-items:center; max-width:100%; font-size:12px; padding:3px 4px 3px 10px;
+  border-radius:999px; background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--ink); }
+.aboutchip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.aboutchip button { border:0; box-shadow:none; background:transparent; padding:0 6px; font-size:14px; line-height:1; } .compose .row .st { flex:1; color:var(--muted); font-size:12px; }
 .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent); margin-right:6px; animation:p 1.2s ease-in-out infinite; }
 @keyframes p { 50% { opacity:.25; transform:scale(.8); } }
 #agentsbox { overflow:auto; overflow-x:hidden; padding:12px; display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:10px; }
@@ -188,6 +192,7 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
     <div id="feed" aria-live="polite"></div>
     <div id="agentsbox" hidden></div>
     <div class="compose" id="compose">
+      <div class="aboutchip" id="aboutchip" hidden title="Sent with your message, so Claude knows what you are looking at on the page"><span id="abouttext"></span><button type="button" id="aboutx" aria-label="Do not send this">×</button></div>
       <textarea id="msg" placeholder="Ask Claude… (Enter sends, Shift+Enter a new line)" aria-label="Message to Claude"></textarea>
       <div class="row"><span class="st" id="sstatus"></span><button type="button" id="stop" class="danger" disabled>Interrupt</button><button type="button" id="closesess">Close</button><button type="button" id="send" class="primary">Send</button></div>
     </div>
@@ -270,6 +275,7 @@ function findProject(pred) {
 }
 async function openProject(p) {
   const same = S.project === p.id;
+  if (!same) { S.about = ""; S.aboutOff = ""; paintAboutChip(); }
   S.project = p.id; S.scope = p.scope || ""; S.path = p.path; keep.set("project", p.id);
   $("ptitle").textContent = p.name + (p.branch ? " · " + p.branch : "");
   paintProjects();
@@ -288,6 +294,21 @@ $("addform").addEventListener("submit", async e => {
         await loadProjects(); const p = findProject(x => x.id === got.id); if (p) openProject(p); }
   catch (err) { $("projnote").textContent = err.message; }
 });
+// what you look at on the project's page (a part, a file): sent with your message, as the page itself would
+S.about = ""; S.aboutOff = "";
+function paintAboutChip() {
+  const on = !!S.about && S.aboutOff !== S.about;
+  $("aboutchip").hidden = !on; $("abouttext").textContent = on ? "About: " + S.about : "";
+}
+$("aboutx").addEventListener("click", () => { S.aboutOff = S.about; paintAboutChip(); });
+addEventListener("message", e => {
+  if (e.origin !== location.origin || !e.data || e.data.studio !== "about") return;
+  S.about = String(e.data.about || ""); paintAboutChip();
+});
+function withAbout(text) {
+  const about = (S.about && S.aboutOff !== S.about) ? S.about.replace(/\]/g, ")").split(/\s+/).join(" ").slice(0, 200) : "";
+  return about ? "[About: " + about + "]\n" + text : text;
+}
 addEventListener("message", e => {   // the project's page: open a session it names (a workflow step's)
   if (e.origin !== location.origin || !e.data || e.data.studio !== "session" || !e.data.id) return;
   tab("session"); if (keep.get("chat", "1") === "0") $("togglechat").click();
@@ -313,7 +334,11 @@ async function loadChoices() {
   st.value = d.settings_profile || "claude-code";
   const ml = $("models"); ml.replaceChildren(); for (const m of c.models) if (m) option(ml, m, m);
   $("model").value = d.model || "";
-  const md = $("mode"); md.replaceChildren(); for (const m of c.permission_modes) option(md, m, m === "bypassPermissions" ? m + " (no questions: dangerous)" : m);
+  const say = { default:"default: asks you before each action", acceptEdits:"acceptEdits: edits files without asking, asks for the rest",
+                plan:"plan: plans only, changes nothing", dontAsk:"dontAsk: does only what is allowed, never asks",
+                auto:"auto: a safety check decides" + (c.gateway ? " (not available through your gateway)" : ""),
+                bypassPermissions:"bypassPermissions: never asks (dangerous)" };
+  const md = $("mode"); md.replaceChildren(); for (const m of c.permission_modes) option(md, m, say[m] || m);
   md.value = d.permission_mode || "default"; paintMode();
   const ef = $("effort"); ef.replaceChildren(); for (const x of c.efforts || [""]) option(ef, x, x || "the settings' default");
   ef.value = d.effort || "";
@@ -326,9 +351,26 @@ function paintOptLine() {
   const st = $("settings"), name = st.selectedOptions[0] ? st.selectedOptions[0].textContent.split(" · ")[0] : "";
   $("optline").textContent = " · " + [$("model").value || "default model", $("mode").value, $("effort").value ? "effort " + $("effort").value : "", name].filter(Boolean).join(" · ");
 }
-function paintMode() { $("mode").classList.toggle("danger", $("mode").value === "bypassPermissions"); paintOptLine(); }
-$("mode").addEventListener("change", () => { paintMode(); offerApply(); });
-for (const id of ["settings", "model", "agentpick", "effort"]) { $(id).addEventListener("change", offerApply); $(id).addEventListener("change", paintOptLine); }
+function paintMode() {
+  $("mode").classList.toggle("danger", $("mode").value === "bypassPermissions"); paintOptLine();
+  const old = $("autowarn"); if (old) old.remove();
+  if ($("mode").value === "auto" && S.choices && S.choices.gateway) {   // its safety check is Anthropic's: not behind a gateway
+    const n = el("div", "Auto mode needs Anthropic's safety check, which " + S.choices.gateway + " does not pass on: Claude would be refused every action, without asking you. Use default: it asks you here.", "notice");
+    n.id = "autowarn"; $("opts").after(n);
+  }
+}
+$("mode").addEventListener("change", () => paintMode());
+for (const id of ["settings", "agentpick", "effort"]) { $(id).addEventListener("change", offerApply); $(id).addEventListener("change", paintOptLine); }
+// the permission mode and the model change the open session at once (the others need a new one: Apply)
+async function live(what) {
+  const s = S.session;
+  if (!s || !s.id || ["closed", "failed"].includes(s.status)) return;
+  try { const h = await api("api/sessions/" + s.id + "/" + what, what === "mode" ? { mode:$("mode").value } : { model:$("model").value.trim() });
+        S.session = { ...S.session, ...h }; paintStatus(); }
+  catch (e) { $("sstatus").textContent = e.message; }
+}
+$("mode").addEventListener("change", () => live("mode"));
+$("model").addEventListener("change", () => { paintOptLine(); live("model"); });
 function choice() { return { project:S.project, settings_profile:$("settings").value, model:$("model").value.trim(),
                              permission_mode:$("mode").value, agent:$("agentpick").value, effort:$("effort").value }; }
 function offerApply() { $("apply").hidden = !(S.session && S.session.claude_session && S.session.status !== "closed"); }
@@ -452,7 +494,15 @@ function paint(ev) {
     else if (ev.type === "error") f.append(el("div", ev.text, "ev err"));
     else if (ev.type === "note") f.append(el("div", ev.text, "ev meta"));
     else if (ev.type === "interrupt") f.append(el("div", "Interrupted", "ev meta"));
-    else if (ev.type === "system" && ev.subtype === "init") f.append(el("div", "Claude Code started · " + (ev.model || "") + " · " + ev.tools + " tools" + ((ev.mcp || []).length ? " · MCP: " + ev.mcp.join(", ") : ""), "ev meta"));
+    else if (ev.type === "system" && ev.subtype === "init") {
+      f.append(el("div", "Claude Code started · " + (ev.model || "") + " · permissions: " + (ev.permission_mode || "default") + " · " + ev.tools + " tools" + ((ev.mcp || []).length ? " · MCP: " + ev.mcp.join(", ") : ""), "ev meta"));
+      if (ev.permission_mode === "auto" && S.choices && S.choices.gateway) {   // every action would be refused: say so, offer the way out
+        const n = el("div", null, "card"), b = el("button", "Ask me instead", "primary"); b.type = "button";
+        n.append(el("div", "This session runs in auto mode, whose safety check " + S.choices.gateway + " does not pass on: Claude will be refused every action.", "q"));
+        b.addEventListener("click", async () => { try { await api("api/sessions/" + S.session.id + "/mode", { mode:"default" }); n.replaceChildren(el("div", "Now asking you: each action Claude wants comes here as a card.", "q")); } catch (e) { alert(e.message); } });
+        n.append(b); f.append(n);
+      }
+    }
     else if (ev.type === "system" && ev.text) f.append(el("div", ev.text, "ev meta"));
     else if (ev.type === "start" && ev.resume) f.append(el("div", "Resuming conversation " + ev.resume, "ev meta"));
     else if (ev.type === "status" && ev.status === "failed") f.append(el("div", "Could not start Claude Code: " + (ev.error || ""), "ev err"));
@@ -476,7 +526,7 @@ async function send() {
   const text = $("msg").value.trim(); if (!text) return;
   let s = S.session && S.session.status && !["closed", "failed"].includes(S.session.status) ? S.session : await start();
   if (!s) return;
-  try { await api("api/sessions/" + s.id + "/send", { text }); $("msg").value = ""; } catch (e) { $("sstatus").textContent = e.message; }
+  try { await api("api/sessions/" + s.id + "/send", { text:withAbout(text) }); $("msg").value = ""; } catch (e) { $("sstatus").textContent = e.message; }
 }
 $("send").addEventListener("click", send);
 $("msg").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });

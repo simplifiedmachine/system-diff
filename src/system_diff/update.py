@@ -253,13 +253,12 @@ def run(channel: str = "", yes: bool = False, dry: bool = False, mcp: bool = Tru
         relaunched: bool = False, say=print, ask=input) -> int:
     from . import __version__
     if from_launcher() and not relaunched and not dry:
-        # this process runs from system-diff.exe, which pip must replace: again, through Python, in its own window
-        args = [sys.executable, "-m", "system_diff", "update", "--relaunched"] + \
-               (["--" + channel] if channel else []) + (["--yes"] if yes else []) + \
-               ([] if mcp else ["--no-mcp"]) + ([] if plugin else ["--no-plugin"])
-        subprocess.Popen(args, creationflags=0x00000010)   # CREATE_NEW_CONSOLE: its own window, to read and answer
-        say("system-diff update: continuing in a new window (system-diff.exe cannot replace itself while it runs).")
-        return 0
+        # this process runs from system-diff.exe, which pip must replace, and a program cannot replace itself
+        flags = " ".join((["--" + channel] if channel else []) + (["--yes"] if yes else []) +
+                         ([] if mcp else ["--no-mcp"]) + ([] if plugin else ["--no-plugin"]))
+        say("On Windows, run it through Python (system-diff.exe cannot replace itself while it runs):\n"
+            f"  python -m system_diff update{(' ' + flags) if flags else ''}")
+        return 1
     if relaunched:
         time.sleep(1.5)   # the launcher that started this one ends first
     channel = channel or channel_of(__version__)

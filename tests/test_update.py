@@ -80,3 +80,11 @@ def test_ports_are_taken_exclusively_on_windows():
     for server in (watch._Server, app._Server, hub._HubServer):
         assert issubclass(server, hub.Exclusive)
     assert hub.Exclusive.allow_reuse_address is (__import__("os").name != "nt")
+
+
+
+def test_from_the_windows_launcher_it_says_what_to_run(monkeypatch):
+    monkeypatch.setattr(update, "from_launcher", lambda argv0="": True)
+    said = []
+    assert update.run(channel="nightly", yes=True, say=said.append) == 1
+    assert said and "python -m system_diff update --nightly --yes" in said[0]

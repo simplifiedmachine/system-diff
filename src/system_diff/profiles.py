@@ -7,6 +7,7 @@ says key, token, secret, password or credential is shown as •••.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -79,7 +80,23 @@ def choices(project: Path, home: Optional[Path] = None) -> Dict[str, Any]:
                           "path": "", "model": "", "provider": "", "permissions": {}, "env": {}}] + found,
             "models": [""] + models + [m for m in MODELS if m not in models],
             "permission_modes": list(PERMISSION_MODES), "danger": ["bypassPermissions"],
+            "gateway": gateway(project, home, found),
             "efforts": [""] + list(EFFORTS)}
+
+
+def gateway(project: Path, home: Optional[Path] = None, found: Optional[List[Dict[str, Any]]] = None) -> str:
+    """Where Claude Code's requests go, when not straight to Anthropic (a gateway, Bedrock, Vertex, Foundry): auto
+    mode's safety check runs on Anthropic's servers, and behind most of these it is not there. "" when direct."""
+    on = lambda v: str(v or "").strip().lower() not in ("", "0", "false", "no", "off")   # noqa: E731
+    envs = [dict(os.environ)] + [p.get("env") or {} for p in (found if found is not None else discover(project, home))]
+    for env in envs:
+        for k, name in (("CLAUDE_CODE_USE_BEDROCK", "Amazon Bedrock"), ("CLAUDE_CODE_USE_VERTEX", "Google Vertex"),
+                        ("CLAUDE_CODE_USE_FOUNDRY", "Microsoft Foundry")):
+            if on(env.get(k)):
+                return name
+        if env.get("ANTHROPIC_BASE_URL") and "anthropic.com" not in str(env.get("ANTHROPIC_BASE_URL")):
+            return "a gateway (" + str(env["ANTHROPIC_BASE_URL"])[:60] + ")"
+    return ""
 
 
 def options_for(project: Path, choice: Dict[str, Any], home: Optional[Path] = None) -> Dict[str, Any]:
