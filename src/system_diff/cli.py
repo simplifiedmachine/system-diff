@@ -272,6 +272,16 @@ def parser() -> argparse.ArgumentParser:
     st.add_argument("--stop", action="store_true", help="stop the running Studio (its sessions close)")
     st.add_argument("--foreground", action="store_true",
                     help="run it here until Ctrl-C, not in the background (to see what it prints)")
+    up = sub.add_parser("update", help="update system-diff in one step: stop what would block it, install the latest "
+                                       "(the same channel), register Claude Code's MCP server, update the plugin")
+    which = up.add_mutually_exclusive_group()
+    which.add_argument("--nightly", action="store_const", const="nightly", dest="channel", help="the latest from main")
+    which.add_argument("--stable", action="store_const", const="stable", dest="channel", help="the latest release")
+    up.add_argument("--yes", action="store_true", help="stop what blocks the update without asking")
+    up.add_argument("--dry-run", action="store_true", help="say what it would do, and do nothing")
+    up.add_argument("--no-mcp", action="store_true", help="leave Claude Code's MCP servers as they are")
+    up.add_argument("--no-plugin", action="store_true", help="leave the Claude Code plugin as it is")
+    up.add_argument("--relaunched", action="store_true", help=argparse.SUPPRESS)
     sub.add_parser("mcp", help="run as an MCP server over stdio (needs the [mcp] extra)")
     sub.add_parser("hook", help="what Claude Code's hooks run: the turn's start, the files read and edited, and at "
                                 "the end of a turn one line on what it changed in the system")
@@ -456,6 +466,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "hook":   # no git: the hook finds the repository in Python (a git start costs seconds on some machines)
         from . import agent
         return agent.run_hook(sys.stdin.read() if not sys.stdin.isatty() else "")
+    if args.cmd == "update":   # the installation, not a repository
+        from . import update
+        return update.run(channel=args.channel or "", yes=args.yes, dry=args.dry_run, mcp=not args.no_mcp,
+                          plugin=not args.no_plugin, relaunched=args.relaunched)
     if args.cmd == "app":   # every repository's, not one: no repository needed
         from . import app
         if args.stop:

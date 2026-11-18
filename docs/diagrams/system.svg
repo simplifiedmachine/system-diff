@@ -84,8 +84,8 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M478,788 C507,788 507,112 536,112" marker-end="url(#ar-call-same)"><title>chat → sources</title></path>
 <path class="be k-call s-same" d="M478,788 C544,788 544,1508 484,1508" marker-end="url(#ar-call-same)"><title>chat → src/system_diff</title></path>
 <path class="be k-call s-same" d="M214,52 C260,52 260,172 220,172" marker-end="url(#ar-call-same)"><title>cli → agent</title></path>
-<path class="be k-call s-same" d="M214,52 C280,52 280,368 220,368" marker-end="url(#ar-call-same)"><title>cli → panel</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,1508 272,1508" marker-end="url(#ar-call-same)"><title>cli → src/system_diff</title></path>
+<path class="be k-call s-same" d="M214,52 C280,52 280,368 220,368" marker-end="url(#ar-call-same)"><title>cli → panel</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,188 272,188" marker-end="url(#ar-call-same)"><title>cli → config</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,248 272,248" marker-end="url(#ar-call-same)"><title>cli → extract</title></path>
 <path class="be k-call s-same" d="M214,52 C243,52 243,368 272,368" marker-end="url(#ar-call-same)"><title>cli → graph</title></path>
@@ -269,7 +269,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <g class="bn t-component s-same" transform="translate(278,1426)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">PNG rendering</text><text x="12" y="35" class="bn-s">1 file</text><title>PNG rendering</title></g>
 <g class="bn t-component s-same" transform="translate(542,90)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Git and folder sources</text><text x="12" y="35" class="bn-s">1 file</text><title>Git and folder sources</title></g>
 <g class="bn t-component s-same" transform="translate(542,150)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Agent activity</text><text x="12" y="35" class="bn-s">1 file</text><title>Agent activity</title></g>
-<g class="bn t-component s-same undeclared" transform="translate(278,1486)"><rect class="box" width="200" height="46" rx="8"/><rect class="band" width="5" height="46" rx="2"/><text x="12" y="19" class="bn-t">src/system_diff</text><text x="12" y="35" class="bn-s">10 files</text><title>src/system_diff</title></g>
+<g class="bn t-component s-same undeclared" transform="translate(278,1486)"><rect class="box" width="200" height="46" rx="8"/><rect class="band" width="5" height="46" rx="2"/><text x="12" y="19" class="bn-t">src/system_diff</text><text x="12" y="35" class="bn-s">11 files</text><title>src/system_diff</title></g>
 <rect x="16" y="1566" width="14" height="12" rx="2" fill="#ffffff" stroke="#e1e5eb"/><rect x="16" y="1566" width="4" height="12" rx="1" fill="#9a5600"/>
 <text x="36" y="1576" class="lg">not named in system-diff.toml</text>
 <path class="be k-call" d="M234.1,1572 L254.1,1572" style="opacity:1"/>

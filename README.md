@@ -92,6 +92,15 @@ autostart on` (or `/config`) opens it with every session.
 Extensions install the same way beside it: `pip install research-diff` adds its tabs to the same page and its tools to
 the same Studio sessions.
 
+**Updating** is one command; it keeps your channel (stable, or nightly when you run a `.dev` version):
+```sh
+system-diff update             # macOS, Linux
+python -m system_diff update   # Windows (system-diff update works too: it continues in a window of its own)
+```
+It stops what would block the install (the Studio; on Windows anything still running `system-diff.exe`, after asking),
+installs the latest, registers Claude Code's MCP server the right way for your machine (once: no second one beside the
+plugin's), and updates the plugin. `--dry-run` shows what it would do; `--nightly` or `--stable` switches channel.
+
 **Stable and nightly.** The commands above install the latest [stable release](https://github.com/simplifiedmachine/system-diff/releases/latest)
 (PyPI, and the plugin from the `stable` branch). To test what is coming, run nightly from `main`:
 `pip install "system-diff[mcp,app] @ git+https://github.com/simplifiedmachine/system-diff@main"` and
@@ -107,12 +116,10 @@ setx CLAUDE_CODE_NO_FLICKER 1                                    # Windows (Powe
 echo 'export CLAUDE_CODE_NO_FLICKER=1' >> ~/.bashrc              # macOS and Linux (~/.zshrc for zsh)
 ```
 
-**Updating on Windows.** Windows cannot replace a program that is running, so `pip install -U` fails with
-`WinError 32 ... system-diff.exe` while something runs `system-diff.exe`: Claude Code's MCP server when it was added as
-`system-diff mcp` (or by the plugin), or a `system-diff watch` you started by hand. Close Claude Code and run
-`system-diff app --stop` before updating, or add the MCP server as `python -m system_diff mcp` (above) and nothing
-holds it: the Studio, the engines and the pane run as `python -m system_diff` already. `Get-Process system-diff`
-shows what still runs it.
+**Updating on Windows.** Windows cannot replace a program that is running, so a plain `pip install -U` fails with
+`WinError 32 ... system-diff.exe` while something runs `system-diff.exe` (Claude Code's MCP server when it was added as
+`system-diff mcp`, or the plugin's). `python -m system_diff update` stops those first, after asking; Claude Code
+reconnects its tools with `/mcp`. The Studio, the engines and the pane run as `python -m system_diff` and never hold it.
 
 On Windows, `python -m pip install "system-diff[mcp]"` works where `pip` is not on PATH. The plugin's MCP server is
 started as `system-diff mcp`, directly (no shell), so the `system-diff` command must be on PATH: pip prints where it put

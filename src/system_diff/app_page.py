@@ -14,7 +14,10 @@ PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --code:rgba(118,118,128,.10); --shadow:0 10px 40px rgba(31,38,64,.12), 0 2px 6px rgba(31,38,64,.06);
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",system-ui,Helvetica,Arial,sans-serif;
-  --r:18px; --chatw:420px; --projw:260px; --blur:saturate(180%) blur(28px); }
+  --r:18px; --chatw:420px; --projw:260px; --blur:saturate(180%) blur(28px);
+  /* the session's column: as wide as dragged, but never leaving the page under ~400px */
+  --chatcol:min(var(--chatw), max(280px, calc(100vw - var(--projw) - 440px)));
+  --chatcol-noproj:min(var(--chatw), max(280px, calc(100vw - 440px))); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme:dark;
   --ink:#f5f5f7; --muted:#a1a1a6; --line:rgba(235,235,245,.12); --hair:rgba(255,255,255,.14);
   --glass:rgba(30,32,40,.55); --glass-strong:rgba(38,40,50,.78); --glass-soft:rgba(30,32,40,.32);
@@ -28,6 +31,7 @@ PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --accent:#0a84ff; --accent-2:#7d7aff; --ok:#30d158; --bad:#ff453a; --warn:#ff9f0a;
   --code:rgba(118,118,128,.22); --shadow:0 10px 40px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3); }
 * { box-sizing:border-box; }
+[hidden] { display:none !important; }   /* hidden wins over a panel's own display (grid, flex) */
 html, body { height:100%; }
 body { margin:0; color:var(--ink); font:14px/1.45 var(--sans); -webkit-font-smoothing:antialiased; letter-spacing:-.005em;
   background:var(--base);
@@ -57,11 +61,13 @@ button:disabled { opacity:.45; cursor:default; }
 select, input[type=text], textarea { background:var(--glass-soft); border:1px solid var(--line); border-radius:12px; padding:6px 10px;
   min-width:0; transition:border-color .16s ease, background .16s ease; }
 select:focus, input[type=text]:focus, textarea:focus { background:var(--glass-strong); border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
-.app { display:grid; height:100vh; padding:10px; gap:10px; grid-template-columns:var(--projw) minmax(0,1fr) 4px var(--chatw);
-  transition:grid-template-columns .22s ease; }
-.app.noproj { grid-template-columns:0 minmax(0,1fr) 4px var(--chatw); }
-.app.nochat { grid-template-columns:var(--projw) minmax(0,1fr) 0 0; }
-.app.noproj.nochat { grid-template-columns:0 minmax(0,1fr) 0 0; }
+/* each part in its named area: hiding one (the projects, the session) never moves the others into its column */
+.app { display:grid; height:100vh; padding:10px; gap:10px;
+  grid-template-columns:var(--projw) minmax(0,1fr) 4px var(--chatcol); grid-template-areas:"proj mid grip chat"; }
+.app.noproj { grid-template-columns:minmax(0,1fr) 4px var(--chatcol-noproj); grid-template-areas:"mid grip chat"; }
+.app.nochat { grid-template-columns:var(--projw) minmax(0,1fr); grid-template-areas:"proj mid"; }
+.app.noproj.nochat { grid-template-columns:minmax(0,1fr); grid-template-areas:"mid"; }
+#projects { grid-area:proj; } .mid { grid-area:mid; } #grip { grid-area:grip; } #chat { grid-area:chat; }
 .app.noproj #projects, .app.nochat #chat, .app.nochat #grip { display:none; }
 #projects { overflow:auto; padding:14px 10px; display:grid; align-content:start; gap:12px; }
 #projects h1 { font-size:17px; font-weight:700; letter-spacing:-.02em; margin:2px 6px 4px; }
@@ -132,7 +138,11 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
   :root { --glass-soft:var(--code); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 @media (max-width: 900px) {
-  .app, .app.noproj, .app.nochat { grid-template-columns:1fr; grid-template-rows:auto minmax(60vh,1fr) auto; height:auto; padding:8px; }
+  .app, .app.noproj, .app.nochat, .app.noproj.nochat { grid-template-columns:minmax(0,1fr); height:auto; padding:8px; }
+  .app { grid-template-rows:auto minmax(60vh,1fr) auto; grid-template-areas:"proj" "mid" "chat"; }
+  .app.noproj { grid-template-rows:minmax(60vh,1fr) auto; grid-template-areas:"mid" "chat"; }
+  .app.nochat { grid-template-rows:auto minmax(60vh,1fr); grid-template-areas:"proj" "mid"; }
+  .app.noproj.nochat { grid-template-rows:minmax(60vh,1fr); grid-template-areas:"mid"; }
   #grip { display:none; } #projects { max-height:32vh; }
   #chat { min-height:70vh; }
 }
@@ -210,9 +220,14 @@ const S = { projects:[], project:"", path:"", choices:null, session:null, next:0
   $("toggleproj").addEventListener("click", () => { keep.set("proj", keep.get("proj", "1") === "0" ? "1" : "0"); cols(); });
   $("togglechat").addEventListener("click", () => { keep.set("chat", keep.get("chat", "1") === "0" ? "1" : "0"); cols(); });
   cols();
-  const w = +keep.get("chatw", "420"); if (w >= 280) document.documentElement.style.setProperty("--chatw", w + "px");
   const grip = $("grip"); let drag = false;
-  const setW = px => { const v = Math.max(280, Math.min(innerWidth - 360, px)); document.documentElement.style.setProperty("--chatw", v + "px"); keep.set("chatw", String(Math.round(v))); };
+  // the session's width: as dragged, but never more than the window leaves (a width dragged on a big screen, then
+  // opened on a small one, would leave the page no room)
+  const fit = px => Math.max(280, Math.min(innerWidth - 440 - ($("app").classList.contains("noproj") ? 0 : 260), px));
+  const setW = px => { const v = fit(px); document.documentElement.style.setProperty("--chatw", v + "px"); keep.set("chatw", String(Math.round(v))); };
+  const wantW = () => +keep.get("chatw", "420") || 420;
+  const applyW = () => document.documentElement.style.setProperty("--chatw", fit(wantW()) + "px");   // not saved: the wish stays
+  applyW(); addEventListener("resize", applyW);
   grip.addEventListener("pointerdown", e => { drag = true; grip.classList.add("drag"); grip.setPointerCapture(e.pointerId); $("view") && ($("view").style.pointerEvents = "none"); });
   grip.addEventListener("pointermove", e => { if (drag) setW(innerWidth - e.clientX); });
   grip.addEventListener("pointerup", () => { drag = false; grip.classList.remove("drag"); $("view") && ($("view").style.pointerEvents = ""); });
