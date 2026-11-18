@@ -30,10 +30,20 @@ from .sources import git
 from .topics import ROLE_OF, TECH, TOP_PACKAGE, tech_key
 
 
+SCOPE = ""   # the project inside the repository the views are drawn for ("": the whole); set by the engine per page
+
+
 def compare(root: Path, base: str, head: str = "."):
     """A comparison with the LLM's regrouping of the diagram, when one is ready (regroup.ensure reads it, and starts
-    the background job that makes it; it never waits). Not for a partial read: the structure is not known yet."""
+    the background job that makes it; it never waits). Not for a partial read: the structure is not known yet. With
+    SCOPE, narrowed to that project's folder (projects.scoped)."""
     c = _compare(root, base, head)
+    if SCOPE:
+        from . import projects
+        try:
+            return projects.scoped(c, Path(root), SCOPE)
+        except Exception:  # noqa: BLE001 - the whole system rather than nothing
+            pass
     try:
         c.root = Path(root)     # where explain.py keeps the LLM's words for its blocks
     except Exception:  # noqa: BLE001
@@ -1098,6 +1108,12 @@ def show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = N
     out = _show(root, width, view, part)
     _pin_nav(out, root, view, width)
     from . import extensions
+    try:
+        h = extensions.home(root) if extensions.load() else None
+    except Exception:  # noqa: BLE001
+        h = None
+    if h:
+        out["home"] = h   # the pane opens on it (register.tsx), once
     out["views"] = [list(v) for v in extensions.views()]   # the extensions' tabs, for the pane to add
     out["zoom"] = ZOOM
     out["web"] = web_url(root)

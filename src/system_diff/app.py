@@ -157,6 +157,13 @@ class Studio:
                 entry["kids"] = [self._entry((p / k["path"]).resolve(), k["kind"], k["path"]) for k in repos.inside(p)]
             except Exception:  # noqa: BLE001
                 entry["kids"] = []
+            try:   # projects inside it as plain folders: its own page, drawn for that folder
+                from . import projects
+                entry["kids"] += [{"id": entry["id"], "scope": f["path"], "path": str(p / f["path"]), "name": f["path"],
+                                   "kind": "folder", "branch": "", "port": entry["port"], "why": f["why"], "sessions": 0,
+                                   "waiting": 0} for f in projects.listed(p)]
+            except Exception:  # noqa: BLE001
+                pass
             seen[entry["id"]] = entry
         return list(seen.values())
 
@@ -202,6 +209,26 @@ class Studio:
                 return {}
             time.sleep(0.3)
 
+    def why_not(self, root: Path) -> str:
+        """Why this repository's engine is not up: still starting, or what its last start printed (engine.out) or
+        logged (engine.log) when it stopped."""
+        from . import watch
+        from .sources import git_dir
+        try:
+            if watch._starting(root):
+                return ""
+            lines: List[str] = []
+            for name in ("engine.out", "engine.log"):
+                f = git_dir(root) / name
+                if f.exists() and time.time() - f.stat().st_mtime < 600:
+                    tail = [x.strip() for x in f.read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
+                            if x.strip()]
+                    hits = [x for x in tail if any(w in x for w in ("Error", "error", "Traceback", "stopped", "failed"))]
+                    lines += (hits or tail)[-4:]
+            return "\n".join(lines)[-1200:]
+        except Exception:  # noqa: BLE001
+            return ""
+
     def restart(self, root: Path, wait: float) -> Dict[str, Any]:
         """The engine web.json names refused a connection: forget it (watch._look drops a web.json whose port no longer
         answers as it) and start one."""
@@ -213,16 +240,42 @@ class Studio:
         return self.engine(root, wait=wait)
 
     # ── defaults per project ──────────────────────────────────────────────────────────────────────────────────
+    CHOICES = ("settings_profile", "model", "effort", "permission_mode", "setting_sources")
+
     def default_for(self, root: Path) -> Dict[str, Any]:
-        got = self.defaults.get(str(root))
-        return dict(got) if isinstance(got, dict) else {}
+        """The choices a new session of this project starts with: the all-projects ones ("*"), its own over them."""
+        every = self.defaults.get("*") if isinstance(self.defaults.get("*"), dict) else {}
+        mine = self.defaults.get(str(root)) if isinstance(self.defaults.get(str(root)), dict) else {}
+        return {**every, **mine}
+
+    def default_from(self, root: Path) -> str:
+        return "project" if isinstance(self.defaults.get(str(root)), dict) else "all" if "*" in self.defaults else ""
+
+    def _save_defaults(self) -> None:
+        if self.folder is not None:
+            _write_private(self.folder / DEFAULTS, self.defaults)
 
     def remember(self, root: Path, choice: Dict[str, Any]) -> None:
+        """A session started with these choices: the project's own, unless they are the all-projects ones."""
         with self.lock:
-            self.defaults[str(root)] = {k: choice.get(k) for k in ("settings_profile", "model", "effort",
-                                                                   "permission_mode", "setting_sources") if k in choice}
-            if self.folder is not None:
-                _write_private(self.folder / DEFAULTS, self.defaults)
+            mine = {k: choice.get(k) for k in self.CHOICES if k in choice}
+            every = self.defaults.get("*") if isinstance(self.defaults.get("*"), dict) else None
+            if every is not None and all(mine.get(k) == every.get(k) for k in mine):
+                self.defaults.pop(str(root), None)
+            else:
+                self.defaults[str(root)] = mine
+            self._save_defaults()
+
+    def use_for_all(self, choice: Dict[str, Any]) -> None:
+        """These choices for every project: saved under "*", every project's own dropped."""
+        with self.lock:
+            self.defaults = {"*": {k: choice.get(k) for k in self.CHOICES if k in choice}}
+            self._save_defaults()
+
+    def drop_own(self, root: Path) -> None:
+        with self.lock:
+            self.defaults.pop(str(root), None)
+            self._save_defaults()
 
     def deliver(self) -> None:
         """What a project's page sent to Claude goes to its open app session (when it has one)."""
@@ -341,6 +394,7 @@ def handler(studio: Studio):
                     root = self._root(q)
                     got = profiles.choices(root)
                     got["default"] = studio.default_for(root)
+                    got["default_from"] = studio.default_from(root)
                     got["agents"] = [a["name"] for a in agentlib.saved(root)]
                     from . import sessions
                     got["sdk"] = sessions.sdk_available()
@@ -452,6 +506,23 @@ def handler(studio: Studio):
                                         f"{opts['settings_profile']}")
                     studio.remember(s.project, opts)
                     return self._json(200, t.head())
+            if path == "/api/defaults/all":   # these choices for every project
+                studio.use_for_all(profiles.options_for(studio.root_of(str(b.get("project") or "")) or Path.home(), b))
+                m = studio.manager
+                open_ = [s for s in m.sessions.values() if s.status not in ("closed", "failed")] if m is not None else []
+                return self._json(200, {"ok": True, "open_sessions": len(open_)})
+            if path == "/api/defaults/drop":   # this project follows the all-projects choices again
+                studio.drop_own(self._root({"project": str(b.get("project") or "")}))
+                return self._json(200, {"ok": True})
+            if path == "/api/defaults/apply_open":   # the all-projects model and permissions, live, in every open session
+                every = studio.defaults.get("*") or {}
+                done = []
+                for s in (list(studio.manager.sessions.values()) if studio.manager is not None else []):
+                    if s.status not in ("closed", "failed"):
+                        s.apply_live(str(every.get("model") or ""), str(every.get("permission_mode") or ""))
+                        done.append(s.id)
+                return self._json(200, {"applied": done, "note": "the model and the permission mode change now; the "
+                                                                "settings, effort and agent apply from the next session"})
             if path == "/api/agents/save":
                 root = self._root({"project": str(b.get("project") or "")})
                 return self._json(200, agentlib.save_agent(root, str(b.get("name") or ""),
@@ -487,9 +558,11 @@ def handler(studio: Studio):
                 body = self.rfile.read(n) if n else b""
             eng = studio.engine(root, wait=20.0 if page else 5.0)
             if not eng:
+                why = studio.why_not(root)
                 if page:
-                    return self._send(200, STARTING.encode("utf-8"), "text/html; charset=utf-8")
-                return self._json(503, {"error": "the project's engine is starting"})
+                    return self._send(200, starting_page(root, why), "text/html; charset=utf-8")
+                return self._json(503, {"error": "the project's engine is not up" + (f": {why}" if why else ""),
+                                        "why": why})
             headers = {"X-Token": eng["token"], "Host": f"127.0.0.1:{eng['port']}"}
             if method == "POST":
                 headers["Content-Type"] = self.headers.get("Content-Type") or "application/json"
@@ -511,9 +584,11 @@ def handler(studio: Studio):
                         return self._json(502, {"error": "the project's engine did not answer, and a new one did not start"})
                     eng = studio.restart(root, wait=20.0 if page else 8.0)
                     if not eng:
+                        why = studio.why_not(root)
                         if page:
-                            return self._send(200, STARTING.encode("utf-8"), "text/html; charset=utf-8")
-                        return self._json(503, {"error": "the project's engine is starting"})
+                            return self._send(200, starting_page(root, why), "text/html; charset=utf-8")
+                        return self._json(503, {"error": "the project's engine is not up" + (f": {why}" if why else ""),
+                                                "why": why})
                     headers.update({"X-Token": eng["token"], "Host": f"127.0.0.1:{eng['port']}"})
                     if method == "POST":
                         headers.update({"Origin": f"http://127.0.0.1:{eng['port']}",
@@ -606,5 +681,19 @@ def serve(port: int = FIRST, open_it: bool = False, folder: Optional[Path] = Non
 STARTING = """<!doctype html><meta charset="utf-8"><title>Starting</title>
 <body style="font:15px system-ui;padding:24px;color:#555">The project's engine is starting (a first read of a large
 repository takes a while)… <script>setTimeout(() => location.reload(), 2000)</script>"""
+
+
+def starting_page(root: Path, why: str) -> bytes:
+    """While the engine starts: a page that looks again; when its start failed: why, and what to run."""
+    import html as h
+    if not why:
+        return STARTING.encode("utf-8")
+    return (f"""<!doctype html><meta charset="utf-8"><title>Engine not running</title>
+<body style="font:15px system-ui;padding:24px;max-width:70ch;line-height:1.5">
+<h1 style="font-size:18px">This project's engine did not start</h1>
+<p>What it said last:</p><pre style="white-space:pre-wrap;background:#f0f2f6;color:#1c2230;padding:10px;border-radius:8px">{h.escape(why)}</pre>
+<p>In a terminal, in <code>{h.escape(str(root))}</code>: <code>system-diff doctor</code> says more, and
+<code>system-diff watch</code> starts it by hand. This page looks again every 10 seconds.</p>
+<script>setTimeout(() => location.reload(), 10000)</script>""").encode("utf-8")
 
 from .app_page import PAGE  # noqa: E402  (the page is long: its own module)

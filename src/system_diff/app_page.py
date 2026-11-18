@@ -118,6 +118,8 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
         <label for="mode">Permissions</label><select id="mode"></select>
         <label for="agentpick">Agent</label><select id="agentpick"><option value="">Claude (no saved agent)</option></select>
         <label for="pastpick">Resume</label><div class="row"><select id="pastpick"><option value="">a past conversation…</option></select><button type="button" id="resume">Resume</button></div>
+        <span></span><div class="row"><span class="ev meta" id="choicefrom"></span><button type="button" id="ownoff" hidden>Use the all-projects choice</button></div>
+        <span></span><div class="row"><button type="button" id="forall" title="These choices for every project (a project's own change still wins there)">Use for all projects</button><button type="button" id="applyopen" hidden title="The model and the permission mode change now in every open session; settings, effort and agent from the next session">Apply to open sessions</button></div>
         <span></span><div class="row"><button type="button" id="fork" hidden title="Continue this conversation in a new session; this one stays as it is">Fork</button><button type="button" id="apply" hidden title="Start a session with these settings that continues this conversation">Apply to this conversation</button></div>
       </div>
     </div>
@@ -168,11 +170,11 @@ const S = { projects:[], project:"", path:"", choices:null, session:null, next:0
 // ── projects ─────────────────────────────────────────────────────────────────────────────────────────────────
 function projBtn(p, depth) {
   const b = el("button", null, "pj"); b.type = "button";
-  if (p.id === S.project) b.setAttribute("aria-current", "true");
+  if (p.id === S.project && (p.scope || "") === (S.scope || "")) b.setAttribute("aria-current", "true");
   const t = el("span", p.name + (p.kind === "submodule" ? " (submodule)" : p.kind === "nested" && depth ? " (nested)" : ""), "t");
   if (p.sessions) t.append(el("span", p.sessions + " session" + (p.sessions > 1 ? "s" : ""), "badge"));
   if (p.waiting) t.append(el("span", "asks you", "badge ask"));
-  b.append(t, el("span", [p.branch, p.port ? "" : "engine not running"].filter(Boolean).join(" · "), "s"));
+  b.append(t, el("span", p.kind === "folder" ? (p.why || "a project in this repository") : [p.branch, p.port ? "" : "engine not running"].filter(Boolean).join(" · "), "s"));
   b.title = p.path;
   b.addEventListener("click", () => openProject(p));
   return b;
@@ -194,12 +196,14 @@ function findProject(pred) {
   return null;
 }
 async function openProject(p) {
-  S.project = p.id; S.path = p.path; keep.set("project", p.id);
+  const same = S.project === p.id;
+  S.project = p.id; S.scope = p.scope || ""; S.path = p.path; keep.set("project", p.id);
   $("ptitle").textContent = p.name + (p.branch ? " · " + p.branch : "");
   paintProjects();
   const box = $("viewbox"); box.replaceChildren();
   const f = el("iframe"); f.id = "view"; f.title = "The system-diff page of " + p.name;
-  f.src = "p/" + p.id + "/?studio=1"; box.append(f);
+  f.src = "p/" + p.id + "/?studio=1" + (S.scope ? "#scope=" + encodeURIComponent(S.scope) : ""); box.append(f);
+  if (same && p.kind === "folder") return;   // the same repository, another of its projects: its sessions stay
   api("api/projects/open", { project:p.id, wait:0 }).catch(() => {});
   await loadChoices(); await loadSessions(); await loadPast();
   if ($("tabagents").getAttribute("aria-selected") === "true") loadAgents();
@@ -234,6 +238,8 @@ async function loadChoices() {
   md.value = d.permission_mode || "default"; paintMode();
   const ef = $("effort"); ef.replaceChildren(); for (const x of c.efforts || [""]) option(ef, x, x || "the settings' default");
   ef.value = d.effort || "";
+  $("choicefrom").textContent = c.default_from === "project" ? "These choices: this project only" : c.default_from === "all" ? "These choices: all projects" : "";
+  $("ownoff").hidden = c.default_from !== "project";
   const ag = $("agentpick"); ag.replaceChildren(); option(ag, "", "Claude (no saved agent)"); for (const a of c.agents || []) option(ag, a, a);
   paintSdk();
 }
@@ -282,6 +288,18 @@ $("apply").addEventListener("click", async () => {
   if (!S.session) return;
   try { const s = await api("api/sessions/" + S.session.id + "/switch", choice()); await loadSessions(); $("sesspick").value = s.id; follow(s.id); $("apply").hidden = true; }
   catch (e) { $("sstatus").textContent = e.message; }
+});
+$("forall").addEventListener("click", async () => {
+  try { const d = await api("api/defaults/all", choice()); $("applyopen").hidden = !d.open_sessions; await loadChoices();
+        $("sstatus").textContent = "Every project now starts with these choices." + (d.open_sessions ? " Open sessions: Apply to open sessions." : ""); }
+  catch (e) { $("sstatus").textContent = e.message; }
+});
+$("applyopen").addEventListener("click", async () => {
+  try { const d = await api("api/defaults/apply_open", {}); $("applyopen").hidden = true; $("sstatus").textContent = d.note; }
+  catch (e) { $("sstatus").textContent = e.message; }
+});
+$("ownoff").addEventListener("click", async () => {
+  try { await api("api/defaults/drop", { project:S.project }); await loadChoices(); } catch (e) { $("sstatus").textContent = e.message; }
 });
 $("fork").addEventListener("click", async () => {
   if (!S.session) return;

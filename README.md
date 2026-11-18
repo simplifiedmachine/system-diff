@@ -247,7 +247,9 @@ beside it, run by the app with your own Claude Code login and gateway:
   conversation; **Resume** continues one of Claude Code's past conversations of the repository.
 - Dropdowns for the **settings** (Claude Code's own, or one settings file such as `~/.claude/settings.bedrock.json`;
   secrets never reach the page), the **model** (any alias or id) and the **permission mode** (`bypassPermissions` is
-  never the default and shows red). Changing them mid-conversation starts a session that continues it.
+  never the default and shows red). Changing them mid-conversation starts a session that continues it. They are
+  remembered per project; **Use for all projects** makes them every project's (a project's own change still wins
+  there), and **Apply to open sessions** changes the model and permissions of the open ones at once.
 - **Agents worth keeping**: roles your plans and subagents keep using (a tester, a reviewer, an API agent) are
   suggested in the Agents tab; **Keep** saves one as a Claude Code subagent (`.claude/agents/<name>.md`), and
   **Start with it** opens a session that uses it. Claude can save them too (`save_agent`, `save_skill`).
@@ -265,6 +267,19 @@ views too), `ui_source` (the files and the `system-diff.toml` entry behind a blo
 edit of the config would give, written nowhere) and `ui_show` (moves your page to what Claude explains, with a banner
 offering Back; untick "Let Claude move my page" and it only offers). The diagrams stay computed from the code and the
 config: Claude renames or groups a box by editing `system-diff.toml`, and the page redraws.
+
+## Projects inside a repository
+
+A repository often holds several independent projects as plain folders: a monorepo's `api/`, `web/` and `worker/`
+(each with its own `pyproject.toml`, `package.json`, `go.mod`...), or a research repository's `1_x/` ... `6_y/`. The
+page lists them on the left under "Projects in this repository", with the whole repository first; a click draws
+every tab for that folder (its parts, and the shared ones no project claims), from the same engine. Shared folders
+(`scripts/`, `docs/`, `tests/`, ...) never count. **Show as one project** at the end of the list turns it off for the
+repository (and **Split into N projects** back on); `projects = ["api", "web"]` in `system-diff.toml` names them, and
+`projects = false` turns finding them off.
+
+An extension can say what a repository opens on: a research repository opens on research-diff's tabs, with
+system-diff's own behind one **System** tab.
 
 ## Repositories inside a repository
 

@@ -15,7 +15,7 @@ import type { Act, Page, Row } from '../types'
 // green what is new, done or to learn, white what to read, gray the background, red only what was taken away.
 
 const PANE = 'system-diff'
-const VERSION = '0.11.0.dev1' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
+const VERSION = '0.11.0.dev2' // the plugin's own, as .claude-plugin/plugin.json says (a test keeps them one)
 const WIDEST = 999 // as wide as Claude Code docks a pane: 45% of the terminal
 const COMMANDS = ['system-diff', 'system-diff-pane'] as const
 const VIEWS = [['now', 'Now', 'n'], ['review', 'Review', 'r'], ['agents', 'Agents', 'a'], ['topics', 'Topics', 't'],
@@ -204,11 +204,19 @@ let drawnKey = '' // the ask it was drawn for
 
 // Draw a page answered for `key`, unless the person has moved on since (then only what it brought to send is kept),
 // or it is older than the one drawn for the same ask.
+let homeDone = false // the extension's home view applied (or not needed) for this session
 let shownId = '' // the last request of Claude's to show a view that the pane acted on
 const paneStarted = Date.now()
 
 async function apply($: EngineInterface, out: string, data: Page, key: string): Promise<boolean> {
   deliver($, data.send)
+  if (!homeDone) { // a research repository opens on research-diff's view, once, unless another view was picked
+    homeDone = true
+    if (data.home?.view && (await read($, view)) === 'now') {
+      void choose($, data.home.view)
+      return false
+    }
+  }
   const sh = data.show
   if (sh && sh.id && sh.id !== shownId) { // Claude's ui_show: go there (Back returns), once, if it is recent
     shownId = sh.id

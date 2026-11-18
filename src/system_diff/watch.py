@@ -106,6 +106,8 @@ main > * { min-width:0; }
 #leftnav .t { font-weight:600; font-size:13px; overflow-wrap:anywhere; } #leftnav .s { font-size:12px; color:var(--muted); }
 #leftnav .badge { font-size:11px; margin-left:6px; padding:0 6px; border-radius:9px; background:var(--line); color:inherit; font-weight:500; }
 #leftnav .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent); margin-left:6px; vertical-align:middle; }
+#leftnav button.switch { color:var(--muted); font-size:12px; border:1px dashed var(--line); margin-top:4px; }
+#leftnav details summary { cursor:pointer; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
 #leftnav .tree { color:var(--muted); font-family:var(--mono, monospace); margin-right:2px; }
 @media (max-width: 760px) {
   .withnav.on { grid-template-columns:1fr; }
@@ -414,7 +416,9 @@ const TOKEN = "__TOKEN__";
 const $ = id => document.getElementById(id);
 const VIEWS = ["now", "review", "agents", "topics", "history"].concat(__EXT_VIEWS__);
 const EXT_KEYS = __EXT_KEYS__;   // an extension's tab keys: {key: view}
-const ui = { view:"now", part:"", zoom:-1, history:[], data:null, last:{}, pick:"", mine:false, hover:null, seq:0, cmp:[] };
+const HOME = __HOME__;           // the view this repository opens on, when an extension says so (research: its own)
+const SYSTEM_VIEWS = ["now", "review", "agents", "topics", "history"];
+const ui = { view:"now", part:"", scope:"", homed:false, zoom:-1, history:[], data:null, last:{}, pick:"", mine:false, hover:null, seq:0, cmp:[] };
 const projects = { list:[] };
 // the conversation with Claude: the panel, what Claude points at, what the person is looking at (sent with a question)
 const talk = { open:false, data:null, stamp:null, point:[], pointAt:0, dismissed:0, aboutOff:"", file:"", seen:0 };   // every running project of this user (GET /projects), this one "current"
@@ -422,6 +426,9 @@ const talk = { open:false, data:null, stamp:null, point:[], pointAt:0, dismissed
   const h = new URLSearchParams(location.hash.slice(1));
   if (VIEWS.includes(h.get("view"))) ui.view = h.get("view");
   ui.part = h.get("part") || "";
+  ui.scope = h.get("scope") || "";
+  ui.homed = !!h.get("view");   // a view asked for: the extension's home does not override it
+  if (!ui.homed && HOME && VIEWS.includes(HOME.view) && !(HOME.system === "collapsed" && (() => { try { return localStorage.getItem("sd-system-first:" + location.port) === "1"; } catch (e) { return false; } })())) ui.view = HOME.view;
   const z = parseInt(h.get("zoom"), 10); if (z >= -1 && z <= 2) ui.zoom = z;
 })();
 function el(tag, text, cls) {
@@ -892,27 +899,38 @@ async function showCode(path, pinned, at) {
 }
 // the pinned list on the left: the repositories of this family (a submodule or nested repository is its own system,
 // with its own engine) and a view's own list (an extension's: the studies of a repository with several papers)
-function paintNav(items, family) {
+function paintNav(items, family, mode) {
   const nav = $("leftnav"); nav.replaceChildren();
-  if (family.length) {
+  const fam = el("div");
+  if (family.length || (mode && mode.one)) {
     const ul = el("ul");
     for (const r of family) {
       const b = el("button"); b.type = "button";
-      if (r.current) b.setAttribute("aria-current", "true");
+      const here = r.kind === "folder" ? ui.scope === r.scope : r.current && !ui.scope;
+      if (here) b.setAttribute("aria-current", "true");
       const t = el("span", null, "t");
-      if (r.rel) t.append(el("span", "├ ", "tree"));
-      t.append(r.name + (r.kind === "outer" ? (r.current ? " (this repository)" : " (outer repository)")
+      if (r.rel || r.kind === "folder") t.append(el("span", "├ ", "tree"));
+      t.append(r.name + (r.kind === "folder" ? "" : r.kind === "outer" ? (r.current ? " (the whole repository)" : " (outer repository)")
                                        : r.kind === "nested" ? " (nested repository)" : " (submodule)"));
       const known = (projects.list || []).find(x => r.port && x.port === r.port);
       if (r.changed || (known && known.changed && !r.current)) t.append(el("span", null, "dot"));
-      b.append(t, el("span", (r.branch ? r.branch : "") + (r.url ? "" : r.current ? "" : (r.branch ? " · " : "") + "not open yet"), "s"));
+      const sub = r.kind === "folder" ? (r.why || "") : (r.branch ? r.branch : "") + (r.url || r.current ? "" : (r.branch ? " · " : "") + "not open yet");
+      b.append(t, el("span", sub, "s"));
       b.title = r.path;
-      b.addEventListener("click", () => openRepo(r, b));
+      b.addEventListener("click", () => r.kind === "folder" ? openScope(r.scope) : r.current ? openScope("") : openRepo(r, b));
       { const li = el("li"); li.append(b); ul.append(li); }
     }
-    const h = el("h3", "Repositories"); nav.append(h, ul);
+    if (mode && (mode.one || mode.found >= 2)) {   // the person's switch: detection can be wrong
+      const b = el("button", mode.one ? "Split into " + mode.found + " projects" : "Show as one project", "switch"); b.type = "button";
+      b.addEventListener("click", async () => {
+        try { await fetch("projects/mode?one=" + (mode.one ? "0" : "1"), { method:"POST", headers:{ "X-Token":TOKEN } }); } catch (e) {}
+        openScope("");
+      });
+      const li = el("li"); li.append(b); ul.append(li);
+    }
+    fam.append(el("h3", "Projects in this repository"), ul);
   }
-  if (items.length) {
+  if (items.length) {   // the view's own list first (an extension's studies); the projects folded below it
     const ul = el("ul");
     for (const it of items) {
       const b = el("button"); b.type = "button";
@@ -925,9 +943,14 @@ function paintNav(items, family) {
       { const li = el("li"); li.append(b); ul.append(li); }
     }
     nav.append(el("h3", (ui.data && ui.data.nav_title) || "In this view"), ul);
-  }
-  const on = !!(family.length || items.length);
+    if (fam.childNodes.length) { const d = el("details"); d.append(el("summary", "Projects in this repository")); fam.firstChild.remove(); d.append(...fam.childNodes); nav.append(d); }
+  } else if (fam.childNodes.length) nav.append(...fam.childNodes);
+  const on = !!nav.childNodes.length;
   nav.hidden = !on; nav.parentElement.classList.toggle("on", on);
+}
+function openScope(scope) {   // a project inside this repository: the same engine, every tab drawn for its folder
+  if (ui.scope === scope) return;
+  ui.scope = scope; ui.part = ""; reset(true);
 }
 async function openRepo(r, b) {
   if (r.current) return;
@@ -950,7 +973,7 @@ const seen = { said:"", at:0, hover:"", shown:"", moved:false, busyAt:0, loaded:
 for (const ev of ["keydown", "wheel", "mousemove", "touchstart", "input"]) addEventListener(ev, () => { seen.busyAt = Date.now(); }, { passive:true, capture:true });
 document.addEventListener("mouseover", e => { const n = e.target.closest && e.target.closest("#dia [data-id]"); seen.hover = n ? n.getAttribute("data-id") : ""; });
 function tellState() {
-  const st = { page:PAGE_ID, view:ui.view, part:ui.part, zoom:ui.zoom, picked:ui.pick || "", hover:seen.hover,
+  const st = { page:PAGE_ID, view:ui.view, part:ui.part, scope:ui.scope, zoom:ui.zoom, picked:ui.pick || "", hover:seen.hover,
                visible:document.visibilityState === "visible", shown:seen.shown, moved:seen.moved };
   const said = JSON.stringify(st);
   if (said === seen.said && Date.now() - seen.at < 60000) return;
@@ -1375,14 +1398,26 @@ function render(d) {
   if (redrawn || !ui.mine) applyPick();
   if (ui.openAfter && g.svg) { const f = ui.openAfter; ui.openAfter = ""; showCode(f, true); }
   if (changed("files", g.files || {})) prefetch([...new Set(Object.values(g.files || {}).map(v => fileOf(v).path))].slice(0, 8), false);
-  if (changed("nav", [d.nav || [], d.repos || []])) paintNav(d.nav || [], d.repos || []);
+  if (changed("nav", [d.nav || [], d.repos || [], d.projects || {}, ui.scope])) paintNav(d.nav || [], d.repos || [], d.projects || {});
 }
+function systemFirst() { try { return localStorage.getItem("sd-system-first:" + location.port) === "1"; } catch (e) { return false; } }
 function paintChrome() {
-  for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.view === ui.view));
+  const fold = !!(HOME && HOME.system === "collapsed") && !systemFirst() && !SYSTEM_VIEWS.includes(ui.view);
+  for (const b of document.querySelectorAll("#tabs button")) {
+    b.setAttribute("aria-selected", String(b.dataset.view === ui.view));
+    if (SYSTEM_VIEWS.includes(b.dataset.view)) b.hidden = fold;
+  }
+  let sys = $("systab");
+  if (fold && !sys) {   // system-diff's own tabs behind one: a research repository opens on research
+    sys = el("button", "System ▸"); sys.id = "systab"; sys.type = "button"; sys.title = "The system's views: Now, Review, Agents, Topics, History";
+    sys.addEventListener("click", () => { try { localStorage.setItem("sd-system-first:" + location.port, "1"); } catch (e) {} go("now", ""); });
+    $("tabs").prepend(sys);
+  }
+  if (sys) sys.hidden = !fold;
   $("back").disabled = !ui.history.length;
   $("zoomlabel").textContent = ui.zoom < 0 ? "auto" : ["detailed", "compact", "outline"][ui.zoom];
   $("in").disabled = ui.zoom === 0; $("out").disabled = ui.zoom === 2;
-  const h = new URLSearchParams({ view:ui.view }); if (ui.part) h.set("part", ui.part); if (ui.zoom >= 0) h.set("zoom", ui.zoom);
+  const h = new URLSearchParams({ view:ui.view }); if (ui.part) h.set("part", ui.part); if (ui.scope) h.set("scope", ui.scope); if (ui.zoom >= 0) h.set("zoom", ui.zoom);
   history.replaceState(null, "", "#" + h);
   paintProjects();
 }
@@ -1437,6 +1472,7 @@ async function load(wait) {
   const seq = ++ui.seq;
   if (polling) { polling.abort(); polling = null; }
   const q = new URLSearchParams({ view:ui.view, part:ui.part, zoom:String(ui.zoom) });
+  if (ui.scope) q.set("scope", ui.scope);
   if (wait && typeof ui.version === "number") q.set("since", String(ui.version));
   if (wait && typeof talk.stamp === "string") q.set("chat", talk.stamp);
   const ctl = new AbortController(); polling = ctl;
@@ -1833,7 +1869,7 @@ def handler(w: Watcher):
         def do_GET(self):
             path = urlsplit(self.path).path
             if path in ("/", "/index.html"):
-                return self._send(200, page_html().replace("__TOKEN__", w.token).encode(), "text/html; charset=utf-8")
+                return self._send(200, page_html(w.root).replace("__TOKEN__", w.token).encode(), "text/html; charset=utf-8")
             if path.startswith("/x/"):   # an extension's own pages: the repository's content, so as /file guards it
                 if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
                     return self._json(403, {"error": "forbidden"})
@@ -1921,16 +1957,21 @@ def handler(w: Watcher):
             if not -1 <= zoom <= 2:
                 return self._json(400, {"error": "zoom is -1 (auto), 0, 1 or 2"})
             part = q.get("part", "")[:200]
+            scope = q.get("scope", "")[:300]
+            if scope:
+                from . import projects
+                if not projects.valid(w.root, scope):
+                    scope = ""   # a project no longer listed: the whole repository
             had = q.get("chat")   # the conversation panel's stamp the page has: a change to it answers the poll too
             try:
-                key = ("web", view, zoom, part)
+                key = ("web", view, zoom, part) + ((scope,) if scope else ())
                 self._wait(since, key, also=(lambda: chat.stamp(w.root) != had) if had is not None else None)
                 version, page = _page_of(w, key)
                 w.looked = max(w.looked, version)   # the page shows this: no dot on this project's tab
             except Exception as exc:  # noqa: BLE001 - the page shows it and keeps polling
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
             return self._json(200, {**page, "version": version, "engine_error": w.last_error(),
-                                    "chat": chat_view(w, page), "repos": repos_view(w)})
+                                    "chat": chat_view(w, page), "repos": repos_view(w), "projects": projects_mode(w)})
 
         def _projects(self, path: str):
             """The project tabs (GET /projects: every running engine of this user, from the registry cleaned of
@@ -2208,6 +2249,16 @@ def handler(w: Watcher):
                 return self._post_mark()
             if urlsplit(self.path).path == "/ui/state":
                 return self._post_ui_state()
+            if urlsplit(self.path).path == "/projects/mode":   # one project, or split into those found
+                if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                    self._drain()
+                    return self._json(403, {"error": "forbidden"})
+                self._drain()
+                from . import projects
+                projects.set_one(w.root, self._query().get("one") == "1")
+                if w.engine is not None:
+                    w.engine._bump()   # a new version: every page is drawn again
+                return self._json(200, projects_mode(w))
             if urlsplit(self.path).path == "/repos/open":
                 return self._post_repo()
             if urlsplit(self.path).path == "/send":
@@ -2230,13 +2281,19 @@ VIEWS = ("now", "review", "agents", "topics", "history")
 PAGE = PAGE.replace("__PROJECT_HREF__", hub.HREF_JS)
 
 
-def page_html() -> str:
-    """The page, with the extensions' tabs (and keys) beside system-diff's own."""
+def page_html(root: Optional[Path] = None) -> str:
+    """The page, with the extensions' tabs (and keys) beside system-diff's own, and the view `root` opens on when an
+    extension says so (a research repository: research-diff's)."""
     ext = extensions.views()
+    try:
+        home = extensions.home(root) if root is not None and ext else None
+    except Exception:  # noqa: BLE001
+        home = None
     tabs = "".join(f'<button role="tab" data-view="{html.escape(v)}">{html.escape(label)}'
                    + (f"<kbd>{html.escape(k)}</kbd>" if k else "") + "</button>" for v, label, k in ext)
     return (PAGE.replace("__EXT_TABS__", tabs).replace("__EXT_VIEWS__", json.dumps([v for v, _l, _k in ext]))
-            .replace("__EXT_KEYS__", json.dumps({k: v for v, _l, k in ext if k})))
+            .replace("__EXT_KEYS__", json.dumps({k: v for v, _l, k in ext if k}))
+            .replace("__HOME__", json.dumps(home).replace("</", "<\\/")))
 PANE_LOCK = threading.Lock()
 
 
@@ -2254,8 +2311,14 @@ def _build(w: "Watcher", key: tuple) -> Dict[str, Any]:
             page = pane.show(w.root, width, view, part or None, zoom, take=False)
             panel.still_reading(page, part_read)
             return page
-        _k, view, zoom, part = key
-        page = pane.web_view(w.root, view, part, zoom)
+        _k, view, zoom, part, *rest = key
+        pane.SCOPE = rest[0] if rest else ""   # a project inside the repository (projects.py)
+        try:
+            page = pane.web_view(w.root, view, part, zoom)
+        finally:
+            pane.SCOPE = ""
+        if rest:
+            page["scope"] = rest[0]
         if part_read:
             note = (f"Still reading the code: {int(part_read.get('done') or 0):,} of "
                     f"{int(part_read.get('total') or 0):,} files so far — the diagram fills in as it goes")
@@ -2329,7 +2392,8 @@ def chat_view(w: "Watcher", page: Optional[Dict[str, Any]] = None) -> Dict[str, 
 
 
 UI_KEEP = 120.0   # a page not heard from for this long is closed
-UI_FIELDS = {"view": 40, "part": 200, "picked": 200, "hover": 200, "study": 200, "shown": 40, "project": 400}
+UI_FIELDS = {"view": 40, "part": 200, "picked": 200, "hover": 200, "study": 200, "shown": 40, "project": 400,
+             "scope": 300}
 
 
 def ui_note(w: "Watcher", got: Dict[str, Any], page: str = "") -> None:
@@ -2380,12 +2444,37 @@ UI_LOCK = threading.Lock()
 
 
 def repos_view(w: "Watcher") -> List[Dict[str, Any]]:
-    """The repositories of this one's family, for the page's left column (empty for a repository alone)."""
+    """The page's list of projects in this repository: the repositories of its family (each its own engine) and, under
+    the one this engine shows, the folder projects inside it (this engine, scoped: kind "folder", with "scope"). Empty
+    for a repository alone with one project."""
     try:
-        from . import repos
-        return repos.family(w.root)
+        from . import projects, repos
+        fam = repos.family(w.root)
+        folders = projects.listed(w.root)
+        if not fam and not folders:
+            return []
+        if not fam:
+            root = Path(w.root).resolve()
+            fam = [{"path": str(root), "rel": "", "name": root.name, "kind": "outer", "branch": hub.branch(root),
+                    "current": True}]
+        out = []
+        for r in fam:
+            out.append(r)
+            if r.get("current"):
+                out += [{"path": str(Path(w.root) / p["path"]), "rel": r["rel"], "name": p["name"], "kind": "folder",
+                         "scope": p["path"], "why": p["why"], "branch": "", "current": True} for p in folders]
+        return out
     except Exception:  # noqa: BLE001 - the list is extra
         return []
+
+
+def projects_mode(w: "Watcher") -> Dict[str, Any]:
+    """Whether the person shows this repository as one project, and how many it would be split into."""
+    try:
+        from . import projects
+        return {"one": projects.as_one(w.root), "found": len(projects.detect(w.root))}
+    except Exception:  # noqa: BLE001
+        return {"one": False, "found": 0}
 
 
 def file_extras(w: "Watcher", path: str, text: str, prefetch: bool = False) -> Dict[str, Any]:

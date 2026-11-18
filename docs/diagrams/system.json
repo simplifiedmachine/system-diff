@@ -44,8 +44,8 @@
    "order": 36,
    "container": "",
    "declared": false,
-   "files": 9,
-   "lines": 2715,
+   "files": 10,
+   "lines": 3071,
    "hub": false,
    "quiet": false
   },
@@ -333,7 +333,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2677,
+   "lines": 2693,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 2844,
+   "lines": 2933,
    "hub": false,
    "quiet": false
   }
@@ -627,7 +627,7 @@
   "panel>pictures": 1,
   "panel>regroup": 1,
   "panel>sources": 3,
-  "panel>src/system_diff": 6,
+  "panel>src/system_diff": 7,
   "panel>textmap": 1,
   "panel>watch": 2,
   "png>sources": 1,
@@ -642,16 +642,17 @@
   "sources>gitfs": 3,
   "src/system_diff>agent": 2,
   "src/system_diff>chat": 2,
-  "src/system_diff>compare": 1,
-  "src/system_diff>config": 3,
-  "src/system_diff>extract": 3,
+  "src/system_diff>compare": 3,
+  "src/system_diff>config": 4,
+  "src/system_diff>diff": 1,
+  "src/system_diff>extract": 5,
   "src/system_diff>gitfs": 2,
   "src/system_diff>hub": 3,
   "src/system_diff>live": 2,
   "src/system_diff>mcp": 1,
   "src/system_diff>panel": 3,
-  "src/system_diff>sources": 9,
-  "src/system_diff>watch": 3,
+  "src/system_diff>sources": 12,
+  "src/system_diff>watch": 4,
   "statusline>activity": 1,
   "statusline>config": 1,
   "statusline>extract": 1,
@@ -679,7 +680,7 @@
   "watch>panel": 3,
   "watch>pictures": 1,
   "watch>sources": 1,
-  "watch>src/system_diff": 3
+  "watch>src/system_diff": 7
  },
  "api": {},
  "uses": {
@@ -1505,9 +1506,9 @@
    "owner",
    "context",
    "failed",
-   "views",
-   "begin",
-   "end"
+   "home",
+   "load",
+   "views"
   ],
   "panel>textmap": [
    "Line"
@@ -1564,12 +1565,16 @@
    "show_page"
   ],
   "src/system_diff>compare": [
-   "Live",
-   "live"
+   "live",
+   "Comparison",
+   "Live"
   ],
   "src/system_diff>config": [
    "lenient",
    "preview"
+  ],
+  "src/system_diff>diff": [
+   "diff"
   ],
   "src/system_diff>extract": [
    "Code",
@@ -1605,6 +1610,7 @@
   ],
   "src/system_diff>watch": [
    "_look",
+   "_starting",
    "start_detached"
   ],
   "statusline>activity": [
@@ -1703,8 +1709,8 @@
   ],
   "watch>hub": [
    "host_ok",
-   "HREF_JS",
    "branch",
+   "HREF_JS",
    "hub_page",
    "project_name",
    "projects"
@@ -1725,6 +1731,7 @@
   "watch>panel": [
    "show",
    "web_view",
+   "SCOPE",
    "take_outbox",
    "still_reading"
   ],
@@ -1739,12 +1746,12 @@
    "is_live"
   ],
   "watch>src/system_diff": [
-   "_engine",
-   "family",
-   "file_ok",
-   "member",
-   "owner",
-   "by_name"
+   "list",
+   "as_one",
+   "detect",
+   "listed",
+   "py",
+   "set_one"
   ]
  },
  "routes": {},
@@ -2139,12 +2146,12 @@
    "typing": 1
   },
   "src/system_diff": {
-   "pathlib": 8,
-   "typing": 8,
-   "json": 7,
-   "os": 6,
+   "pathlib": 9,
+   "typing": 9,
+   "json": 8,
+   "os": 7,
+   "re": 5,
    "time": 5,
-   "re": 4,
    "sys": 3,
    "threading": 3,
    "importlib": 2,
@@ -2154,6 +2161,7 @@
    "configparser": 1,
    "dataclasses": 1,
    "hashlib": 1,
+   "html": 1,
    "http": 1,
    "secrets": 1,
    "shutil": 1,
@@ -2540,12 +2548,12 @@
    "typing": 1
   },
   "src/system_diff": {
-   "pathlib": 8,
-   "typing": 8,
-   "json": 7,
-   "os": 6,
+   "pathlib": 9,
+   "typing": 9,
+   "json": 8,
+   "os": 7,
+   "re": 5,
    "time": 5,
-   "re": 4,
    "sys": 3,
    "threading": 3,
    "urllib.parse": 2,
@@ -2554,6 +2562,7 @@
    "configparser": 1,
    "dataclasses": 1,
    "hashlib": 1,
+   "html": 1,
    "http.client": 1,
    "http.server": 1,
    "importlib.metadata": 1,
@@ -2647,6 +2656,7 @@
   "tests/test_objectives_ui.py": 1,
   "tests/test_old_python.py": 1,
   "tests/test_page_tools.py": 1,
+  "tests/test_projects.py": 1,
   "tests/test_regroup.py": 1,
   "tests/test_slow_start.py": 1,
   "tests/test_studio.py": 1,

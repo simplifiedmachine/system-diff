@@ -310,6 +310,24 @@ class Session:
         if not self.pending and self.status == "waiting":
             self.set_status("working")
 
+    def apply_live(self, model: str, mode: str) -> None:
+        """Change the model and the permission mode of this open session now (the SDK can; settings, effort and
+        agent wait for the next session)."""
+        if self.client is None or self.status in ("closed", "failed"):
+            return
+        said = []
+        if model and model != self.options.get("model") and hasattr(self.client, "set_model"):
+            self.manager.call(self.client.set_model(model))
+            self.options["model"] = model
+            said.append(f"model {model}")
+        if mode in PERMISSION_MODES and mode != self.options.get("permission_mode") and hasattr(self.client,
+                                                                                               "set_permission_mode"):
+            self.manager.call(self.client.set_permission_mode(mode))
+            self.options["permission_mode"] = mode
+            said.append(f"permissions {mode}")
+        if said:
+            self.emit("note", text="Now using the all-projects choices: " + ", ".join(said))
+
     def close(self) -> None:
         if self.status == "closed":
             return

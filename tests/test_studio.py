@@ -472,3 +472,55 @@ def test_a_browser_leaving_early_prints_nothing(capsys):
     finally:
         srv.server_close()
     assert capsys.readouterr().err == ""
+
+
+def test_a_project_whose_engine_fails_says_why(monkeypatch, studio, tmp_path):
+    import subprocess as sp
+    url, tok = studio["url"], studio["studio"].token
+    broken = tmp_path / "bizflow"
+    broken.mkdir()
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=broken, check=True)
+    from system_diff.sources import git_dir
+    (git_dir(broken) / "engine.out").write_text("Traceback (most recent call last):\nOSError: [WinError 10048] the port is in use\n",
+                                                encoding="utf-8")
+    monkeypatch.setattr(watch, "start_detached", lambda root, port=8765, wait=3.0: None)
+    monkeypatch.setattr(app.Studio, "engine", lambda self, root, wait=0.0: {})
+    pid = call(url + "api/projects", {"path": str(broken)}, {"X-Token": tok, "Origin": url.rstrip("/")})["id"]
+    page = call(url + f"p/{pid}/")
+    assert "did not start" in page and "WinError 10048" in page and "system-diff doctor" in page
+    with pytest.raises(urllib.error.HTTPError) as no:
+        call(url + f"p/{pid}/web?view=now", headers={"Referer": url + f"p/{pid}/"})
+    assert no.value.code == 503 and "WinError 10048" in json.loads(no.value.read())["why"]
+
+
+def test_session_choices_for_all_projects(tmp_path, repo):
+    folder = tmp_path / "state"
+    st = app.Studio(folder)
+    other = tmp_path / "other"
+    st.remember(repo, {"model": "opus", "permission_mode": "plan"})
+    assert st.default_for(repo)["model"] == "opus" and st.default_from(repo) == "project"
+    st.use_for_all({"model": "sonnet", "permission_mode": "default", "effort": "high"})
+    assert st.default_for(repo) == {"model": "sonnet", "permission_mode": "default", "effort": "high"}
+    assert st.default_from(repo) == "all" and str(repo) not in st.defaults
+    st.remember(other, {"model": "sonnet", "permission_mode": "default", "effort": "high"})   # the same: no override
+    assert st.default_from(other) == "all"
+    st.remember(repo, {"model": "haiku", "permission_mode": "default", "effort": "high"})     # its own, now
+    again = app.Studio(folder)                                                                # the app restarted
+    assert again.default_for(repo)["model"] == "haiku" and again.default_for(other)["model"] == "sonnet"
+    again.drop_own(repo)
+    assert app.Studio(folder).default_for(repo)["model"] == "sonnet"
+
+
+def test_open_sessions_take_the_model_and_permissions_live(manager, repo):
+    class Live(FakeClient):
+        async def set_model(self, m):
+            self.model = m
+
+        async def set_permission_mode(self, m):
+            self.mode = m
+    manager.client_factory = Live
+    s = manager.start(repo, {"model": "opus", "permission_mode": "default"})
+    assert until(lambda: s.status == "idle")
+    s.apply_live("haiku", "plan")
+    assert until(lambda: getattr(s.client, "mode", "") == "plan" and s.client.model == "haiku")
+    assert s.options["model"] == "haiku" and any("all-projects" in e.get("text", "") for e in s.events_since(0)["events"])

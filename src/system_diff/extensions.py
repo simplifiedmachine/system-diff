@@ -25,6 +25,9 @@ may define:
                                                             # its own server, for Studio sessions (run as
                                                             #   `python -m <its package>` when it imports here)
     def applies(root) -> bool                               # whether its server is worth starting in a repository
+    def home(ctx) -> {"view": "research", "system": "collapsed"} | None
+                                                            # the view a repository opens on (a research repository:
+                                                            #   its own), system-diff's tabs behind one "System" tab
     def resolve(ctx, text) -> {"id", "file"} | None         # its own ids, for point_to, note and answers' links
     def source(ctx, block) -> {"files": [{"path", "line"}], "config": ...} | None
                                                             # where its block comes from (ui_source)
@@ -159,6 +162,24 @@ def file_ok(path: str) -> bool:
         except Exception:  # noqa: BLE001
             continue
     return False
+
+
+def home(root: Path) -> Optional[Dict[str, str]]:
+    """The view this repository opens on, if an extension says so: {"view", "system"} ("collapsed": system-diff's own
+    tabs behind one "System" tab), else None."""
+    mine = {v for v, _l, _k in views()}
+    for ext in load():
+        f = getattr(ext, "home", None)
+        if f is None:
+            continue
+        try:
+            got = f(context(root, "", ""))
+        except Exception as exc:  # noqa: BLE001 - the usual first view
+            failed(getattr(ext, "NAME", "extension") + " home", exc)
+            continue
+        if isinstance(got, dict) and got.get("view") in mine:
+            return {"view": str(got["view"]), "system": "collapsed" if got.get("system") == "collapsed" else ""}
+    return None
 
 
 def outline(root: Path, path: str, text: str) -> Optional[Dict[str, Any]]:
