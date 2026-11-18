@@ -410,3 +410,65 @@ def test_system_diffs_server_leaves_out_tools_another_server_brings(monkeypatch)
     assert "research_evidence" in names()
     monkeypatch.setenv("SYSTEM_DIFF_EXT_TOOLS_OFF", "research")
     assert "research_evidence" not in names() and "ui_view" in names()
+
+
+# ── an engine that was killed (Windows: its pid cannot be checked) ──────────────────────────────────────────────
+def _stale_web_json(repo):
+    from system_diff import hub
+    from system_diff.sources import git_dir
+    port = next(p for p in range(18800, 18900) if hub._free(p))   # nothing listens there
+    f = git_dir(repo) / "web.json"
+    f.write_text(json.dumps({"url": f"http://localhost:{port}/", "port": port, "pid": 999999, "id": "abc123",
+                             "token": "old", "version": "0.10.0"}), encoding="utf-8")
+    return f
+
+
+def test_a_dead_engines_file_is_not_an_engine(monkeypatch, repo):
+    from system_diff import hub, repos
+    monkeypatch.setattr(hub, "_alive", lambda pid: True)
+    monkeypatch.setattr(watch, "_alive", lambda pid: True, raising=False)
+    f = _stale_web_json(repo)
+    assert repos._engine(repo) == {} and not f.exists()
+
+
+def test_the_studio_starts_an_engine_for_one_that_died(monkeypatch, studio, repo, tmp_path):
+    from system_diff import hub
+    monkeypatch.setattr(hub, "_alive", lambda pid: True)
+    monkeypatch.setattr(watch, "_alive", lambda pid: True, raising=False)
+    url, tok = studio["url"], studio["studio"].token
+    pid = call(url + "api/projects", {"path": str(repo)}, {"X-Token": tok, "Origin": url.rstrip("/")})["id"]
+    other = tmp_path / "other"
+    other.mkdir()
+    subprocess_run = __import__("subprocess").run
+    subprocess_run(["git", "init", "-q", "-b", "main"], cwd=other, check=True)
+    (other / "a.py").write_text("print(1)\n", encoding="utf-8")
+    opid = call(url + "api/projects", {"path": str(other)}, {"X-Token": tok, "Origin": url.rstrip("/")})["id"]
+    _stale_web_json(other)
+    started = {}
+
+    def start(root, port=8765, wait=3.0):   # as start_detached would, in this process
+        started["root"] = Path(root)
+        threading.Thread(target=watch.serve, kwargs={"root": Path(root), "port": 0, "interval": 0.2,
+                                                     "ready": lambda u, server, w: started.update(server=server)},
+                         daemon=True).start()
+    monkeypatch.setattr(watch, "start_detached", start)
+    try:
+        web = call(url + f"p/{opid}/web?view=now", headers={"Referer": url + f"p/{opid}/"})
+        assert started["root"] == other.resolve() or started["root"] == other
+        assert "error" not in web and web.get("view") == "now"
+    finally:
+        if "server" in started:
+            started["server"].shutdown()
+    assert pid
+
+
+def test_a_browser_leaving_early_prints_nothing(capsys):
+    srv = app._Server(("127.0.0.1", 0), app.handler(app.Studio(None)))
+    try:
+        try:
+            raise ConnectionAbortedError(10053, "An established connection was aborted")
+        except ConnectionAbortedError:
+            srv.handle_error(None, ("127.0.0.1", 1))
+    finally:
+        srv.server_close()
+    assert capsys.readouterr().err == ""

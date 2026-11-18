@@ -109,14 +109,19 @@ def _branch(repo: Path) -> str:
 
 
 def _engine(repo: Path) -> Dict[str, Any]:
-    """Where this repository's engine listens, if one runs: {"url", "port"} from its web.json, else {}."""
+    """Where this repository's engine listens, if one runs: {"url", "port"} from its web.json, else {}. Its port is
+    asked (GET /whoami gives web.json's id), not its pid alone: on Windows a pid cannot be checked, and a web.json left
+    by an engine that was killed must not count as one (watch._look removes such a file)."""
     try:
+        from . import watch
         from .sources import git_dir
         f = git_dir(repo) / "web.json"
-        got = json.loads(f.read_text(encoding="utf-8"))
-        from .hub import _alive
-        if got.get("pid") and not _alive(int(got["pid"])):
+        if not f.exists():
             return {}
+        _url, state = watch._look(repo)
+        if state not in ("up", "busy"):   # "busy": ours, reading a large repository; still the one to use
+            return {}
+        got = json.loads(f.read_text(encoding="utf-8"))
         return {"url": str(got.get("url") or ""), "port": int(got.get("port") or 0)}
     except Exception:  # noqa: BLE001
         return {}

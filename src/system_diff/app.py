@@ -188,9 +188,10 @@ class Studio:
         deadline = time.time() + wait
         started = False
         while True:
-            info = _read(_web_json(root)) or {}
-            if repos._engine(root).get("port") and info.get("token"):
-                return {"port": int(info["port"]), "token": str(info["token"])}
+            if repos._engine(root).get("port"):   # asked on its port: a dead one's web.json is dropped
+                info = _read(_web_json(root)) or {}
+                if info.get("token"):
+                    return {"port": int(info["port"]), "token": str(info["token"])}
             if not started:
                 try:
                     watch.start_detached(root, wait=0)
@@ -200,6 +201,16 @@ class Studio:
             if time.time() >= deadline:
                 return {}
             time.sleep(0.3)
+
+    def restart(self, root: Path, wait: float) -> Dict[str, Any]:
+        """The engine web.json names refused a connection: forget it (watch._look drops a web.json whose port no longer
+        answers as it) and start one."""
+        from . import watch
+        try:
+            watch._look(root)
+        except Exception:  # noqa: BLE001
+            pass
+        return self.engine(root, wait=wait)
 
     # ── defaults per project ──────────────────────────────────────────────────────────────────────────────────
     def default_for(self, root: Path) -> Dict[str, Any]:
@@ -484,19 +495,33 @@ def handler(studio: Studio):
                 headers["Content-Type"] = self.headers.get("Content-Type") or "application/json"
                 headers["Origin"] = f"http://127.0.0.1:{eng['port']}"    # the engine's /send asks for its own page
                 headers["Referer"] = f"http://127.0.0.1:{eng['port']}/"
-            conn = http.client.HTTPConnection("127.0.0.1", eng["port"], timeout=PROXY_TIMEOUT)
-            try:
-                conn.request(method, rest + (("?" + q) if q else ""), body=body or None, headers=headers)
-                r = conn.getresponse()
-                data = r.read()
-                kind = r.getheader("Content-Type") or "application/octet-stream"
-                if page and kind.startswith("text/html"):
-                    data = data.replace(b"<head>", b'<head><base href="/p/' + pid.encode() + b'/">', 1)
-                return self._send(r.status, data, kind)
-            except (OSError, http.client.HTTPException) as exc:
-                return self._json(502, {"error": f"the project's engine did not answer: {type(exc).__name__}"})
-            finally:
-                conn.close()
+            for attempt in (1, 2):
+                conn = http.client.HTTPConnection("127.0.0.1", eng["port"], timeout=PROXY_TIMEOUT)
+                try:
+                    conn.request(method, rest + (("?" + q) if q else ""), body=body or None, headers=headers)
+                    r = conn.getresponse()
+                    data = r.read()
+                    kind = r.getheader("Content-Type") or "application/octet-stream"
+                    if page and kind.startswith("text/html"):
+                        data = data.replace(b"<head>", b'<head><base href="/p/' + pid.encode() + b'/">', 1)
+                    return self._send(r.status, data, kind)
+                except ConnectionRefusedError:
+                    # the engine web.json named is gone (killed): its file is dropped, a new one started, asked once more
+                    if attempt == 2:
+                        return self._json(502, {"error": "the project's engine did not answer, and a new one did not start"})
+                    eng = studio.restart(root, wait=20.0 if page else 8.0)
+                    if not eng:
+                        if page:
+                            return self._send(200, STARTING.encode("utf-8"), "text/html; charset=utf-8")
+                        return self._json(503, {"error": "the project's engine is starting"})
+                    headers.update({"X-Token": eng["token"], "Host": f"127.0.0.1:{eng['port']}"})
+                    if method == "POST":
+                        headers.update({"Origin": f"http://127.0.0.1:{eng['port']}",
+                                        "Referer": f"http://127.0.0.1:{eng['port']}/"})
+                except (OSError, http.client.HTTPException) as exc:
+                    return self._json(502, {"error": f"the project's engine did not answer: {type(exc).__name__}"})
+                finally:
+                    conn.close()
 
     return Handler
 
@@ -504,6 +529,14 @@ def handler(studio: Studio):
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = os.name != "nt"
+
+    def handle_error(self, request, client_address) -> None:
+        """A browser that leaves before its answer is written (WinError 10053, a reset, a broken pipe) is not an error."""
+        import socket
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionError, socket.timeout, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
 
 
 def serve(port: int = FIRST, open_it: bool = False, folder: Optional[Path] = None, ready=None,
