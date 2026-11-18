@@ -1,4 +1,4 @@
-"""`system-diff tui`: the pane's views (Now, Review, Agents, Topics) in a terminal of their own, for a separate tab or
+"""`system-diff tui`: the pane's views (Now, Review, Agents, Topics, History) in a terminal of their own, for a separate tab or
 window beside Claude Code. It draws the very page the pane draws (`pane.show`, the protocol-2 page: rows of styled
 runs, blocks to pick, what each lights and shows), with the pane's keys and colours, so the two never differ.
 
@@ -12,6 +12,7 @@ any reader, so all of it is tested without a terminal.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import threading
@@ -23,8 +24,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import __version__
 
-VIEWS = (("now", "Now", "n"), ("review", "Review", "r"), ("agents", "Agents", "a"), ("topics", "Topics", "t"))
-VIEW_KEYS = {"n": "now", "r": "review", "m": "review", "c": "review", "a": "agents", "t": "topics"}
+VIEWS = (("now", "Now", "n"), ("review", "Review", "r"), ("agents", "Agents", "a"), ("topics", "Topics", "t"),
+         ("history", "History", "h"))
+VIEW_KEYS = {"n": "now", "r": "review", "m": "review", "c": "review", "a": "agents", "t": "topics", "h": "history"}
 ZOOM_WORD = ("full", "compact", "tiny")
 REFRESH = 3.0   # seconds between looks at the system, as the pane's clock
 STEP = 8        # columns a [ or ] scrolls across
@@ -249,7 +251,7 @@ def render(page: Optional[Dict[str, Any]], st: State, width: int, height: int,
     right = (f"🌐 {page['web']}  " if page and page.get("web") else "") + f"v{version}"
     if cells(right) > width:
         right = f"v{version}"
-    keys = "q quit · ←↑↓→ pick · ↵ zoom in · b back · n r a t views · [ ] ⇧↑↓ PgUp PgDn scroll · - = zoom"
+    keys = "q quit · ←↑↓→ pick · ↵ zoom in · b back · h history · n r a t views · [ ] ⇧↑↓ PgUp PgDn scroll · - = zoom"
     room = width - cells(right) - 2
     left = fit(keys, room) if room >= 12 else ""
     lines.append(sgr(2) + left + " " * max(1, width - cells(left) - cells(right)) + right + RESET)
@@ -516,6 +518,53 @@ class Tui:
             self.request()
         elif isinstance(what.get("view"), str):
             self._go(what["view"])
+        elif isinstance(what.get("history"), str):
+            self._history(what["history"])
+        elif isinstance(what.get("entry"), str):
+            self._history("", what["entry"])
+        elif isinstance(what.get("compare"), str):
+            self._compare(what["compare"])
+
+    def _remember(self) -> None:
+        """Where the person was, for b: "<view>	<part>"."""
+        self.st.back = (self.st.back + [f"{self.st.view}	{self.st.part}"])[-20:]
+
+    @staticmethod
+    def _block_of(part: str) -> str:
+        """The block a History part is about ('' the whole system), as the pane's register.tsx does."""
+        hash_at = part.find("#")
+        return part[:hash_at] if hash_at >= 0 else ("" if part.startswith("compare:") else part)
+
+    def _history(self, block: str, entry: Optional[str] = None) -> None:
+        """The History of a block ('' the whole system), or one entry of it, with a way back."""
+        here = self.st.part if self.st.view == "history" else ""
+        nxt = block if entry is None else f"{self._block_of(here)}#{entry}"
+        if self.st.view == "history" and self.st.part == nxt:
+            return
+        self._remember()
+        self._go("history", nxt)
+
+    def _compare(self, ident: str) -> None:
+        """c on an entry: the first marks where to compare from, c on another shows the two compared, c on the marked
+        one unmarks it."""
+        if not ident.isalnum():
+            return
+        here = self.st.part if self.st.view == "history" else ""
+        block = self._block_of(here)
+        pre = f"{block}#" if block else ""
+        m = re.match(r"^compare:([A-Za-z0-9]+)$", here[len(pre):])
+        marked = m.group(1) if m else ""
+        if marked == ident:
+            nxt = block
+        elif marked:
+            nxt = f"{pre}compare:{marked}..{ident}"
+        elif ident == "now":
+            return
+        else:
+            nxt = f"{pre}compare:{ident}"
+        if marked and marked != ident:
+            self._remember()
+        self._go("history", nxt)
 
     def handle(self, key: str) -> bool:
         """One key, as the pane takes it. False: quit."""
@@ -525,7 +574,10 @@ class Tui:
         width, height = self.size()
         bh, _ = layout(page, self.st, width, height)
         picked = _picked(page, self.st) if page else None
-        if key in ("shift-up", "shift-down"):
+        own = ((picked or {}).get("on") or {}).get(key) if len(key) == 1 else None
+        if own:
+            self._act(own)   # a key the picked block names (c on a History entry: compare)
+        elif key in ("shift-up", "shift-down"):
             self.st.sy += -5 if key == "shift-up" else 5
         elif key in ("pageup", "pagedown"):
             self.st.sy += (-1 if key == "pageup" else 1) * max(1, bh - 2)
@@ -552,10 +604,17 @@ class Tui:
             self._act((picked or {}).get("space"))
         elif key in ("b", "backspace"):
             if self.st.back:
-                self._go(part=self.st.back.pop())
+                went = self.st.back.pop()
+                if "	" in went:   # a way back to another view, as the History's
+                    view, _, part = went.partition("	")
+                    self._go(view, part)
+                else:
+                    self._go(part=went)
         elif key == "f":
             self.st.back = []
             self._go("now", "")
+        elif key == "h":   # History: of the picked box (a part, a container), else of the whole system
+            self._history(self.st.sel[2:] if self.st.sel.startswith("b:") else "")
         elif key in VIEW_KEYS:
             self._go(VIEW_KEYS[key])
         self._clamp()
