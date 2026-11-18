@@ -131,3 +131,24 @@ def test_a_research_repository_opens_on_research(monkeypatch, repo):
     assert pane.show(repo, 80, "now", take=False)["home"]["view"] == "research"
     ext.home = lambda ctx: {"view": "not-a-view"}
     assert extensions.home(repo) is None
+
+
+def test_the_files_come_from_gits_index_not_a_walk(mono, files):
+    from system_diff import uitools
+    files(mono, {"node_modules/big/package.json": "{}", "notes.txt": "not added"})
+    listed = uitools._files(mono)
+    assert "api/pyproject.toml" in listed and "notes.txt" not in listed and not any(f.startswith("node_modules") for f in listed)
+
+
+def test_a_slow_extra_never_holds_the_page(monkeypatch):
+    calls = []
+
+    def slow():
+        calls.append(1)
+        time.sleep(1.5)
+        return ["late"]
+    t0 = time.time()
+    assert watch.soon(("test", "slow"), slow, wait=0.2) is None and time.time() - t0 < 1.0   # not waited for
+    time.sleep(1.6)
+    assert watch.soon(("test", "slow"), lambda: ["fresh"], wait=0.5) == ["fresh"]              # done: the new value
+    assert watch.soon(("test", "fast"), lambda: 42) == 42 and calls == [1]

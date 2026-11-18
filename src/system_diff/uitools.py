@@ -147,14 +147,19 @@ def graph(root: Path, view_: str = "now", part: str = "", project: str = "", lim
 # ── where a block comes from ────────────────────────────────────────────────────────────────────────────────────
 
 def _files(root: Path) -> List[str]:
+    """The repository's files, from git's index (read in Python: no git process). git_dir() is system-diff's folder
+    inside the git dir, so the index is beside it. Without an index, the folders walked skip what the config skips
+    (node_modules, virtualenvs, build output): never the whole tree."""
     try:
         from . import gitfs
         from .sources import git_dir
-        entries, _ = gitfs.read_index(git_dir(root) / "index")
+        entries, _ = gitfs.read_index(git_dir(root).parent / "index")
         return sorted(entries)
     except Exception:  # noqa: BLE001
+        from .config import lenient
+        from .extract import Code
         from .sources import DirSource
-        return DirSource(root).files
+        return DirSource(root, Code(lenient(root)).skip).files
 
 
 def _toml_entry(e: Dict[str, Any]) -> str:

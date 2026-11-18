@@ -1974,7 +1974,10 @@ def handler(w: Watcher):
             except Exception as exc:  # noqa: BLE001 - the page shows it and keeps polling
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
             return self._json(200, {**page, "version": version, "engine_error": w.last_error(),
-                                    "chat": chat_view(w, page), "repos": repos_view(w), "projects": projects_mode(w)})
+                                    "chat": chat_view(w, page),
+                                    "repos": soon(("repos", str(w.root)), lambda: repos_view(w)) or [],
+                                    "projects": soon(("mode", str(w.root)), lambda: projects_mode(w))
+                                    or {"one": False, "found": 0}})
 
         def _projects(self, path: str):
             """The project tabs (GET /projects: every running engine of this user, from the registry cleaned of
@@ -2392,6 +2395,33 @@ def chat_view(w: "Watcher", page: Optional[Dict[str, Any]] = None) -> Dict[str, 
         return _CHAT_CACHE["value"]
     except Exception as exc:  # noqa: BLE001 - the panel is extra; the page goes on
         return {"stamp": "", "items": [], "pointing": None, "notes": {}, "error": f"{type(exc).__name__}: {exc}"}
+
+
+_SOON: Dict[tuple, Dict[str, Any]] = {}
+_SOON_LOCK = threading.Lock()
+
+
+def soon(key: tuple, fn, wait: float = 0.5) -> Any:
+    """What fn() gives, never holding the page up: worked out in a thread of its own, waited for `wait` seconds at
+    most, else the last value it gave (None the first time). The extras of a page (the projects inside a repository,
+    its family of repositories) read folders, which on a large repository on a slow disk can take long."""
+    with _SOON_LOCK:
+        st = _SOON.setdefault(key, {"value": None, "thread": None})
+        t = st["thread"]
+        if t is None or not t.is_alive():
+            def run() -> None:
+                try:
+                    v = fn()
+                except Exception:  # noqa: BLE001 - an extra: the page goes on without it
+                    return
+                with _SOON_LOCK:
+                    st["value"] = v
+            t = threading.Thread(target=run, name="system-diff page extra", daemon=True)
+            st["thread"] = t
+            t.start()
+    t.join(wait)
+    with _SOON_LOCK:
+        return st["value"]
 
 
 UI_KEEP = 120.0   # a page not heard from for this long is closed
