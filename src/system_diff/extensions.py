@@ -44,6 +44,11 @@ may define:
     WORKFLOW_TEMPLATES = [{"name", "description", "agents", "steps", "waits", "order"}]
                                                             # ready-made workflows, offered where applies(root); it saves
                                                             #   its own with system_diff.workflows.save(..., by=NAME)
+    def projects(ctx) -> [{"path", "title", "why"}]         # the folders that are projects in a repository it applies
+                                                            #   to (research-diff's studies), relative to the root: the
+                                                            #   page's list of projects shows them (system-diff finds
+                                                            #   others only by a manifest, never by a folder's name);
+                                                            #   a function, not a module of that name
     def home(ctx) -> {"view": "research", "system": "collapsed"} | None
                                                             # the view a repository opens on (a research repository:
                                                             #   its own), system-diff's tabs behind one "System" tab
@@ -51,12 +56,13 @@ may define:
     def source(ctx, block) -> {"files": [{"path", "line"}], "config": ...} | None
                                                             # where its block comes from (ui_source)
 
-A view's JSON (web) may carry "nav": [{"id", "title", "sub", "badge", "active", "target": {"view", "part"}}]: a
-pinned list on the left of the page (a row of pickable blocks in the pane); a diagram's "files" may map a block to
+A view's JSON (web) may carry "nav": [{"id", "title", "sub", "badge", "active", "target": {"view", "part", "scope"?}}]
+(scope: a project folder, picked as the page's own list picks it): a pinned list on the left of the page (a row of pickable blocks in the pane); a diagram's "files" may map a block to
 {"path", "line", "end"}: a click opens the file there, those lines lit.
 
 `ctx` is a Context: root (the repository shown: a submodule's when one is picked), parent (the repository it sits
-inside, else None), view, part, width (pane), zoom, and `live` (compare.Live: the working tree as the engine
+inside, else None), view, part, width (pane), zoom, scope (the project folder picked on the page, "" the whole
+repository), and `live` (compare.Live: the working tree as the engine
 holds it, `live.source` reading files without git, `live.identity` the same for the same files: a key to cache by),
 None outside the engine.
 
@@ -89,6 +95,7 @@ class Context:
     zoom: int = 0
     live: Any = None
     parent: Optional[Path] = None
+    scope: str = ""
 
 
 def load() -> List[Any]:
@@ -213,9 +220,9 @@ def by_name(name: str) -> Optional[Any]:
     return next((e for e in load() if getattr(e, "NAME", "") == name), None)
 
 
-def context(root: Path, view: str, part: str = "", width: int = 100, zoom: int = 0) -> Context:
+def context(root: Path, view: str, part: str = "", width: int = 100, zoom: int = 0, scope: str = "") -> Context:
     from . import compare, repos
-    return Context(Path(root), view, part or "", width, zoom, compare.live(root), repos.parent(root))
+    return Context(Path(root), view, part or "", width, zoom, compare.live(root), repos.parent(root), scope or "")
 
 
 def watched(gitdir: Path) -> tuple:

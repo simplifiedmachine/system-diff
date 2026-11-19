@@ -3,6 +3,10 @@ its own .git that is not a submodule). Each is a system of its own: it gets its 
 history and caches, exactly as if it had been opened alone), and the page lists the family on the left: the outer
 repository first, then each one inside it, with its branch and whether its engine runs.
 
+A repository inside a listed folder project's folder (projects.listed: a study's paper as a submodule) is part of that
+project: it is marked "within" that folder, and the lists show it with its project, not as a row of its own. Those
+listed apart get names that tell them apart (their path when two share a name).
+
 `family(root)` works from any member: from a submodule it finds the outer repository (`parent`) and lists the same
 family, so the list is the same whichever one the page shows.
 """
@@ -146,19 +150,52 @@ def inside(root: Path) -> List[Dict[str, str]]:
     return out
 
 
+def _placing(outer: Path, rels: List[str]) -> Dict[str, Dict[str, str]]:
+    """Each repository inside `outer`: {"within": the listed folder project it sits in ("" none), "name": unique among
+    those listed apart (its path when two share a name, or share the outer one's)}."""
+    try:
+        from .projects import listed
+        folders = sorted((p["path"] for p in listed(outer)), key=len, reverse=True)
+    except Exception:  # noqa: BLE001
+        folders = []
+    out: Dict[str, Dict[str, str]] = {}
+    for rel in rels:
+        within = next((f for f in folders if rel == f or rel.startswith(f + "/")), "")
+        out[rel] = {"within": within, "name": rel.rsplit("/", 1)[-1]}
+    apart = [r for r in rels if not out[r]["within"]]
+    names = [out[r]["name"] for r in apart] + [outer.name]
+    for r in apart:
+        if names.count(out[r]["name"]) > 1:
+            out[r]["name"] = r
+    return out
+
+
+def placed(root: Path) -> List[Dict[str, Any]]:
+    """inside(root), each with "within" (the folder project of root it sits in, "" when listed apart) and a "name"
+    unique among those listed apart: what a list of root's repositories shows (the Studio's)."""
+    root = Path(root).resolve()
+    kids = inside(root)
+    where = _placing(root, [k["path"] for k in kids])
+    return [{**k, **where[k["path"]]} for k in kids]
+
+
 def family(root: Path) -> List[Dict[str, Any]]:
     """The list for the page's left column: the outer repository, then every repository inside it, each
     {"path" (absolute), "rel" ("" for the outer one), "name", "kind" ("outer", "submodule", "nested"), "branch",
-    "current" (the one `root` is), "url", "port" (its engine, when it runs)}. Empty for a repository alone."""
+    "current" (the one `root` is), "within" (the outer one's folder project it sits in: shown with that project, not
+    as a row of its own; "" listed apart), "url", "port" (its engine, when it runs)}. Every member is there (others
+    navigate by it); "name" is unique among those listed apart. Empty for a repository alone."""
     root = Path(root).resolve()
     outer = parent(root) or root
     kids = inside(outer)
     if not kids:
         return []
+    where = _placing(outer, [k["path"] for k in kids])
     out = []
     for rel, kind in [("", "outer")] + [(k["path"], k["kind"]) for k in kids]:
         p = (outer / rel).resolve() if rel else outer
-        out.append({"path": str(p), "rel": rel, "name": rel.rsplit("/", 1)[-1] if rel else outer.name, "kind": kind,
+        at = where.get(rel) or {"within": "", "name": outer.name}
+        out.append({"path": str(p), "rel": rel, "name": at["name"], "kind": kind, "within": at["within"],
                     "branch": _branch(p), "current": p == root, **_engine(p)})
     return out
 

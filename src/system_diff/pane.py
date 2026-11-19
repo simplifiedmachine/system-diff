@@ -1263,8 +1263,8 @@ def unread_count(root: Path, name: str) -> int:
 
 def _pin_nav(page: Dict[str, Any], root: Path, view: str, width: int) -> None:
     """The web page's pinned left list, in the pane: a row of pickable blocks above the view. An extension's own
-    list (its page's "nav": [{id, title, badge, active, target: {view, part}}]) and the repositories of this one's
-    family (a submodule: shown by its own engine, whose page the web link opens)."""
+    list (its page's "nav": [{id, title, badge, active, target: {view, part}}]). The family of repositories is the
+    web page's (its left column), not listed here."""
     items = [n for n in (page.pop("nav", None) or []) if isinstance(n, dict)]
     if not items:
         return
@@ -1303,7 +1303,7 @@ def _show(root: Path, width: int = 80, view: str = "now", part: Optional[str] = 
     ext = extensions.owner(view)
     if ext is not None and getattr(ext, "pane", None):      # a view of an extension (research-diff's Evidence, …)
         try:
-            return ext.pane(extensions.context(root, view, part or "", width, ZOOM))
+            return ext.pane(extensions.context(root, view, part or "", width, ZOOM, SCOPE))
         except Exception as exc:  # noqa: BLE001 - the pane shows the error, never a broken page
             page = canvas.Page(width)
             page.para(extensions.failed(view, exc)["text"], "removed")
@@ -1802,7 +1802,7 @@ def web_view(root: Path, view: str = "now", part: str = "", zoom: int = 0) -> Di
     ext = extensions.owner(view)
     if ext is not None and getattr(ext, "web", None):
         try:
-            out = ext.web(extensions.context(root, view, part or "", 160, zoom))
+            out = ext.web(extensions.context(root, view, part or "", 160, zoom, SCOPE))
         except Exception as exc:  # noqa: BLE001
             out = {"view": view, "part": part or "", "title": view, "headline": extensions.failed(view, exc)["text"],
                    "diagram": {}, "sections": []}

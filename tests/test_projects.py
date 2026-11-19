@@ -1,4 +1,4 @@
-"""Projects inside one repository (folders with their own manifest, numbered folders), each its own diagram from the
+"""Projects inside one repository (folders with their own manifest, or named by an extension), each its own diagram from the
 same engine; the person's one/split switch; and an extension's home view (a research repository opens on research)."""
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def mono(tmp_path, files):
     return r
 
 
-def test_projects_are_found_by_their_manifests_and_numbers(mono, tmp_path, files):
+def test_projects_are_found_by_their_manifests_never_by_names(mono, tmp_path, files):
     got = projects.detect(mono)
     assert [p["path"] for p in got] == ["api", "web", "worker"] and got[0]["why"] == "its own pyproject.toml"
     research = tmp_path / "research"
@@ -50,7 +50,7 @@ def test_projects_are_found_by_their_manifests_and_numbers(mono, tmp_path, files
     files(research, {"1_tradeoff/notes.md": "x", "2_behavioral/notes.md": "y", "3_serving/README.md": "z",
                      "results/a.csv": "1", "README.md": "r"})
     _git(research, "add", "-A")
-    assert [p["path"] for p in projects.detect(research)] == ["1_tradeoff", "2_behavioral", "3_serving"]
+    assert projects.detect(research) == []                   # numbered folders: a name, not a project
     solo = tmp_path / "solo"
     solo.mkdir()
     _git(solo, "init", "-q")
