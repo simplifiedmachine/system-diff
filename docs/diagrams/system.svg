@@ -59,13 +59,13 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <path class="be k-call s-same" d="M214,172 C243,172 243,52 272,52" marker-end="url(#ar-call-same)"><title>agent → live</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,1028 272,1028" marker-end="url(#ar-call-same)"><title>agent → objectives</title></path>
 <path class="be k-call s-same" d="M214,172 C246,172 246,159 278,159 L478,159 C507,159 507,112 536,112" marker-end="url(#ar-call-same)"><title>agent → sources</title></path>
+<path class="be k-call s-same" d="M214,172 C243,172 243,1508 272,1508" marker-end="url(#ar-call-same)"><title>agent → src/system_diff</title></path>
 <path class="be k-call s-same" d="M214,172 C246,172 246,159 278,159 L478,159 C507,159 507,172 536,172" marker-end="url(#ar-call-same)"><title>agent → activity</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,548 272,548" marker-end="url(#ar-call-same)"><title>agent → agents</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,788 272,788" marker-end="url(#ar-call-same)"><title>agent → chat</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,112 272,112" marker-end="url(#ar-call-same)"><title>agent → compare</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,188 272,188" marker-end="url(#ar-call-same)"><title>agent → config</title></path>
 <path class="be k-call s-same" d="M214,172 C243,172 243,608 272,608" marker-end="url(#ar-call-same)"><title>agent → design</title></path>
-<path class="be k-call s-same" d="M214,172 C243,172 243,248 272,248" marker-end="url(#ar-call-same)"><title>agent → extract</title></path>
 <path class="be k-call s-same" d="M478,548 C544,548 544,1508 484,1508" marker-end="url(#ar-call-same)"><title>agents → src/system_diff</title></path>
 <path class="be k-call s-same" d="M478,548 C544,548 544,248 484,248" marker-end="url(#ar-call-same)"><title>agents → extract</title></path>
 <path class="be k-call s-same" d="M478,548 C514,548 514,488 484,488" marker-end="url(#ar-call-same)"><title>agents → architecture</title></path>

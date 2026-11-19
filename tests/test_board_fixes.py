@@ -120,3 +120,16 @@ def test_a_tie_to_an_agent_of_an_earlier_plan_does_not_break_the_board(repo, mon
     monkeypatch.setattr(agents, "runs", lambda root, since=0: [{"at": 1.0, "event": "start", "agent_id": "a1", "agent_type": "general-purpose"}])
     wf = agents.workflow(repo)
     assert [a["name"] for a in wf["agents"]] == ["api"]
+
+
+def test_claude_is_told_each_turn_to_hand_work_to_the_projects_saved_agents(repo):
+    """pr-creation was saved, yet the PR was made in the main chat: each prompt now names the saved agents."""
+    from system_diff import agent
+    d = repo / ".claude" / "agents"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "pr-creation.md").write_text("---\nname: pr-creation\ndescription: Use when a branch is ready to open an Azure "
+                                      "DevOps pull request.\n---\nOpen the PR.\n", encoding="utf-8")
+    said = agent.saved_agents_context(repo)
+    assert "pr-creation: Use when a branch is ready" in said and "subagent_type" in said
+    out = agent.on_prompt(repo, {"prompt": "sure", "session_id": "s"}, {})
+    assert "pr-creation" in (out or {}).get("context", "")

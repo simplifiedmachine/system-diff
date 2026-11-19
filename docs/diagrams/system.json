@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 944,
+   "lines": 968,
    "hub": false,
    "quiet": false
   },
@@ -464,7 +464,7 @@
   "agent>live": 2,
   "agent>objectives": 2,
   "agent>sources": 2,
-  "agent>src/system_diff": 1,
+  "agent>src/system_diff": 2,
   "agent>watch": 1,
   "agents>activity": 1,
   "agents>architecture": 2,
@@ -769,6 +769,7 @@
   ],
   "agent>src/system_diff": [
    "finished",
+   "for_project",
    "ran"
   ],
   "agent>watch": [

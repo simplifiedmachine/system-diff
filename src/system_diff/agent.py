@@ -445,6 +445,27 @@ def _drop_vscode_task(root: Path, out: Callable[[str], None]) -> None:
     out(f"removed the VS Code task from {path}")
 
 
+SAVED_MOST = 8
+
+
+def saved_agents_context(root: Path) -> str:
+    """The agents saved for this project (and the person's), by name and what they are for: when the work at hand is
+    theirs (a pull request, a local test run), Claude starts that agent instead of doing it in the main chat, where the
+    person cannot follow it (the Agents board shows a subagent as it works). "" when none is saved."""
+    try:
+        from . import agentlib
+        got = [a for a in agentlib.for_project(root) if a.get("source") in ("project", "user")][:SAVED_MOST]
+    except Exception:  # noqa: BLE001 - a hint, never a failure
+        return ""
+    if not got:
+        return ""
+    lines = [f"- {a['name']}: {str(a.get('description') or '').strip()[:180]}" for a in got]
+    return ("system-diff: agents saved for this project. When the work you are about to do is one of theirs (now, or "
+            "a step of a larger task), launch that agent with the Task tool (subagent_type = its name) with what it "
+            "needs, instead of doing it yourself in this chat: the person follows it on the Agents board while it "
+            "works.\n" + "\n".join(lines))
+
+
 def on_prompt(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dict[str, str]]:
     """The person sent a prompt: a new turn starts (the engine marks it), and Claude is told to plan the work for a
     team of agents (unless the config says `[agents] orchestrate = false`). A notice Claude Code sends as a prompt (a
@@ -459,6 +480,9 @@ def on_prompt(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[D
                                                               payload.get("session_id", ""), at)
     hand_off(root, {"event": "prompt", "at": at, "agent": payload.get("agent_id") or ""}, PROMPT_WAIT, env)
     aims = objectives_context(root)
+    kept = saved_agents_context(root)
+    if kept:   # the project's own agents, named every turn: Claude hands their kind of work to them
+        aims = kept + ("\n\n" + aims if aims else "")
     if asked and asked.get("web"):   # sent from the web page: Claude may point at the diagram as it answers
         aims = chat.WEB_HINT + ("\n\n" + aims if aims else "")
     if (config.lenient(root).get("agents") or {}).get("orchestrate", True) is False or payload.get("agent_id"):
