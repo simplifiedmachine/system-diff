@@ -90,7 +90,7 @@ def test_the_mcp_tools_answer_with_the_plan_and_the_picture(repo, files, monkeyp
     names = {t.name for t in asyncio.run(mcp_server.build().list_tools())}
     assert names == {"system_map", "system_diff", "explain", "draw", "checkpoint", "plan_agents", "claim", "publish",
                      "subscribe", "inbox", "team", "objectives", "check_objective", "point_to", "note",
-                     "ui_view", "ui_graph", "ui_source", "ui_show", "ui_config_preview", "saved_agents", "save_agent", "install_agents",
+                     "ui_view", "ui_graph", "ui_source", "ui_show", "ui_config_preview", "ui_check", "report_diagram_issue", "saved_agents", "save_agent", "install_agents",
                      "add_agent", "agent_kinds", "workflow", "agent_log", "workflow_action", "save_workflow", "workflows",
                      "run_workflow",
                      "save_skill"}

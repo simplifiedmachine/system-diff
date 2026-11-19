@@ -39,7 +39,11 @@ INSTRUCTIONS = (
     "short finding about a part beside it. The person sees the system-diff page beside the chat: read ui_view when "
     "they say 'this', 'here' or 'the one I picked'; ui_graph gives a view's diagram as data; while explaining, ui_show "
     "and point_to what you name. The diagrams are computed from the code and system-diff.toml: to rename, group or "
-    "move a box, find its source with ui_source, preview with ui_config_preview, then edit the file. A team can run "
+    "move a box, find its source with ui_source, preview with ui_config_preview, then edit the file. When the person "
+    "says the diagram is wrong (a missing or extra box or connection, a wrong name or group), check it: ui_check lists "
+    "what could be wrong and ui_source what is behind a box; compare with the code. When the config explains it, "
+    "preview the fix with ui_config_preview and edit system-diff.toml; otherwise report_diagram_issue. Either way, "
+    "tell the person what you found. A team can run "
     "in stages (plan_agents order=staged, or after=...): launch each stage as `how` says. When the person asks for "
     "another agent, add_agent (agent_kinds lists extensions' kinds and saved agents); save_workflow keeps a team to "
     "reuse with run_workflow; workflow and agent_log show who runs, who waits, and what each one did."
@@ -467,6 +471,26 @@ def build() -> Server:
         entry: label renames a box, paths move files into it, layer or container group it). Then edit the file."""
         from . import uitools
         return _safe(lambda: uitools.config_preview(_root(), changes, view, part, project))
+
+    @_read_only(server)
+    def ui_check(part: str = "", view: str = "now", project: str = "") -> Dict[str, Any]:
+        """What could be wrong in the diagram (or one part's), checked against the code: imports that reach no part
+        (a path alias or source folder the config misses), code counted in no part, parts with no connections,
+        outside systems drawn from setting names only, config entries that match nothing, a read still under way.
+        Each finding: what, where (files and lines), why, and a fix: a system-diff.toml snippet for
+        ui_config_preview, or what system-diff does not understand (then report_diagram_issue)."""
+        from . import uitools
+        return _safe(lambda: uitools.check(_root(), part, view, project))
+
+    @server.tool()
+    def report_diagram_issue(part: str, wrong: str, expected: str, evidence: str = "",
+                             project: str = "") -> Dict[str, Any]:
+        """Keep a diagram problem system-diff.toml cannot fix (system-diff misreads the code) and get a report to
+        show the person, ready to paste to system-diff's maintainers: the version, what was drawn, what was expected,
+        and the few lines `evidence` names ("path:line" or "path:from-to"), secrets masked. Kept under
+        .git/system-diff/diagram-issues.jsonl."""
+        from . import uitools
+        return _safe(lambda: uitools.report_issue(_root(), part, wrong, expected, evidence, project))
 
     @server.tool()
     def ui_show(view: str, part: str = "", pick: str = "", note: str = "", project: str = "") -> Dict[str, Any]:

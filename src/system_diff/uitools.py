@@ -250,6 +250,25 @@ def config_preview(root: Path, changes: Any, view_: str = "now", part: str = "",
             "next": "edit system-diff.toml with these changes yourself (the person sees the edit); the page redraws"}
 
 
+# ── is the diagram right ────────────────────────────────────────────────────────────────────────────────────────
+
+def check(root: Path, part: str = "", view_: str = "now", project: str = "") -> Dict[str, Any]:
+    """What could be wrong in a diagram, against the code (diagcheck.check): asked of the engine when it answers
+    (it holds the working tree read), else worked out here from what is kept."""
+    from . import diagcheck
+    r = project_root(root, project)
+    got = engine_get(r, "check?" + urllib.parse.urlencode({"part": part, "view": view_}), timeout=30)
+    if isinstance(got, dict) and "findings" in got:
+        return got
+    return diagcheck.check(r, part, view_)
+
+
+def report_issue(root: Path, part: str, wrong: str, expected: str, evidence: str = "", project: str = ""
+                 ) -> Dict[str, Any]:
+    from . import diagcheck
+    return diagcheck.report(project_root(root, project), part, wrong, expected, evidence)
+
+
 # ── moving the page ─────────────────────────────────────────────────────────────────────────────────────────────
 
 def show(root: Path, view_: str, part: str = "", pick: str = "", note: str = "", project: str = "",
