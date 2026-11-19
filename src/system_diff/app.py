@@ -45,6 +45,20 @@ def state_dir(env=os.environ) -> Optional[Path]:
     return eng.parent if eng is not None else None
 
 
+def _said(what: str, exc: BaseException) -> str:
+    """A failure told plainly, and its traceback kept in app.log (the Studio's own log) for the doctor."""
+    import traceback
+    try:
+        folder = state_dir()
+        if folder is not None:
+            with open(folder / APP_LOG, "a", encoding="utf-8") as out:
+                out.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {what}: " + "".join(
+                    traceback.format_exception(type(exc), exc, exc.__traceback__)))
+    except OSError:
+        pass
+    return f"{what} could not be read: {type(exc).__name__}: {exc}"
+
+
 def _write_private(f: Path, data: Any) -> None:
     f.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     tmp = f.with_name(f".{f.name}.{os.getpid()}.{threading.get_ident()}.tmp")
@@ -114,6 +128,19 @@ class Studio:
             self.manager = sessions.Manager()
             self.manager.vault_folder = self.folder
         return self.manager
+
+    def subagents_of(self, root: Path) -> List[Dict[str, Any]]:
+        """The subagents of this project's sessions in this Studio (running first, then the newest), for the Agents
+        tab: never an error when there is no session."""
+        if self.manager is None:
+            return []
+        out: List[Dict[str, Any]] = []
+        for s in self.manager.of(root):
+            try:
+                out += s.subagents()
+            except Exception:  # noqa: BLE001
+                continue
+        return sorted(out, key=lambda x: (x["status"] != "running",))[:40]
 
     # ── projects ──────────────────────────────────────────────────────────────────────────────────────────────
     def add(self, path: str) -> Dict[str, Any]:
@@ -431,15 +458,35 @@ def handler(studio: Studio):
                     return self._json(200, got)
                 if path == "/api/agents":
                     from . import agentlib
-                    return self._json(200, agentlib.library(self._root(q)))
+                    root = self._root(q)
+                    try:
+                        lib = agentlib.library(root)
+                    except Exception as exc:  # noqa: BLE001
+                        lib = {"kinds": [], "worth_keeping": [], "for_project": [], "saved": [], "in_library": [],
+                               "problems": [_said("the agent library", exc)]}
+                    lib["running"] = studio.subagents_of(root)
+                    return self._json(200, lib)
                 if path == "/api/workflows":
                     from . import agents as team, workflows
                     root = self._root(q)
-                    wf = team.workflow(root)
-                    return self._json(200, {"workflows": [workflows.summary(w) for w in workflows.listing(root)],
-                                            "current": {"task": wf.get("task", ""), "agents": len(wf["agents"]),
-                                                        "steps": len(wf.get("steps") or [])},
-                                            "kinds": list(team.agent_kinds(root).values())})
+                    out: Dict[str, Any] = {"workflows": [], "current": {"task": "", "agents": 0, "steps": 0},
+                                           "kinds": [], "problems": []}
+                    # each part on its own: one that fails (a state file mid-write, an odd record) hides only itself
+                    try:
+                        wf = team.workflow(root) or {}
+                        out["current"] = {"task": wf.get("task", ""), "agents": len(wf.get("agents") or []),
+                                          "steps": len(wf.get("steps") or [])}
+                    except Exception as exc:  # noqa: BLE001
+                        out["problems"].append(_said("the team", exc))
+                    try:
+                        out["workflows"] = [workflows.summary(w) for w in workflows.listing(root)]
+                    except Exception as exc:  # noqa: BLE001
+                        out["problems"].append(_said("saved workflows", exc))
+                    try:
+                        out["kinds"] = list(team.agent_kinds(root).values())
+                    except Exception as exc:  # noqa: BLE001
+                        out["problems"].append(_said("agent kinds", exc))
+                    return self._json(200, out)
                 if path == "/api/sessions":
                     root = self._root(q)
                     m = studio.manager
@@ -469,8 +516,10 @@ def handler(studio: Studio):
                     since = int(q.get("since") or 0)
                     wait = float(q.get("wait") or 0)
                     return self._json(200, s.events_since(since, wait))
-            except KeyError:
-                return self._json(404, {"error": "no such session"})
+            except KeyError as exc:
+                if path.startswith("/api/sessions/"):
+                    return self._json(404, {"error": "no such session"})
+                return self._json(500, {"error": _said(path, exc)})
             except ValueError as exc:
                 return self._json(400, {"error": str(exc)})
             return self._send(404, b"not found", "text/plain")
@@ -606,6 +655,12 @@ def handler(studio: Studio):
             if path == "/api/secrets/dismiss":   # a card Claude put up, put away
                 studio.drop_ask(str(b.get("ask") or ""))
                 return self._json(200, {"ok": True})
+            if path == "/api/secrets/reveal":   # Show, on this page only: the person asked for it (never logged)
+                from . import vault
+                root = self._root({"project": str(b.get("project") or "")}) if b.get("project") else None
+                everywhere = str(b.get("scope") or "project") in ("all", "*", "everywhere", "all projects")
+                return self._json(200, {"name": str(b.get("name") or ""),
+                                        "value": vault.reveal(str(b.get("name") or ""), root, everywhere, studio.folder)})
             if path in ("/api/secrets/save", "/api/secrets/forget", "/api/secrets/update"):   # never said back
                 from . import vault
                 root = self._root({"project": str(b.get("project") or "")})

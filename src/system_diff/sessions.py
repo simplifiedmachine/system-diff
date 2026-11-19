@@ -43,7 +43,11 @@ APPEND = (
     "It may be a question to answer now, a change to the plan, or a task to hand to a subagent (SendMessage to one "
     "that runs, or a new one): say in a line what you do with it, then go on with the work.")
 
-HANDOFF_TOOLS = ("Task", "Agent", "SendMessage")   # a message the person sent mid-turn, handed to a subagent
+HANDOFF_TOOLS = ("Task", "Agent", "SendMessage")
+LAUNCH_TOOLS = ("Task", "Agent")                     # the calls that start a subagent: one line each in the feed
+READS = {"Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch", "WebSearch"}
+EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+BACKGROUND = re.compile(r"(launched|running) (successfully )?in the background|async agent launched", re.I)   # a message the person sent mid-turn, handed to a subagent
 FOLLOW_UP = 2.5   # seconds a turn's end is watched for a turn Claude Code starts by itself for a message given late
 
 
@@ -244,6 +248,10 @@ def tool_input_view(name: str, data: Dict[str, Any]) -> Dict[str, Any]:
                        for e in edits[:8] if isinstance(e, dict)]
     elif name == "Write":
         out["diff"] = [{"old": "", "new": _cut(data.get("content", ""), 3000)}]
+    elif name in ("Task", "Agent"):   # a subagent: its task and kind name its line in the feed
+        out["description"] = str(data.get("description") or "")[:200]
+        out["subagent_type"] = str(data.get("subagent_type") or "")[:80]
+        out["input"] = _cut(str(data.get("prompt") or ""), 2000)
     elif name == "Bash":
         out["command"] = _cut(data.get("command", ""), 2000)
         if data.get("description"):
@@ -281,7 +289,8 @@ class Session:
         self.turn_at = 0.0                # when the turn under way began (0: none)
         self.last_at = time.time()        # when Claude Code last said anything
         self.doing: Dict[str, Any] = {}   # what it does now: {"what", "tool", "detail", "agent"}
-        self.tools: Dict[str, Dict[str, Any]] = {}   # this turn's tool calls, by id: name, label, when begun
+        self.tools: Dict[str, Dict[str, Any]] = {}
+        self.subs: Dict[str, Dict[str, Any]] = {}   # its subagents, by the id of the Task call that started each   # this turn's tool calls, by id: name, label, when begun
         self.forget = False               # closed by the person: not offered to continue after a restart
         self.lock = threading.Lock()
         self.held: List[Dict[str, Any]] = []   # the person's messages sent mid-turn, not read by Claude yet
@@ -384,6 +393,48 @@ class Session:
         what = "waiting" if self.pending else (self.doing.get("what") or "thinking")
         return self._mask({**self.doing, "what": what, "turn_for": round(t - self.turn_at, 1),
                            "quiet_for": round(t - self.last_at, 1)})   # a command's text may hold a stored value
+
+    def _sub_call(self, tid: str, name: str, inp: Dict[str, Any], label: str, parent: str) -> None:
+        """A Task call starts a subagent (its line); a call inside one counts on that line."""
+        if name in LAUNCH_TOOLS and not parent:
+            self.subs[tid] = {"id": tid, "name": str(inp.get("description") or inp.get("subagent_type") or "a subagent")[:120],
+                              "type": str(inp.get("subagent_type") or "general-purpose")[:60], "at": time.time(),
+                              "status": "running", "reads": 0, "edits": 0, "other": 0, "latest": "", "ms": None,
+                              "background": bool(inp.get("run_in_background"))}
+            return
+        sub = self.subs.get(parent) if parent else None
+        if sub is None:
+            return
+        sub["reads" if name in READS else "edits" if name in EDITS else "other"] += 1
+        sub["latest"] = f"{name} {label}".strip()[:140]
+
+    def _sub_result(self, tid: str, error: bool, text: str) -> None:
+        sub = self.subs.get(tid)
+        if sub is None:
+            return
+        if not error and (sub.get("background") or BACKGROUND.search(text[:400])):
+            sub["background"] = True   # it goes on after its launch answered: done when it stops (SubagentStop)
+            return
+        sub["status"] = "failed" if error else "done"
+        sub["ms"] = int((time.time() - sub["at"]) * 1000)
+        self.emit("sub_done", id=tid, status=sub["status"], ms=sub["ms"])
+
+    def sub_stopped(self) -> None:
+        """A subagent stopped (the SubagentStop hook): the oldest one still running in the background is done."""
+        for sub in sorted(self.subs.values(), key=lambda x: x["at"]):
+            if sub["status"] == "running" and sub.get("background"):
+                sub["status"], sub["ms"] = "done", int((time.time() - sub["at"]) * 1000)
+                self.emit("sub_done", id=sub["id"], status="done", ms=sub["ms"])
+                return
+
+    def subagents(self) -> List[Dict[str, Any]]:
+        """This session's subagents, newest first: name, type, status, counts, what it does now, duration."""
+        out = []
+        for sub in sorted(self.subs.values(), key=lambda x: -x["at"]):
+            ms = sub["ms"] if sub["ms"] is not None else int((time.time() - sub["at"]) * 1000)
+            out.append({**{k: sub[k] for k in ("id", "name", "type", "status", "reads", "edits", "other")},
+                        "latest": self._mask(sub["latest"]), "ms": ms, "session": self.id})
+        return out
 
     def _agent_of(self, msg: Any) -> str:
         parent = getattr(msg, "parent_tool_use_id", None)
@@ -599,6 +650,8 @@ class Session:
 
         async def run(hook_input: Dict[str, Any], tool_use_id: Optional[str], context: Any) -> Dict[str, Any]:
             said: List[str] = []
+            if str(dict(hook_input).get("hook_event_name") or "") == "SubagentStop":
+                self.sub_stopped()   # its line in the feed and on the Agents tab says done
             env = {k: v for k, v in os.environ.items() if k != "SYSTEM_DIFF_APP_SESSION"}
             env["CLAUDE_PROJECT_DIR"] = str(self.project)
             payload = json.dumps({**dict(hook_input), "cwd": str(self.project)}, default=str)
@@ -706,7 +759,8 @@ class Session:
             for b in getattr(msg, "content", None) or []:
                 bk = type(b).__name__
                 if bk == "TextBlock":
-                    self.emit("text", text=b.text, model=self.model, sub=bool(getattr(msg, "parent_tool_use_id", None)))
+                    parent = getattr(msg, "parent_tool_use_id", None) or ""
+                    self.emit("text", text=b.text, model=self.model, sub=bool(parent), parent=parent)
                     if self.read_by and not agent and (b.text or "").strip():   # Claude's word after it read them
                         self.emit("replied", ids=list(self.read_by))
                         self.read_by = []
@@ -716,8 +770,10 @@ class Session:
                 elif bk == "ToolUseBlock":
                     label = tool_label(b.name, b.input if isinstance(b.input, dict) else {})
                     self.tools[b.id] = {"name": b.name, "label": label, "at": time.time()}
+                    parent = getattr(msg, "parent_tool_use_id", None) or ""
                     self.emit("tool_use", id=b.id, name=b.name, view=tool_input_view(b.name, b.input), label=label,
-                              agent=agent, sub=bool(getattr(msg, "parent_tool_use_id", None)))
+                              agent=agent, sub=bool(parent), parent=parent)
+                    self._sub_call(b.id, b.name, b.input if isinstance(b.input, dict) else {}, label, parent)
                     self.state("tool", tool=b.name, detail=label, agent=agent)
                     if self.held and not agent:   # a step begins: Claude Code takes them in with its result
                         self._deliver()
@@ -733,8 +789,10 @@ class Session:
                     c = b.content
                     text = c if isinstance(c, str) else " ".join(x.get("text", "") for x in c or [] if isinstance(x, dict))
                     began = (self.tools.get(b.tool_use_id) or {}).get("at")
+                    parent = getattr(msg, "parent_tool_use_id", None) or ""
                     self.emit("tool_result", id=b.tool_use_id, error=bool(b.is_error), text=_cut(_redact(text or ""), 3000),
-                              ms=int((time.time() - began) * 1000) if began else None)
+                              ms=int((time.time() - began) * 1000) if began else None, parent=parent)
+                    self._sub_result(b.tool_use_id, bool(b.is_error), text or "")
                     if b.tool_use_id in self.tools:
                         self.tools[b.tool_use_id]["done"] = True   # kept: a subagent's messages name it by this id
                     running = [t for t in self.tools.values() if not t.get("done")]

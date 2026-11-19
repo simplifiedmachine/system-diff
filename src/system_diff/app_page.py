@@ -91,6 +91,17 @@ iframe#view { width:100%; height:100%; border:0; background:transparent; border-
 #grip { cursor:col-resize; border-radius:999px; background:transparent; margin:30vh 0; transition:background .16s ease; }
 #grip:hover, #grip.drag, #grip:focus-visible { background:color-mix(in srgb, var(--accent) 60%, transparent); }
 #chat { display:grid; grid-template-rows:auto auto 1fr auto; grid-template-columns:minmax(0,1fr); min-width:0; overflow:hidden; }
+details.subline > summary { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; }
+details.subline .stype { font-size:11px; color:var(--muted); }
+details.subline .scount, details.subline .sdur { font-size:12px; color:var(--muted); }
+details.subline .slatest { font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
+details.subline .subcalls { margin:6px 0 2px 14px; padding-left:10px; border-left:2px solid var(--hair); }
+.ev.text.md.small { font-size:13px; opacity:.9; }
+.kgroup { font-weight:600; font-size:12px; margin-top:8px; color:var(--ink); }
+.keys .k.kv { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
+.keys .k.kv .kname { font-weight:600; }
+.keys .k.kv .val { user-select:all; word-break:break-all; background:var(--code); padding:1px 6px; border-radius:6px; font-weight:400; }
+.keys .k.kv .s { order:10; flex:1 1 100%; white-space:normal; overflow:visible; }
 .chathead { display:flex; align-items:center; gap:6px; margin:10px 10px 4px; }
 .chathead .tabs { flex:1; margin:0; }
 #sessionsbtn { white-space:nowrap; padding:5px 12px; border-radius:999px; }
@@ -780,8 +791,51 @@ function paintHistory(ev, before) {   // a resumed conversation's past entries, 
   if (before) before.before(box);
   else { box.append(el("div", "resumed here", "histsep")); f.append(box); f.scrollTop = f.scrollHeight; }
 }
+// A subagent is one line in the feed: its task, what it does now, its counts, its time; a click shows its own calls
+const SUB_TOOLS = ["Task", "Agent"], SUB_READS = ["Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch", "WebSearch"],
+      SUB_EDITS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+function subOf(f, id) { return id ? f.querySelector('details.subline[data-sub="' + CSS.escape(id) + '"]') : null; }
+function subLine(ev) {
+  const v = ev.view || {}, d = el("details", null, "ev tool subline"), s = el("summary");
+  const name = v.description || ev.label || "a subagent";
+  s.append(el("span", "◆ " + name, "nm"), el("span", v.subagent_type || "subagent", "stype"),
+           el("span", ev.past ? "" : "running", "spin" + (ev.past ? "" : " run")), el("span", "", "scount"),
+           el("span", "", "slatest"), el("span", "", "sdur"));
+  const calls = el("div", null, "subcalls");
+  if (v.input) { const pr = el("details", null, "ev tool"); pr.append(el("summary", "Its brief"), el("pre", v.input)); calls.append(pr); }
+  d.append(s, calls);
+  d.dataset.sub = ev.id; d.dataset.tid = ev.id; d.dataset.at = String(ev.at ? ev.at * 1000 : Date.now());
+  d.dataset.reads = "0"; d.dataset.edits = "0"; d.dataset.other = "0";
+  if (!ev.past) d.dataset.run = "1";
+  return d;
+}
+function subCount(ln, name, what) {
+  const k = SUB_READS.includes(name) ? "reads" : SUB_EDITS.includes(name) ? "edits" : "other";
+  ln.dataset[k] = String(+ln.dataset[k] + 1);
+  const r = +ln.dataset.reads, e = +ln.dataset.edits, o = +ln.dataset.other;
+  ln.querySelector(".scount").textContent = [r ? r + (r === 1 ? " read" : " reads") : "", e ? e + (e === 1 ? " edit" : " edits") : "",
+                                            o ? o + " other" : ""].filter(Boolean).join(" · ");
+  if (ln.dataset.run) ln.querySelector(".slatest").textContent = (toolName(name) + " " + (what || "")).trim().slice(0, 70);
+}
+function subDone(f, id, status, ms) {
+  const ln = subOf(f, id); if (!ln) return;
+  delete ln.dataset.run;
+  const sp = ln.querySelector(".spin"); sp.className = "spin " + (status === "failed" ? "bad" : "ok");
+  sp.textContent = status === "failed" ? "✗ failed" : "✓ done";
+  ln.querySelector(".slatest").textContent = "";
+  for (const r of ln.querySelectorAll(".subcalls .spin.run")) { r.className = "spin"; r.textContent = ""; }   // ended with it
+  if (ms != null) ln.querySelector(".sdur").textContent = ms < 1000 ? ms + " ms" : clock(Math.round(ms / 1000));
+}
+setInterval(() => {   // the running ones count their time
+  for (const ln of document.querySelectorAll("details.subline[data-run]"))
+    ln.querySelector(".sdur").textContent = clock(Math.round((Date.now() - +ln.dataset.at) / 1000));
+}, 1000);
 function settleTools(f, why) {   // the turn ended: a call still marked running did not say how it went
-  for (const sp of f.querySelectorAll(".spin.run")) { sp.className = "spin"; sp.textContent = why; }
+  for (const sp of f.querySelectorAll(".spin.run")) {
+    const ln = sp.closest("details.subline");
+    if (ln && ln.dataset.bg) continue;   // a background subagent goes on after the turn
+    sp.className = "spin"; sp.textContent = why; if (ln) delete ln.dataset.run;
+  }
 }
 function paint(ev, into) {
   if (ev.type === "state") { if (S.session) { S.session.now = ev.now; S.nowAt = Date.now(); } return; }
@@ -794,6 +848,7 @@ function paint(ev, into) {
       if (!box.queued) { box.queued = true; requestAnimationFrame(() => { box.queued = false; if (box.isConnected) scrolled(() => mdPaint(box, box.raw)); }); }
       return;
     }
+    if (ev.type === "text" && ev.parent) { const ln = subOf(f, ev.parent); if (ln) { const d = el("div", null, "ev text md small"); mdPaint(d, ev.text); ln.querySelector(".subcalls").append(d); return; } }
     if (ev.type === "text") { if (S.streaming) { S.streaming.remove(); S.streaming = null; } const d = el("div", null, "ev text md"); mdPaint(d, ev.text); f.append(d); return; }
     if (S.streaming && ev.type !== "status") { S.streaming.remove(); S.streaming = null; }
     if (ev.type === "user") f.append(ev.queued ? queuedBubble(ev) : el("div", ev.text, "ev user"));
@@ -812,12 +867,23 @@ function paint(ev, into) {
       }
     }
     else if (ev.type === "thinking") { const d = el("details", null, "ev tool"); d.append(el("summary", "Thinking")); d.append(el("pre", ev.text)); f.append(d); }
+    else if (ev.type === "tool_use" && !ev.parent && SUB_TOOLS.includes(ev.name)) f.append(subLine(ev));
+    else if (ev.type === "sub_done") subDone(f, ev.id, ev.status, ev.ms);
     else if (ev.type === "tool_use") {
       const d = el("details", null, "ev tool"); const s = el("summary");
       s.append(el("span", toolName(ev.name), "nm"), " " + (ev.label || ev.view.file || ev.view.command || "").slice(0, 90));
       if (ev.agent) s.title = "by the subagent " + ev.agent;
       if (!ev.past) s.append(el("span", "running", "spin run"));
-      d.append(s, toolView(ev.view)); d.dataset.tid = ev.id; f.append(d);
+      d.append(s, toolView(ev.view)); d.dataset.tid = ev.id;
+      const ln = ev.parent ? subOf(f, ev.parent) : null;   // a subagent's own call: inside its one line
+      if (ln) { ln.querySelector(".subcalls").append(d); subCount(ln, ev.name, ev.label || ev.view.file || ev.view.command || ""); }
+      else f.append(d);
+    }
+    else if (ev.type === "tool_result" && subOf(f, ev.id)) {   // the Task call's own answer: its subagent ended (or went to the background)
+      const ln = subOf(f, ev.id);
+      if (!ev.error && /(launched|running) (successfully )?in the background|async agent launched/i.test(ev.text || "")) ln.dataset.bg = "1";
+      else subDone(f, ev.id, ev.error ? "failed" : "done", ev.ms);
+      const pre = el("pre", ev.text || "(no output)"); if (ev.error) pre.className = "old"; ln.querySelector(".subcalls").append(pre);
     }
     else if (ev.type === "tool_result") {
       const t = f.querySelector('[data-tid="' + CSS.escape(ev.id) + '"]'); const pre = el("pre", ev.text || "(no output)"); if (ev.error) pre.className = "old"; (t || f).append(pre);
@@ -1002,10 +1068,25 @@ async function loadKeys() {
   const keys = (d.keys || []).slice().sort((a, b) => ((a.project || "") + a.group + a.name).localeCompare((b.project || "") + b.group + b.name));
   for (const k of keys) {
     const head = (S.keysAll ? (k.project ? k.project.split(/[\\/]/).pop() : "all projects") + " · " : "") + (k.group || "");
-    if (head !== lastGroup) { if (head) box.append(el("div", head, "ev meta")); lastGroup = head; }
-    const r = el("div", null, "k");
-    r.append(el("code", k.name), el("span", (k.kind === "setting" ? "= " + k.value + " · " : "secret · ") + [S.keysAll ? "" : k.scope, k.description].filter(Boolean).join(" · "), "s"));
+    if (head !== lastGroup) { if (head) box.append(el("div", head, "kgroup")); lastGroup = head; }
+    const r = el("div", null, "k kv");
     const scopeOf = k.scope === "all projects" ? "all" : "project", proj = S.keysAll ? (k.project || S.project || "") : S.project;
+    // what was stored, plainly: a setting's value in full; a secret hidden until Show (this page, 30 s)
+    const val = el("code", k.kind === "setting" ? (k.value || "(empty)") : "••••••••", "val");
+    val.title = k.kind === "setting" ? "Select to copy" : "A secret: Show reveals it here for 30 s";
+    r.append(el("code", k.name, "kname"), val);
+    if (k.kind !== "setting" && (!S.keysAll || proj || k.project === "")) {
+      const sh = el("button", "Show"); sh.type = "button"; let hide = 0;
+      const conceal = () => { clearTimeout(hide); val.textContent = "••••••••"; sh.textContent = "Show"; };
+      sh.addEventListener("click", async () => {
+        if (sh.textContent === "Hide") { conceal(); return; }
+        try { const d = await api("api/secrets/reveal", { project:proj, name:k.name, scope:scopeOf });
+              val.textContent = d.value; sh.textContent = "Hide"; hide = setTimeout(conceal, 30000); }
+        catch (e) { alert(e.message); }
+      });
+      r.append(sh);
+    }
+    r.append(el("span", [k.kind === "setting" ? "setting" : "secret", S.keysAll ? "" : k.scope, k.description].filter(Boolean).join(" · "), "s"));
     if (!S.keysAll || k.project === "" || proj) {
       const ed = el("button", "Edit"); ed.type = "button"; ed.title = k.kind === "setting" ? "Change its value or what it is for" : "Replace its value (the old one is never shown) or change what it is for";
       ed.addEventListener("click", () => r.replaceWith(editForm(k, proj, scopeOf)));
@@ -1055,7 +1136,14 @@ function paintAsks(asks) {   // Claude asked for a secret's value (ask_for_secre
   }
 }
 setInterval(() => { if (S.project && !document.hidden && $("keyask") && !($("keyask").childNodes.length && !$("keyask").dataset.asks))
-  api("api/secrets?project=" + S.project).then(d => paintAsks(d.asks || [])).catch(() => {}); }, 5000);
+  api("api/secrets?project=" + S.project).then(d => {
+    paintAsks(d.asks || []);
+    // saved from the chat (save_setting), or elsewhere: the list shows it, unless the person is editing in it
+    const sig = JSON.stringify((d.keys || []).map(k => [k.name, k.scope, k.kind, k.value || "", k.group || "", k.description || ""]));
+    const busy = $("keys").querySelector("form") || $("keys").contains(document.activeElement) || S.keysAll;
+    if (S.keysSig !== undefined && sig !== S.keysSig && !busy) loadKeys();
+    S.keysSig = sig;
+  }).catch(() => {}); }, 5000);
 function keyForm(k, done, cancel) {   // name, kind, value (hidden for a secret), group, for this project or all, what for
   const f = el("form"), name = el("input"), value = el("input"), scope = el("select"), desc = el("input"), kind = el("select"), group = el("input");
   name.type = "text"; name.placeholder = "its name, such as AZURE_DEVOPS_EXT_PAT"; name.value = k.name || ""; name.setAttribute("aria-label", "Key name");
@@ -1154,6 +1242,7 @@ async function ask(text) {   // a request to Claude, in the open session (one st
 async function loadWorkflows(box) {
   let wf; try { wf = await api("api/workflows?project=" + S.project, undefined, 60000); } catch (e) { box.append(el("div", e.message, "ev err")); return; }
   box.append(el("h3", "Workflows"));
+  for (const pr of wf.problems || []) box.append(el("div", pr, "ev err"));
   const top = el("div", null, "acts");
   const add = el("button", "Add an agent…"); add.type = "button"; add.title = "Ask Claude to add an agent to the team that is working";
   add.addEventListener("click", () => {
@@ -1188,12 +1277,30 @@ async function loadWorkflows(box) {
     a.append(acts); box.append(a);
   }
 }
+setInterval(() => {   // while Claude works, the Agents tab follows its subagents (unless the person is in a form there)
+  const box = $("agentsbox");
+  if (box.hidden || !S.session || S.session.status !== "working" || box.contains(document.activeElement)) return;
+  loadAgents();
+}, 5000);
 async function loadAgents() {
   const box = $("agentsbox"); box.replaceChildren();
   if (!S.project) { box.append(el("div", "Pick a project first.", "ev meta")); return; }
   await loadWorkflows(box);
   let lib; try { lib = await api("api/agents?project=" + S.project); } catch (e) { box.append(el("div", e.message, "ev err")); return; }
-  const kinds = lib.kinds || ["software"];
+  const kinds = (lib.kinds && lib.kinds.length) ? lib.kinds : ["software"];
+  for (const pr of lib.problems || []) box.append(el("div", pr, "ev err"));
+  box.append(el("h3", "Subagents in this project's sessions"));
+  const running = lib.running || [];
+  if (!running.length) box.append(el("div", "None yet: the subagents Claude starts show here, the running ones first.", "ev meta"));
+  for (const r of running) {
+    const a = el("div", null, "ag");
+    a.append(el("span", r.name, "t"), el("span", r.type, "badge"),
+             el("span", [r.status === "running" ? "running" : r.status === "failed" ? "✗ failed" : "✓ done",
+                         clock(Math.round((r.ms || 0) / 1000)),
+                         [r.reads ? r.reads + " reads" : "", r.edits ? r.edits + " edits" : ""].filter(Boolean).join(" · "),
+                         r.status === "running" ? r.latest : ""].filter(Boolean).join(" · "), "s"));
+    box.append(a);
+  }
   box.append(el("div", "This project is " + kinds.join(" and ") + ": it gets your library's " + kinds.join(" and ") + " agents.", "ev meta"));
   box.append(el("h3", "Worth keeping"));
   if (!lib.worth_keeping.length) box.append(el("div", "No role has come back yet: roles your plans or subagents use again (here or across your projects) show here.", "ev meta"));

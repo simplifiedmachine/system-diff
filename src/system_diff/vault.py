@@ -377,6 +377,21 @@ def env_for(project: Path, folder: Optional[Path] = None, problems: Optional[Lis
     return out
 
 
+def reveal(name: str, project: Optional[Path] = None, everywhere: bool = False, folder: Optional[Path] = None) -> str:
+    """One stored value, for the person who asks on the Studio's own page (Show): never logged, never kept."""
+    where = _folder(folder)
+    if where is None:
+        raise ValueError("there is no key store here")
+    name = check_name(name)
+    scope = "*" if everywhere or project is None else _same(project)
+    k = next((x for x in _meta(where) if x["name"] == name and x["scope"] == scope), None)
+    if k is None:
+        raise ValueError(f"no key {name} {'for all projects' if scope == '*' else 'for this project'}")
+    if kind_of(k) == "setting":
+        return str(k.get("value") or "")
+    return _get(where, str(k.get("kept_in")), f"{k['scope']}:{k['name']}")
+
+
 def prompt_note(keys: List[Dict[str, Any]]) -> str:
     """What the session's prompt says of its keys: names and descriptions, never a secret's value; a setting's value
     (not secret: a host, a user) is said, with the tools to change them."""
