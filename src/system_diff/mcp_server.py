@@ -280,6 +280,7 @@ def tool_note(root: Path, part: str, text: str) -> Dict[str, Any]:
 
 def build() -> Server:
     server = Server("system-diff", instructions=INSTRUCTIONS)
+    _threaded_tools(server)
 
     @server.tool()
     def system_map(ref: str = ".", diagram: bool = False) -> Dict[str, Any]:
@@ -704,6 +705,31 @@ def _safe(fn) -> Dict[str, Any]:
         return fn()
     except ValueError as exc:
         return {"error": str(exc)}
+
+
+def _threaded_tools(server) -> None:
+    """Every tool runs in a worker thread: one that takes long (a large repository read here) never holds the others
+    up. The MCP SDK 1.x runs a plain function in its one event loop, so a slow call made every later one wait, and
+    Claude's resume_plan or inbox sat "running" behind it; 2.x threads them itself, which this keeps."""
+    import functools
+    import inspect
+    register = server.tool
+
+    def tool(*a: Any, **k: Any):
+        deco = register(*a, **k)
+
+        def wrap(fn):
+            if inspect.iscoroutinefunction(fn):
+                return deco(fn)
+
+            @functools.wraps(fn)   # the same name, arguments and description (the signature follows __wrapped__)
+            async def run(*args: Any, **kwargs: Any) -> Any:
+                import anyio.to_thread
+                return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+            deco(run)
+            return fn
+        return wrap
+    server.tool = tool
 
 
 def _read_only(server):

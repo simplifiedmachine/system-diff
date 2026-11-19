@@ -68,7 +68,7 @@ def test_claude_stores_settings_and_asks_for_secrets(filestore, repo, monkeypatc
     monkeypatch.setattr(vault, "_folder", lambda folder: filestore)
     monkeypatch.setattr(mcp_server, "_root", lambda: repo)
     server = mcp_server.build()
-    tools = {t.name: t.fn for t in server._tool_manager.list_tools()}
+    tools = {t.name: getattr(t.fn, "__wrapped__", t.fn) for t in server._tool_manager.list_tools()}
     assert {"project_settings", "save_setting", "forget_setting", "ask_for_secret"} <= set(tools)
     got = tools["save_setting"]("STAGING_HOST", "10.1.2.3", group="staging server")
     assert got["value"] == "10.1.2.3"

@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 723,
+   "lines": 749,
    "hub": false,
    "quiet": false
   },
@@ -2136,7 +2136,10 @@
    "urllib": 1
   },
   "mcp": {
+   "anyio": 1,
+   "functools": 1,
    "http": 1,
+   "inspect": 1,
    "json": 1,
    "mcp": 1,
    "os": 1,
@@ -2552,7 +2555,10 @@
    "urllib.parse": 1
   },
   "mcp": {
+   "anyio.to_thread": 1,
+   "functools": 1,
    "http.client": 1,
+   "inspect": 1,
    "json": 1,
    "mcp.server.fastmcp": 1,
    "mcp.server.mcpserver": 1,

@@ -150,3 +150,19 @@ def test_a_log_is_parsed_once_then_only_what_was_added(tmp_path):
     assert [x["n"] for x in jsonl.read(f)] == [0, 1, 2, 3, 4]
     f.write_text(_j.dumps({"n": 9}) + "\n", encoding="utf-8")   # trimmed: read again whole
     assert [x["n"] for x in jsonl.read(f)] == [9]
+
+
+def test_a_slow_tool_never_holds_the_other_tools_up():
+    """system-diff's tools run in worker threads (the MCP SDK 1.x ran them in its one loop: a slow call made
+    resume_plan wait behind it, "running" with no word)."""
+    import asyncio
+    import inspect
+    from system_diff import mcp_server
+    pytest = __import__("pytest")
+    try:
+        server = mcp_server.build()
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"no MCP SDK here: {exc}")
+    tools = {t.name: t for t in server._tool_manager.list_tools()}
+    assert inspect.iscoroutinefunction(tools["resume_plan"].fn) and callable(tools["resume_plan"].fn.__wrapped__)
+    assert "properties" in tools["save_setting"].parameters and "name" in tools["save_setting"].parameters["properties"]
