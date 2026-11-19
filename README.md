@@ -304,7 +304,8 @@ the Studio a button has Claude launch the missing ones. Messages for an agent th
 The board stays on screen while it updates.
 
 **The team, readable.** On the Agents tab each subagent shows as what it does (its Task description), with its type
-small; its row counts its work ("34 reads · 1 edit") and a click lists everything it did. Subagents Claude launches on
+small; its row counts its work ("34 reads · 1 edit"), a click lists everything it did, and a double click opens its brief,
+messages, files and session log, as a click on the workflow board does. Subagents Claude launches on
 its own, without a plan, appear on the workflow board too: side by side when they ran at the same time, one after
 another when one started once the other had finished, each with its status, duration and session log. A role Claude
 keeps launching (two runs, here or across your projects) is offered to keep as an agent, with its prompt.

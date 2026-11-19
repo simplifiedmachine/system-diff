@@ -92,3 +92,20 @@ def test_a_failed_read_never_loses_the_plan(repo, monkeypatch):
 def test_a_view_shown_stays_while_it_is_drawn_again():
     p = watch.PAGE
     assert "keep it on screen, say it is updating" in p and "· updating…" in p
+
+
+def test_a_team_row_opens_any_recorded_subagents_log(repo, monkeypatch):
+    """The team lists a subagent as agent-<the start of its id>, also one the board does not show (a plan came
+    after it): a double click opens its log, named by its task, with its prompt as the brief."""
+    from system_diff import agents
+    monkeypatch.setattr(agents, "workflow", lambda root: {"agents": [], "at": 0})
+    rows = [{"at": 1.0, "event": "start", "agent_id": "af47b005051c5ea85", "agent_type": "general-purpose", "transcript": ""},
+            {"at": 2.0, "event": "launch", "agent_id": "af47b005051c5ea85", "agent_type": "general-purpose",
+             "transcript": "", "description": "Survey files in api", "prompt": "List the files under api/"},
+            {"at": 3.0, "event": "stop", "agent_id": "af47b005051c5ea85", "agent_type": "general-purpose", "transcript": ""}]
+    monkeypatch.setattr(agents, "runs", lambda root, since=0: rows)
+    monkeypatch.setattr(agents, "_load", lambda root: {"agents": {}, "ids": {}})
+    monkeypatch.setattr(agents, "messages", lambda root: [])
+    got = agents.agent_log(repo, "agent-af47b0")
+    assert got["agent"]["title"] == "Survey files in api" and got["agent"]["status"] == "done"
+    assert got["brief"] == "List the files under api/"

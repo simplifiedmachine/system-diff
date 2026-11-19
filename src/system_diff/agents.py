@@ -1191,6 +1191,24 @@ def agent_log(root: Path, name: str) -> Dict[str, Any]:
     read and edited."""
     wf = workflow(root)
     me = next((a for a in wf["agents"] if a["name"] == name), None)
+    if me is None and (name.startswith("agent-") or name.startswith("sub:")):
+        # a subagent the team lists (agent-<the start of its id>) though the board does not (it ran before this
+        # plan, or beside it): its log from its recorded runs, its launch giving its task and prompt
+        short = name.split("-", 1)[1] if name.startswith("agent-") else name[4:]
+        hits = [a for a in wf["agents"] if str(a["name"]).startswith("sub:" + short)]
+        if len(hits) == 1:
+            me, name = hits[0], hits[0]["name"]
+        else:
+            ids_ = sorted({str(r.get("agent_id")) for r in runs(root, 0) if str(r.get("agent_id") or "").startswith(short)})
+            if len(ids_) == 1:
+                rs = [r for r in runs(root, 0) if r.get("agent_id") == ids_[0]]
+                launch = next((r for r in reversed(rs) if r.get("event") == "launch"), {})
+                done = next((r for r in reversed(rs) if r.get("event") == "stop"), None)
+                start = next((r for r in rs if r.get("event") == "start"), {})
+                me = {"name": "sub:" + ids_[0], "title": launch.get("description") or start.get("agent_type") or name,
+                      "kind": "subagent", "type": start.get("agent_type") or "", "blocks": [], "waits_for": [],
+                      "status": "done" if done else "running", "brief": launch.get("prompt") or ""}
+                name = me["name"]
     if me is None:
         raise KeyError(name)
     data = _load(root)
@@ -1206,5 +1224,5 @@ def agent_log(root: Path, name: str) -> Dict[str, Any]:
         m.get("from") == name or m.get("topic") in ({f"agent:{name}", "all"} | blocks))][-100:]
     files = [{"at": e["at"], "event": e.get("event"), "path": e.get("path")} for e in activity.events(root, 2000)
              if float(e.get("at") or 0) >= since and str(e.get("agent") or "") in ids][-200:]
-    return {"agent": me, "brief": (data["agents"].get(name) or {}).get("brief", ""), "transcript": entries,
+    return {"agent": me, "brief": (data["agents"].get(name) or {}).get("brief", "") or me.get("brief", ""), "transcript": entries,
             "transcript_path": transcript, "messages": bus, "files": files}

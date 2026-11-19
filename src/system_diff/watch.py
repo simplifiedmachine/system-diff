@@ -626,6 +626,9 @@ function lanes(s) {
     const off = () => { ui.hover = null; applyPick(); };
     row.addEventListener("mouseenter", on); row.addEventListener("focus", on);
     row.addEventListener("mouseleave", off); row.addEventListener("blur", off);
+    // a double click: the agent's whole story (brief, messages, its session log), as a click on the workflow board
+    row.addEventListener("dblclick", e => { e.preventDefault(); openAgentLog(l.name, l.title); });
+    row.title = "Click: what it did · double click: its brief, messages and session log";
     box.append(row);
     if ((l.recent || []).length) {   // every action, on click (newest first)
       const list = el("ul", null, "swim-recent"); list.hidden = !openLanes.has(l.name);
@@ -641,7 +644,7 @@ function lanes(s) {
   if (!(s.items || []).length) c.append(el("div", "No agents in this team.", "empty-note"));
   else {
     c.append(box);
-    c.append(el("div", "◎ read · ✎ edit · ▲ changed the system · ✉ message · click a row for everything it did", "legend"));
+    c.append(el("div", "◎ read · ✎ edit · ▲ changed the system · ✉ message · click a row for everything it did, double click for its brief, messages and log", "legend"));
   }
   return c;
 }
@@ -872,7 +875,7 @@ function wfNode(x) {
   if (meta) b.append(el("span", meta, "meta"));
   if (x.last) b.append(el("span", x.last, "meta"));
   b.title = (x.kind === "step" ? "A step of " + x.by : x.adhoc ? "A subagent Claude launched: " + (x.title || x.name) : "Agent " + x.name) + ": click for its session";
-  b.addEventListener("click", () => openAgentLog(x.name || x.id));
+  b.addEventListener("click", () => openAgentLog(x.name || x.id, x.title));
   return b;
 }
 function drawWfEdges(wrap, items) {
@@ -957,9 +960,9 @@ function workflowCard(s) {
 RENDER.workflow = workflowCard;
 setInterval(() => { for (const t of document.querySelectorAll(".ticker[data-since]")) t.textContent = " · " + dur(Date.now() / 1000 - +t.dataset.since); }, 1000);
 const alog = { name:"", tab:"session", timer:0, data:null };
-async function openAgentLog(name) {
+async function openAgentLog(name, title) {   // title: the readable name the caller shows
   alog.name = name; alog.tab = "session"; alog.data = null;
-  $("alogname").textContent = name; $("alogmeta").textContent = "Loading…"; $("alogbody").replaceChildren(); $("alogacts").replaceChildren();
+  $("alogname").textContent = title || name; $("alogmeta").textContent = "Loading…"; $("alogbody").replaceChildren(); $("alogacts").replaceChildren();
   const d = $("agentlog"); if (!d.open) d.showModal();
   await loadAgentLog();
 }
@@ -977,7 +980,7 @@ async function loadAgentLog() {
 }
 function paintAgentLog() {
   const d = alog.data, me = d.agent || d.step || {};
-  $("alogname").textContent = me.kind === "step" || d.step ? (me.title || me.id) : (me.title || me.name);
+  $("alogname").textContent = me.kind === "step" || d.step ? (me.title || me.id) : (me.title || title || me.name);
   $("alogmeta").textContent = [d.step ? "a step of " + me.by : me.area !== me.name ? me.area : "", wfStatusText(me),
     me.started ? "started " + new Date(me.started * 1000).toLocaleTimeString() : "", me.stage ? "stage " + me.stage : "",
     (me.blocks || []).length ? "blocks: " + me.blocks.join(", ") : ""].filter(Boolean).join(" · ");
