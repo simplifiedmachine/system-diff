@@ -215,3 +215,36 @@ def test_keys_said_in_words_are_found_and_named_by_what_they_are_for():
     assert got == list(cases.values())
     code = js + "\nconsole.log(JSON.stringify(findSettings('db ip 10.1.2.3 user sa password Xyz!2345').map(k => k.name)));"
     assert _j.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, encoding="utf-8", timeout=30).stdout) == ["DB_HOST", "DB_USER"]
+
+
+def test_a_secret_is_renamed_inside_the_store(filestore, repo):
+    """GPU_PASSWORD → A100_GPU_PASSWORD: the value moves inside the store (Claude never has to ask for it again)."""
+    vault.save("GPU_PASSWORD", "Xyz!2345abc", repo, False, "the A100's password", folder=filestore, group="a100 gpu server")
+    got = vault.rename("GPU_PASSWORD", "A100_GPU_PASSWORD", repo, False, filestore)
+    assert got["renamed_from"] == "GPU_PASSWORD" and "Xyz!2345abc" not in str(got)
+    assert vault.env_for(repo, filestore) == {"A100_GPU_PASSWORD": "Xyz!2345abc"}
+    entry = next(k for k in vault.listing(repo, filestore) if k["name"] == "A100_GPU_PASSWORD")
+    assert entry["kind"] == "secret" and entry["group"] == "a100 gpu server"
+
+
+def test_an_ask_goes_once_its_key_is_stored(filestore, repo):
+    from system_diff import app
+    st = app.Studio.__new__(app.Studio)
+    import threading as _th
+    st.lock, st.folder, st.asks = _th.Lock(), filestore, []
+    st.ask_secret({"name": "A100_GPU_PASSWORD", "project": str(repo)})
+    assert [a["name"] for a in st.asks_for(repo)] == ["A100_GPU_PASSWORD"]
+    vault.save("A100_GPU_PASSWORD", "Xyz!2345abc", repo, False, folder=filestore)
+    assert st.asks_for(repo) == []
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node runs the page's own detection")
+def test_user_at_host_is_read_as_a_user_and_a_host():
+    import json as _j
+    from system_diff import app_page
+    p = app_page.PAGE
+    js = p[p.index("/*keys-detect:start*/"):p.index("/*keys-detect:end*/")]
+    t = "a100 gpu server ip and user is ssh appadmin@105.140.238.41 and the password is Xyz!2345abc"
+    code = js + "\nconsole.log(JSON.stringify(findSettings(" + _j.dumps(t) + ").map(k => k.name + '=' + k.value)));"
+    got = _j.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, encoding="utf-8", timeout=30).stdout)
+    assert got == ["GPU_USER=appadmin", "GPU_HOST=105.140.238.41"]

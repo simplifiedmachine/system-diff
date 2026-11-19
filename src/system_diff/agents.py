@@ -196,19 +196,8 @@ def publish(root: Path, topic: str, text: str, sender: str = MAIN, why: str = ""
 
 
 def messages(root: Path, after: int = 0) -> List[Dict[str, Any]]:
-    try:
-        lines = (git_dir(root) / BUS).read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    out = []
-    for line in lines:
-        try:
-            m = json.loads(line)
-        except ValueError:
-            continue
-        if m.get("n", 0) > after:
-            out.append(m)
-    return out
+    from . import jsonl
+    return [m for m in jsonl.read(git_dir(root) / BUS) if isinstance(m, dict) and m.get("n", 0) > after]
 
 
 def subscribe(root: Path, agent: str, topics: Iterable[str]) -> List[str]:
@@ -634,19 +623,8 @@ def record_run(root: Path, event: str, agent_id: str, agent_type: str = "", tran
 
 
 def runs(root: Path, since: float = 0.0) -> List[Dict[str, Any]]:
-    try:
-        lines = (git_dir(root) / RUNS).read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return []
-    out = []
-    for line in lines:
-        try:
-            r = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(r, dict) and float(r.get("at") or 0) >= since:
-            out.append(r)
-    return out
+    from . import jsonl
+    return [r for r in jsonl.read(git_dir(root) / RUNS) if isinstance(r, dict) and float(r.get("at") or 0) >= since]
 
 
 BUILT_IN = ("general-purpose", "Explore", "Plan", "fork", "claude", "statusline-setup", "claude-code-guide")

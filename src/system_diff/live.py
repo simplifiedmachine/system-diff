@@ -1376,6 +1376,12 @@ class Pages:
         hit = self._hit(key)
         if hit is not None:
             return hit
+        if self.drawing is not None:   # drawn before, at an older version: shown at once, drawn again behind it
+            with self.guard:
+                got = self.cache.get(key)
+            if got is not None:
+                self._start(key)
+                return got[0], {**got[2], "stale": True}
         if not lock.acquire(timeout=BUSY_WAIT):
             with self.guard:
                 got = self.cache.get(key)
@@ -1404,14 +1410,24 @@ class Pages:
         finally:
             lock.release()
 
-    def _first(self, key: tuple) -> Tuple[int, dict]:
-        """Draw `key` in the background and wait FIRST_WAIT for it; longer: the page drawn before (any version), else
-        the drawing page (version -1, so the page asks again), and the drawing ends by itself and is kept."""
+    def _start(self, key: tuple) -> threading.Event:
+        """A drawing of `key` in the background (the one under way, if there is one)."""
         with self.guard:
             job = self.jobs.get(key)
             if job is None:
                 job = self.jobs[key] = threading.Event()
                 threading.Thread(target=self._draw, args=(key, job), name="system-diff page", daemon=True).start()
+        return job
+
+    def job(self, key: tuple) -> Optional[threading.Event]:
+        """The drawing of `key` under way, if any (a long poll waits for it, rather than asking again at once)."""
+        with self.guard:
+            return self.jobs.get(key)
+
+    def _first(self, key: tuple) -> Tuple[int, dict]:
+        """Draw `key` in the background and wait FIRST_WAIT for it; longer: the page drawn before (any version), else
+        the drawing page (version -1, so the page asks again), and the drawing ends by itself and is kept."""
+        job = self._start(key)
         job.wait(FIRST_WAIT)
         with self.guard:
             got = self.cache.get(key)

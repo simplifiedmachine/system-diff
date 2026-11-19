@@ -1850,6 +1850,10 @@ async function load(wait) {
     }
     if ($("headline").dataset.updating) { delete $("headline").dataset.updating; ui.last.head = undefined; }
     render(d);
+    if (d.stale) {   // the page drawn before, shown at once: the current one follows (the next ask waits for it)
+      $("headline").dataset.updating = "1";
+      $("headline").textContent = (d.headline || d.title || "") + "  · updating…";
+    }
     return true;
   } catch (e) {
     if (seq !== ui.seq || (e && e.name === "AbortError")) return false;
@@ -2314,6 +2318,10 @@ def handler(w: Watcher):
             once; with `take`, also as soon as the web page sends something to Claude; with `also`, as soon as it
             says so (the conversation panel changed)."""
             e = w.engine
+            job = w.pages.job(key) if w.pages is not None and hasattr(w.pages, "job") else None
+            if job is not None and since is not None:   # this page is being drawn again: wait for it, not ask again
+                job.wait(live.LONG_POLL)
+                return
             if e is None or since is None or since != e.version or w.pages is None or not w.pages.current(key):
                 return
             if also is not None and also():
@@ -2347,7 +2355,7 @@ def handler(w: Watcher):
             try:
                 key = ("web", view, zoom, part) + ((scope,) if scope else ())
                 self._wait(since, key, also=(lambda: chat.stamp(w.root) != had) if had is not None else None)
-                version, page = _page_of(w, key)
+                version, page = _page_of(w, key, since)
                 w.looked = max(w.looked, version)   # the page shows this: no dot on this project's tab
             except Exception as exc:  # noqa: BLE001 - the page shows it and keeps polling
                 return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
@@ -2419,7 +2427,7 @@ def handler(w: Watcher):
             try:
                 key = ("pane", view, width, zoom, part)
                 self._wait(since, key, take)
-                version, page = _page_of(w, key)
+                version, page = _page_of(w, key, since)
                 if take:   # drawn once per version; what was sent to Claude is taken fresh for each ask
                     from . import pane
                     page = {**page, "send": pane.take_outbox(w.root)}
@@ -3020,10 +3028,17 @@ def file_extras(w: "Watcher", path: str, text: str, prefetch: bool = False) -> D
             "summary": fileview.summarize(w.root, path, text, blob, out.get("chunks") or [], prefetch=prefetch)}
 
 
-def _page_of(w: "Watcher", key: tuple) -> tuple:
-    """(version, page) for a page's key: from the engine's pages when there is an engine, else drawn now."""
+def _page_of(w: "Watcher", key: tuple, since: Optional[int] = None) -> tuple:
+    """(version, page) for a page's key: from the engine's pages when there is an engine, else drawn now. An asker
+    that has `since` already gets no stale copy of it: it waits (a long poll's time) for the drawing under way."""
     if w.pages is not None:
-        return w.pages.get(key)
+        version, page = w.pages.get(key)
+        if page.get("stale") and since is not None and version == since:
+            job = w.pages.job(key)
+            if job is not None:
+                job.wait(live.LONG_POLL)
+            version, page = w.pages.get(key)
+        return version, page
     return (w.engine.version if w.engine else 0), _build(w, key)
 WEB = "web.json"   # where a running watcher listens: {"url", "port", "pid", "id"}, under .git/system-diff
 STARTING = "web.starting"   # a watcher being started: {"pid", "port", "at"}, until it has written web.json

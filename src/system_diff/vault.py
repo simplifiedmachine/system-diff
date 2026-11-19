@@ -377,6 +377,25 @@ def env_for(project: Path, folder: Optional[Path] = None, problems: Optional[Lis
     return out
 
 
+def rename(old: str, new: str, project: Optional[Path] = None, everywhere: bool = False,
+           folder: Optional[Path] = None) -> Dict[str, Any]:
+    """Give a stored entry another name, its value moved inside the store (a secret's never leaves it: whoever asks
+    for the rename never sees it), its kind, group and description kept."""
+    where = _folder(folder)
+    if where is None:
+        raise ValueError("there is no key store here")
+    old, new = check_name(old), check_name(new)
+    scope = scope_of(project, everywhere)
+    k = next((x for x in _meta(where) if x["name"] == old and x["scope"] == scope), None)
+    if k is None:
+        raise ValueError(f"no entry {old} stored for {'all projects' if scope == '*' else 'this project'}")
+    value = reveal(old, project, everywhere, folder)
+    got = save(new, value, project, everywhere, k.get("description", ""), folder, kind_of(k), k.get("group", ""))
+    if new != old:
+        forget(old, project, everywhere, folder)
+    return {**got, "renamed_from": old}
+
+
 def reveal(name: str, project: Optional[Path] = None, everywhere: bool = False, folder: Optional[Path] = None) -> str:
     """One stored value, for the person who asks on the Studio's own page (Show): never logged, never kept."""
     where = _folder(folder)

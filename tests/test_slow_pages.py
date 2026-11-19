@@ -110,3 +110,43 @@ def test_the_system_tools_ask_the_engine_and_never_hang():
     assert '"/tool"' in src and "mcp_server.tool_diff" in src
     assert uitools.within(0.1, lambda: time.sleep(1), "system_diff")["error"].endswith("tell the person it timed out.")
     assert callable(mcp_server._via_engine)
+
+
+def test_a_page_drawn_before_is_shown_at_once_and_drawn_again_behind_it(monkeypatch, tmp_path):
+    """Switching to a tab drawn at an older version (Agents, Topics, History while agents work): the old page at
+    once, marked stale; the drawing goes on behind it and a long poll waits for that drawing."""
+    monkeypatch.setattr(live, "save_page", lambda *a, **k: None)
+    gate = threading.Event()
+    e = _Engine(tmp_path)
+
+    def build(key):
+        if e.version > 1:
+            gate.wait(5)
+        return {"view": key[1], "v": e.version}
+    pages = live.Pages(e, build, drawing=lambda key: {"drawing": True})
+    key = ("web", "agents", 0, "")
+    assert pages.get(key)[1]["v"] == 1
+    e.version = 2                                   # agents worked: a new version
+    t = time.monotonic()
+    version, page = pages.get(key)
+    assert time.monotonic() - t < 0.5 and version == 1 and page["stale"] and page["v"] == 1
+    job = pages.job(key)
+    assert job is not None and not job.is_set()
+    gate.set(); job.wait(2)
+    assert pages.get(key)[1]["v"] == 2 and "stale" not in pages.get(key)[1]
+
+
+def test_a_log_is_parsed_once_then_only_what_was_added(tmp_path):
+    import json as _j
+    from system_diff import jsonl
+    f = tmp_path / "runs.jsonl"
+    f.write_text("".join(_j.dumps({"n": i}) + "\n" for i in range(3)), encoding="utf-8")
+    assert [x["n"] for x in jsonl.read(f)] == [0, 1, 2]
+    with open(f, "a", encoding="utf-8") as out:
+        out.write(_j.dumps({"n": 3}) + "\n" + '{"n": 4')      # a line still being written
+    assert [x["n"] for x in jsonl.read(f)] == [0, 1, 2, 3]
+    with open(f, "a", encoding="utf-8") as out:
+        out.write("}\n")
+    assert [x["n"] for x in jsonl.read(f)] == [0, 1, 2, 3, 4]
+    f.write_text(_j.dumps({"n": 9}) + "\n", encoding="utf-8")   # trimmed: read again whole
+    assert [x["n"] for x in jsonl.read(f)] == [9]

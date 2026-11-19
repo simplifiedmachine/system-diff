@@ -292,6 +292,12 @@ class Studio:
     def asks_for(self, root: Optional[Path]) -> List[Dict[str, Any]]:
         from . import vault
         here = vault._same(root) if root is not None else ""
+        try:   # stored since it was asked (its card, the CLI, a message): answered, so it goes
+            saved = {k["name"]: float(k.get("saved") or 0) for k in vault.listing(root, self.folder)} if root else {}
+        except Exception:  # noqa: BLE001
+            saved = {}
+        with self.lock:
+            self.asks = [a for a in getattr(self, "asks", []) if saved.get(a["name"], 0) < a["at"]]
         return [a for a in getattr(self, "asks", []) if time.time() - a["at"] < 3600
                 and (not a["project"] or vault._same(a["project"]) == here)]
 

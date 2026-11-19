@@ -46,7 +46,7 @@ INSTRUCTIONS = (
     "tell the person what you found. A team can run "
     "in stages (plan_agents order=staged, or after=...): launch each stage as `how` says. When the person asks for "
     "another agent, add_agent (agent_kinds lists extensions' kinds and saved agents); save_workflow keeps a team to "
-    "reuse with run_workflow; workflow and agent_log show who runs, who waits, and what each one did. When the person "
+    "reuse with run_workflow; workflow and agent_log show who runs, who waits, and what each one did. Keys the person's message stored keep their names unless they ask; to rename one, rename_setting (a secret's value never passes through you); ask_for_secret only for a value not stored yet. When the person "
     "asks to keep or save an agent that ran, keep_agent saves it from its run. A project's "
     "settings (hosts, users, ports) and secrets (passwords, tokens) are in your environment by name: project_settings "
     "lists them, save_setting stores a setting the person gives you, and a secret's value is asked for with "
@@ -627,6 +627,14 @@ def build() -> Server:
                               "note": "Studio sessions started from now on get it; an open one after a restart"})
 
     @server.tool()
+    def rename_setting(old: str, new: str, scope: str = "project", project: str = "") -> Dict[str, Any]:
+        """Rename a stored setting or secret (GPU_HOST → A100_GPU_HOST): its value moves inside the key store, a
+        secret's without passing through you, so never ask the person for a stored secret again to rename it. Keep the
+        names the person's own message stored unless they ask for others."""
+        from . import vault
+        return _safe(lambda: vault.rename(old, new, _project(project), scope in ("all", "*", "everywhere")))
+
+    @server.tool()
     def forget_setting(name: str, scope: str = "project", project: str = "") -> Dict[str, Any]:
         """Remove a stored setting (or secret) by name, from this project ("project") or all projects ("all")."""
         from . import vault
@@ -637,7 +645,8 @@ def build() -> Server:
                        project: str = "") -> Dict[str, Any]:
         """Ask the person for a secret's value (a server's password, a token): in the Studio, a card with a password
         field above the message box; elsewhere, the command they run in a terminal. The value never passes through
-        you or the chat; sessions started afterwards get it as $NAME."""
+        you or the chat; sessions started afterwards get it as $NAME. Only for a value not stored yet: a stored one is
+        renamed with rename_setting, never asked for again."""
         from . import vault
 
         def go() -> Dict[str, Any]:

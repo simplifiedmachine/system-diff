@@ -1077,11 +1077,20 @@ function serverPrefix(text) {   // "staging server 10.1.2.3" → STAGING; else S
 }
 function findSettings(text) {   // [{value, start, name, what}]: the host, user and port beside a password (not secret)
   const out = [], pre = serverPrefix(text), seen = new Set();
+  // "ssh appadmin@105.140.238.41", "deploy@build.example.com": the user and the host in one
+  for (const m of text.matchAll(/(?:^|[\s(,;"'])([A-Za-z_][A-Za-z0-9._-]{0,63})@((?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\b/g)) {
+    if (seen.has("_HOST")) break;
+    const at = m.index + m[0].indexOf(m[1]);
+    out.push({ value:m[1], start:at, name:pre + "_USER", what:"its user", setting:true });
+    out.push({ value:m[2], start:at + m[1].length + 1, name:pre + "_HOST", what:"its host", setting:true });
+    seen.add("_USER"); seen.add("_HOST");
+  }
   const pats = [[/\b(?:server|host|ip|address)(?:\s+is)?\s*[:=]?\s*((?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/gi, "_HOST", "its host"],
                 [/\b(?:user(?:name)?|login)(?:\s+is)?\s*[:=]?\s*([A-Za-z0-9._-]{2,64})/gi, "_USER", "its user"],
                 [/\bport(?:\s+is)?\s*[:=]?\s*(\d{2,5})\b/gi, "_PORT", "its port"]];
   for (const [re, suffix, what] of pats) for (const m of text.matchAll(re)) {
-    if (seen.has(suffix) || /^(is|the|name)$/i.test(m[1])) continue;
+    if (seen.has(suffix) || /^(is|the|name|and|ssh|sudo|scp|sftp|rsync|su|login|via|on|at)$/i.test(m[1])) continue;
+    if (suffix === "_USER" && text[m.index + m[0].length] === "@") continue;   // user@host: read above
     seen.add(suffix); out.push({ value:m[1], start:m.index + m[0].lastIndexOf(m[1]), name:pre + suffix, what, setting:true });
   }
   if (!out.some(x => x.name.endsWith("_HOST"))) {   // a bare IP address

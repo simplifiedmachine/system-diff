@@ -21,7 +21,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 271,
+   "lines": 261,
    "hub": false,
    "quiet": false
   },
@@ -44,8 +44,8 @@
    "order": 36,
    "container": "",
    "declared": false,
-   "files": 14,
-   "lines": 7279,
+   "files": 15,
+   "lines": 7358,
    "hub": false,
    "quiet": false
   },
@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1586,
+   "lines": 1564,
    "hub": false,
    "quiet": false
   },
@@ -273,7 +273,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1488,
+   "lines": 1504,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 714,
+   "lines": 723,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 3465,
+   "lines": 3480,
    "hub": false,
    "quiet": false
   }
@@ -451,6 +451,7 @@
   "activity>extract": 1,
   "activity>learn": 1,
   "activity>sources": 1,
+  "activity>src/system_diff": 1,
   "agent>activity": 1,
   "agent>agents": 1,
   "agent>chat": 1,
@@ -472,7 +473,7 @@
   "agents>extract": 3,
   "agents>objectives": 1,
   "agents>sources": 1,
-  "agents>src/system_diff": 6,
+  "agents>src/system_diff": 8,
   "architecture>design": 2,
   "architecture>diff": 1,
   "architecture>extract": 1,
@@ -597,7 +598,7 @@
   "mcp>objectives": 2,
   "mcp>pictures": 1,
   "mcp>sources": 1,
-  "mcp>src/system_diff": 24,
+  "mcp>src/system_diff": 25,
   "mcp>textmap": 1,
   "names>graph": 1,
   "narrate>live": 1,
@@ -705,6 +706,9 @@
   "activity>sources": [
    "git_dir"
   ],
+  "activity>src/system_diff": [
+   "read"
+  ],
   "agent>activity": [
    "record",
    "PROMPT",
@@ -805,9 +809,9 @@
    "context",
    "load",
    "failed",
+   "read",
    "for_project",
-   "match",
-   "planned"
+   "match"
   ],
   "architecture>design": [
    "kinds"
@@ -1788,8 +1792,8 @@
    "log",
    "token_ok",
    "Engine",
-   "FIRST_WAIT",
-   "Pages"
+   "LONG_POLL",
+   "FIRST_WAIT"
   ],
   "watch>mcp": [
    "tool_diff",
@@ -2230,12 +2234,12 @@
    "typing": 1
   },
   "src/system_diff": {
-   "pathlib": 13,
-   "typing": 13,
-   "json": 12,
-   "os": 12,
+   "pathlib": 14,
+   "typing": 14,
+   "json": 13,
+   "os": 13,
+   "threading": 10,
    "re": 9,
-   "threading": 9,
    "time": 9,
    "sys": 5,
    "hashlib": 3,
@@ -2650,12 +2654,12 @@
    "typing": 1
   },
   "src/system_diff": {
-   "pathlib": 13,
-   "typing": 13,
-   "json": 12,
-   "os": 12,
+   "pathlib": 14,
+   "typing": 14,
+   "json": 13,
+   "os": 13,
+   "threading": 10,
    "re": 9,
-   "threading": 9,
    "time": 9,
    "sys": 5,
    "hashlib": 3,

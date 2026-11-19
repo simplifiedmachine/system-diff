@@ -47,19 +47,9 @@ def record(root: Path, event: Dict[str, Any]) -> None:
 
 def events(root: Path, limit: int = 200) -> List[dict]:
     """The newest `limit` events, oldest first."""
-    try:
-        lines = (git_dir(root) / LOG).read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]
-    except OSError:
-        return []
-    out = []
-    for line in lines:
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue  # a line cut short by a write that raced the trim
-        if isinstance(e, dict) and isinstance(e.get("at"), (int, float)):
-            out.append(e)
-    return out
+    from . import jsonl
+    got = jsonl.read(git_dir(root) / LOG)   # parsed once, then only what was added (a trim reads it again)
+    return [e for e in got[-limit:] if isinstance(e, dict) and isinstance(e.get("at"), (int, float))]
 
 
 def relative(root: Path, path: str) -> Optional[str]:
