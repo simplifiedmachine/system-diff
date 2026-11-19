@@ -187,3 +187,31 @@ def test_the_page_offers_to_store_a_key_pasted_into_a_message():
     assert [(k["value"], k["name"]) for k in got[6]] == [(PAT, "AZURE_DEVOPS_EXT_PAT")]   # "pat: azure_pat_key" is no key
     assert [(k["value"], k["name"]) for k in got[7]] == [("hunter22x", "API_KEY")]
     assert f"azure_pat_key = {PAT}".index(PAT) == got[0][0]["start"]
+
+
+def test_a_key_in_a_message_is_stored_by_itself():
+    """The person's wish: a key in a message is kept (or updated) by the Studio itself, the message sent with $NAME,
+    with Undo; a switch under Keys brings back the card."""
+    from system_diff import app_page
+    p = app_page.PAGE
+    assert 'if (keep.get("keys-auto", "1") === "1") { autoStore(text, found, group); return true; }' in p
+    assert "async function autoStore(" in p and '"Undo"' in p and "keys-auto" in p.split("async function loadKeys")[1]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node runs the page's own detection")
+def test_keys_said_in_words_are_found_and_named_by_what_they_are_for():
+    import json as _j
+    from system_diff import app_page
+    p = app_page.PAGE
+    js = p[p.index("/*keys-detect:start*/"):p.index("/*keys-detect:end*/")]
+    cases = {"here is the azure pat abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst": ["AZURE_DEVOPS_EXT_PAT"],
+             "password for staging is S3cret!pass": ["STAGING_PASSWORD"],
+             "the redis password: r3dis-Pass": ["REDIS_PASSWORD"],
+             "db ip 10.1.2.3 user sa password Xyz!2345": ["DB_PASSWORD"],
+             "here is the openai key sk-abcdefghijklmnopqrstuvwxyz123456": ["OPENAI_API_KEY"],
+             "use the key idea here": [], "the token expires in an hour": [], "fix the password reset page": []}
+    code = js + "\nconsole.log(JSON.stringify(" + _j.dumps(list(cases)) + ".map(t => findKeys(t).map(k => k.name))));"
+    got = _j.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, encoding="utf-8", timeout=30, check=True).stdout)
+    assert got == list(cases.values())
+    code = js + "\nconsole.log(JSON.stringify(findSettings('db ip 10.1.2.3 user sa password Xyz!2345').map(k => k.name)));"
+    assert _j.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, encoding="utf-8", timeout=30).stdout) == ["DB_HOST", "DB_USER"]

@@ -335,8 +335,10 @@ terminal: `system-diff secrets set AZURE_DEVOPS_EXT_PAT [--all]` (the value is a
 storage (DPAPI), the macOS Keychain, the Secret Service keyring on Linux, or a file only you can read where there is
 none. Every Studio session started afterwards gets them as environment variables (a session open when you add one
 offers to restart with it, keeping the conversation). Claude is told their names, never their values, and a value
-that shows up in output is masked on the page and in the session log. A key pasted into a message is caught before
-sending: store it and send `$NAME` instead. `az devops` and `az repos` read `AZURE_DEVOPS_EXT_PAT` themselves.
+that shows up in output is masked on the page and in the session log. Say it in a message ("here is the azure pat …", "the db ip is 10.1.2.3 user sa password …", "password for
+staging is …") and the Studio stores it by itself (a name already kept is updated), named for what it is for
+(`AZURE_DEVOPS_EXT_PAT`, `DB_HOST`, `STAGING_PASSWORD`), and sends the message with `$NAME` in its place: Claude never sees
+the value. Undo is beside it; a switch under Keys brings back the question instead. `az devops` and `az repos` read `AZURE_DEVOPS_EXT_PAT` themselves.
 
 Beside secrets, a project keeps settings that are not secret (a server's host or IP, a user name, a port), under a group
 such as "staging server": sessions get them as environment variables and Claude is told their values. Write

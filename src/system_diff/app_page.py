@@ -1043,7 +1043,9 @@ function findKeys(text) {   // [{value, start, name, what}]: what in this text l
     if (known) { if (known.name !== "AZURE_DEVOPS_EXT_PAT") known.name = keyName(m[2]); continue; }   // its own name
     const ado = /azure|ado|devops/i.test(m[2]) && /pat|token/i.test(m[2]);
     const pw = /^(passwords?|passwd|pwd|pass(?:phrase)?)$/i.test(m[2]);   // a bare "password": the server's
-    add(at, m[3], ado ? "AZURE_DEVOPS_EXT_PAT" : pw ? serverPrefix(text) + "_PASSWORD" : keyName(m[2]),
+    const lead = pw ? /([A-Za-z][A-Za-z0-9-]{1,20})\s+$/.exec(text.slice(0, m.index + m[1].length)) : null;   // "the redis password:"
+    const owner = lead && !/^(the|a|an|my|our|this|that|is|here|its|your|new|and|with|for)$/i.test(lead[1]) ? keyName(lead[1]) : serverPrefix(text);
+    add(at, m[3], ado ? "AZURE_DEVOPS_EXT_PAT" : pw ? owner + "_PASSWORD" : keyName(m[2]),
         ado ? "an Azure DevOps personal access token" : pw ? "a password" : "a key");
   }
   for (const m of text.matchAll(/\b(passwords?|passwd|pwd|pass(?:phrase)?)(?:\s+is)?\s*[:=]?\s+(\S{4,})/gi)) {   // "password Xyz!23"
@@ -1051,12 +1053,26 @@ function findKeys(text) {   // [{value, start, name, what}]: what in this text l
     if (/^\$/.test(v) || v.length < 4 || (!/[:=]/.test(m[0]) && /^[A-Za-z]+$/.test(v))) continue;   // a word, not a password
     add(m.index + m[0].lastIndexOf(m[2]), v, serverPrefix(text) + "_PASSWORD", "a password");
   }
+  const said = /\b((?:[A-Za-z][A-Za-z0-9-]*\s+){0,2}?)(api[ _-]?key|access[ _-]?key|secret[ _-]?key|key|token|pat|secret|passwords?|passwd|pwd)(?:\s+(?:for|of)\s+(?:the\s+)?([A-Za-z][A-Za-z0-9-]{0,30}))?(?:\s+is|\s*[:=])?\s+["']?(\S{6,})/gi;
+  for (const m of text.matchAll(said)) {   // said in words: "here is azure key …", "password for staging is …"
+    const v = m[4].replace(/["',;)\]]+$/, "").replace(/\.$/, "");
+    if (/^\$|^https?:/i.test(v) || PLACEHOLDER.test(v) || /^(is|for|of|the|and|to|here|in|on)$/i.test(v)) continue;
+    if (v.length < 20 && !/[0-9]|[^A-Za-z]/.test(v)) continue;   // a word ("the key idea"), not a value
+    if (/^\s*[:=]/.test(text.slice(m.index + m[0].length))) continue;   // a name with its value after it ("pat: x_key = …")
+    const words = (m[1] || "").trim().split(/\s+/).filter(w => w && !/^(here|is|it|my|the|our|this|that|use|and|a|an|new|your|their|its)$/i.test(w));
+    const kind = m[2].toLowerCase().replace(/[ _-]+/g, "_"), pw = /^pass|^pwd/.test(kind);
+    const ado = /azure|ado|devops/i.test(words.join(" ") + " " + (m[3] || "")) && /pat|token/.test(kind) || kind === "pat" && /azure|ado|devops/i.test(text);
+    const owner = m[3] || words.join("_");
+    const name = ado ? "AZURE_DEVOPS_EXT_PAT" : pw ? (owner ? keyName(owner) : serverPrefix(text)) + "_PASSWORD"
+               : keyName((owner ? owner + "_" : "") + (kind === "pwd" ? "password" : kind));
+    add(m.index + m[0].lastIndexOf(m[4]), v, name, ado ? "an Azure DevOps personal access token" : pw ? "a password" : "a key");
+  }
   for (const m of text.matchAll(/[A-Za-z0-9+\/=_-]{32,}/g)) if (looksRandom(m[0])) add(m.index, m[0], "SECRET", "a long random string");
   return out.sort((a, b) => a.start - b.start);
 }
 function serverPrefix(text) {   // "staging server 10.1.2.3" → STAGING; else SERVER
-  const m = /\b([A-Za-z][A-Za-z0-9-]{1,20})\s+(?:server|host|box|machine|vm)\b/i.exec(text);
-  const w = m && !/^(the|a|an|my|our|this|that|to|on|of|in|for|with|and|test)$/i.test(m[1]) ? m[1] : "server";
+  const m = /\b([A-Za-z][A-Za-z0-9-]{1,20})\s+(?:server|host|hostname|box|machine|vm|ip|address)\b/i.exec(text);
+  const w = m && !/^(the|a|an|my|our|this|that|to|on|of|in|for|with|and|test|is|server|its)$/i.test(m[1]) ? m[1] : "server";
   return keyName(w);
 }
 function findSettings(text) {   // [{value, start, name, what}]: the host, user and port beside a password (not secret)
@@ -1080,7 +1096,11 @@ async function loadKeys() {
   const box = $("keys"); if (!box) return;
   if (!S.project && !S.keysAll) { box.replaceChildren(el("span", "Pick a project first.", "ev meta")); return; }
   let d; try { d = await api(S.keysAll ? "api/secrets?all=1" : "api/secrets?project=" + S.project); } catch (e) { box.replaceChildren(el("span", e.message, "ev meta")); return; }
+  if (!S.keysAll) S.keys = d.keys || [];
   box.replaceChildren();
+  { const auto = el("label", null, "ev meta"), cb = el("input"); cb.type = "checkbox"; cb.checked = keep.get("keys-auto", "1") === "1";
+    cb.addEventListener("change", () => keep.set("keys-auto", cb.checked ? "1" : "0"));
+    auto.append(cb, " Keys in my messages are stored (or updated) by themselves, and sent as $NAME"); box.append(auto); }
   const sw = el("button", S.keysAll ? "This project only" : "All projects", "switch"); sw.type = "button"; sw.style.justifySelf = "end";
   sw.title = S.keysAll ? "Back to this project's settings and secrets" : "Every project's settings and secrets (a secret's value is never shown)";
   sw.addEventListener("click", () => { S.keysAll = !S.keysAll; loadKeys(); }); box.append(sw);
@@ -1203,10 +1223,13 @@ function offerRestart(got) {
 }
 function keysFirst(text) {   // true: the message waits for the person's answer on the card above the box
   if (S.keysSent && S.keysSent === text) { S.keysSent = ""; return false; }
-  const keys = findKeys(text); if (!keys.length) return false;
-  const sets = keys.some(k => /_PASSWORD$/.test(k.name)) ? findSettings(text).filter(x => !keys.some(k => x.start < k.start + k.value.length && k.start < x.start + x.value.length)) : [];
+  const keys = findKeys(text);
+  const giving = /\b(ip|host|hostname|address|user(?:name)?|login|port)\b(?:\s+is|\s*[:=])/i.test(text) || /\bhere(?:'s| is)\b/i.test(text);
+  if (!keys.length && !(giving && findSettings(text).length)) return false;
+  const sets = keys.some(k => /_PASSWORD$/.test(k.name)) || !keys.length ? findSettings(text).filter(x => !keys.some(k => x.start < k.start + k.value.length && k.start < x.start + x.value.length)) : [];
   const found = keys.concat(sets).sort((a, b) => a.start - b.start);
   const group = sets.length ? serverPrefix(text).toLowerCase().replace(/_/g, " ") + (/server/i.test(serverPrefix(text)) ? "" : " server") : "";
+  if (keep.get("keys-auto", "1") === "1") { autoStore(text, found, group); return true; }   // saved by itself
   const box = $("keyask"), c = el("div", null, "card"); box.replaceChildren(c); box.hidden = false; box.dataset.asks = "";
   c.append(el("div", "This looks like a key. Store it safely instead of sending it?", "q"),
            el("div", "Stored, it is kept by your system and given to this project's sessions as an environment variable: Claude uses it by name and never sees it.", "ev meta"));
@@ -1244,6 +1267,44 @@ function keysFirst(text) {   // true: the message waits for the person's answer 
     $("msg").value = out; S.keysSent = out.trim(); send();
   });
   return true;
+}
+
+// The keys in a message, saved by the Studio itself before it is sent (a name already kept is updated): the
+// message goes with $NAME in their place, so Claude works with them by name and never sees a value.
+async function autoStore(text, found, group) {
+  let out = text, saved = [], restart = false;
+  try {
+    for (const k of found.slice().reverse()) {   // from the end: the earlier positions stay right
+      const had = (S.keys || []).some(x => x.name === k.name);
+      const got = await api("api/secrets/save", { project:S.project, name:k.name, value:k.value, scope:"project",
+        description:k.what + " (from your message)", kind:k.setting ? "setting" : "secret", group });
+      out = out.slice(0, k.start) + "$" + got.name + out.slice(k.start + k.value.length);
+      saved.unshift({ name:got.name, updated:had, setting:!!k.setting });
+      if ((got.open_sessions || []).length) restart = true;
+    }
+  } catch (e) { $("sstatus").textContent = "Could not store the key, so the message was not sent: " + e.message; return; }
+  const names = saved.map(x => x.name);
+  out += "\n\n[" + names.join(", ") + (names.length > 1 ? " are" : " is") + " stored in system-diff's key store and in your " +
+         "environment: use " + (names.length > 1 ? "them" : "it") + " by name, never print " + (names.length > 1 ? "them" : "it") + ".]";
+  loadKeys();
+  const box = $("keyask"), c = el("div", null, "card"); box.replaceChildren(c); box.hidden = false;
+  c.append(el("div", saved.map(x => (x.updated ? "Updated " : "Stored ") + x.name + (x.setting ? " (a setting)" : "")).join(" · ") +
+                     " for this project: the message went with $" + names.join(", $") + " in " + (names.length > 1 ? "their places" : "its place") + ".", "q"));
+  const acts = el("div", null, "acts"), undo = el("button", "Undo"), edit = el("button", "Edit"), ask = el("button", "Ask me each time"), ok = el("button", "OK");
+  for (const b of [undo, edit, ask, ok]) b.type = "button";
+  const close = () => { box.replaceChildren(); box.hidden = true; };
+  undo.addEventListener("click", async () => { for (const n of names) { try { await api("api/secrets/forget", { project:S.project, name:n, scope:"project" }); } catch (e) {} } loadKeys(); close(); });
+  edit.addEventListener("click", () => { close(); $("optsbox").open = true; $("keys").scrollIntoView({ block:"center" }); });
+  ask.addEventListener("click", () => { keep.set("keys-auto", "0"); close(); });
+  ok.addEventListener("click", close);
+  acts.append(undo, edit, ask, ok); c.append(acts);
+  setTimeout(() => { if (box.contains(c)) close(); }, 20000);
+  const s = sessionOpen();
+  if (restart && s) {
+    if (["working", "waiting"].includes(s.status)) $("sstatus").textContent = "Claude is working: this session gets " + names.join(", ") + " when it restarts (Session options, Keys).";
+    else { try { await restartWithKeys(); } catch (e) { $("sstatus").textContent = e.message; } }
+  }
+  $("msg").value = out; S.keysSent = out.trim(); send();
 }
 
 // ── agents ───────────────────────────────────────────────────────────────────────────────────────────────────
