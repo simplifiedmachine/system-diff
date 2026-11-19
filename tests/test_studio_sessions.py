@@ -167,6 +167,6 @@ def test_the_column_shows_past_conversations_history_and_live_state():
     out = subprocess.run(["node", "-e", src + """
 console.log(JSON.stringify([clock(75), toolName("mcp__system-diff__ui_view"),
   doingText({what:"tool", tool:"Bash", detail:"git status"}, "working"), doingText({what:"writing"}, "working"),
-  doingText({what:"tool"}, "waiting")]));"""], capture_output=True, text=True, timeout=30)
+  doingText({what:"tool"}, "waiting")]));"""], capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert json.loads(out.stdout) == ["1 min 15 s", "system-diff › ui_view", "Running Bash: git status",
                                       "Writing a reply", "Waiting for your answer (above)"]

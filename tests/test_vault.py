@@ -180,7 +180,7 @@ def test_the_page_offers_to_store_a_key_pasted_into_a_message():
              "commit 3f2a1b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a looks fine", "password: changeme",
              f"create the PR on azure, my pat: azure_pat_key = {PAT}", "api_key: hunter22x"]
     code = js + "\nconsole.log(JSON.stringify(" + json.dumps(cases) + ".map(t => findKeys(t))));"
-    got = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, timeout=30, check=True).stdout)
+    got = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, encoding="utf-8", timeout=30, check=True).stdout)
     assert [(k["value"], k["name"]) for k in got[0]] == [(PAT, "AZURE_DEVOPS_EXT_PAT")]
     assert [(k["value"], k["name"]) for k in got[1]] == [(GHP, "GITHUB_TOKEN")]
     assert got[2] == [] and got[3] == [] and got[4] == [] and got[5] == []
