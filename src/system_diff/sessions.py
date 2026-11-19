@@ -288,10 +288,11 @@ class Session:
         try:
             from . import vault
             folder = getattr(self.manager, "vault_folder", None)
-            self.key_env = vault.env_for(self.project, folder, problems)
-            listed = [k for k in vault.listing(self.project, folder) if k["name"] in self.key_env]
+            env = vault.env_for(self.project, folder, problems)
+            listed = [k for k in vault.listing(self.project, folder) if k["name"] in env]
             self.key_list = list({k["name"]: k for k in listed}.values())
-            self.masks = vault.masks_of(self.key_env)
+            self.masks = vault.masks_of(env)
+            self.key_env = env   # last: whoever sees the keys sees their names and masks too
         except Exception as exc:  # noqa: BLE001 - the session starts without them
             problems.append(type(exc).__name__)
         if problems:
