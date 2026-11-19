@@ -271,7 +271,7 @@ text { font-family: 'Segoe UI', FreeSans, 'Helvetica Neue', Arial, sans-serif; }
 <g class="bn t-component s-same" transform="translate(278,1426)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">PNG rendering</text><text x="12" y="35" class="bn-s">1 file</text><title>PNG rendering</title></g>
 <g class="bn t-component s-same" transform="translate(542,90)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Git and folder sources</text><text x="12" y="35" class="bn-s">1 file</text><title>Git and folder sources</title></g>
 <g class="bn t-component s-same" transform="translate(542,150)"><rect class="box" width="200" height="46" rx="8"/><text x="12" y="19" class="bn-t">Agent activity</text><text x="12" y="35" class="bn-s">1 file</text><title>Agent activity</title></g>
-<g class="bn t-component s-same undeclared" transform="translate(278,1486)"><rect class="box" width="200" height="46" rx="8"/><rect class="band" width="5" height="46" rx="2"/><text x="12" y="19" class="bn-t">src/system_diff</text><text x="12" y="35" class="bn-s">13 files</text><title>src/system_diff</title></g>
+<g class="bn t-component s-same undeclared" transform="translate(278,1486)"><rect class="box" width="200" height="46" rx="8"/><rect class="band" width="5" height="46" rx="2"/><text x="12" y="19" class="bn-t">src/system_diff</text><text x="12" y="35" class="bn-s">14 files</text><title>src/system_diff</title></g>
 <rect x="16" y="1566" width="14" height="12" rx="2" fill="#ffffff" stroke="#e1e5eb"/><rect x="16" y="1566" width="4" height="12" rx="1" fill="#9a5600"/>
 <text x="36" y="1576" class="lg">not named in system-diff.toml</text>
 <path class="be k-call" d="M234.1,1572 L254.1,1572" style="opacity:1"/>
