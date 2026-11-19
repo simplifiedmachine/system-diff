@@ -413,7 +413,15 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
 #code .inshort { color:var(--ink2); margin-bottom:8px; }
 #code .inshort .wait { color:var(--muted); }
 #code nav.outline ol { list-style:none; margin:0; padding:0; display:grid; gap:2px; }
-#code nav.outline li { padding:3px 6px; border-radius:6px; cursor:pointer; }
+#code nav.outline li { padding:3px 6px; border-radius:6px; cursor:pointer; position:relative; border-left:3px solid transparent; }
+#code nav.outline li.st-added { border-left-color:var(--ok); } #code nav.outline li.st-changed { border-left-color:var(--warn); }
+#code nav.outline li.st-removed { border-left-color:var(--attn); }
+#code nav.outline li .ocard { display:none; position:absolute; left:100%; top:0; z-index:5; width:min(360px, 60vw); margin-left:8px;
+  padding:8px 10px; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:8px;
+  box-shadow:0 6px 18px rgba(0,0,0,.18); font-size:12.5px; line-height:1.45; white-space:normal; cursor:default; }
+#code nav.outline li:hover .ocard, #code nav.outline li:focus-visible .ocard { display:block; }
+#code nav.outline li .ocard b { display:block; color:var(--muted); font-weight:600; margin-top:4px; }
+#code nav.outline li .ocard b:first-child { margin-top:0; }
 #code nav.outline li:hover, #code nav.outline li:focus-visible { background:var(--card); }
 #code nav.outline li.here { background:var(--work-bg); box-shadow:inset 2px 0 0 var(--work); }
 #code nav.outline .nm { font:600 12px var(--mono); color:var(--ink); overflow-wrap:anywhere; }
@@ -1383,6 +1391,13 @@ function paintOutline() {
     li.tabIndex = 0; li.dataset.line = c.line; li.dataset.end = c.end; li.style.paddingLeft = (6 + 14 * (c.depth || 0)) + "px";
     li.append(el("span", c.name, "nm"), el("span", c.kind + " · " + c.line + "–" + c.end, "k"));
     if (said && said.what) li.append(el("span", said.what, "said"));
+    if (["added", "changed", "removed"].includes(c.status)) li.classList.add("st-" + c.status);   // the diagram's colours
+    {   // on hover: what the summary says of it (what, how, what to watch) and what its extension found (stale numbers)
+      const card = el("div", null, "ocard"), part = (t, v) => { if (v) card.append(el("b", t), el("div", String(v))); };
+      part("What it is", said && said.what); part("How it works", said && said.how); part("Watch", said && said.watch);
+      part("Found", c.tip);
+      if (card.childNodes.length) li.append(card);
+    }
     const go = () => jumpTo(c);
     li.addEventListener("click", go);
     li.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); go(); } });

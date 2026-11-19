@@ -169,3 +169,9 @@ def test_the_page_draws_a_views_filters_and_an_extensions_progress():
     p, src = watch.PAGE, watch.__loader__.get_source("system_diff.watch")
     assert "const EXT_VIEWS = __EXT_VIEWS__;" in p and 'fetch("ext/progress?"' in p and "Array.isArray(d.filters)" in p
     assert '"/ext/progress"' in src and '"/projects/folders"' in src
+
+
+def test_the_file_outline_is_coloured_and_has_a_hover_card():
+    from system_diff import watch
+    p = watch.PAGE
+    assert 'li.classList.add("st-" + c.status)' in p and 'part("Found", c.tip)' in p and "li .ocard" in p
