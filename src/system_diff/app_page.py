@@ -162,10 +162,11 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
 .past .pitem { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; align-items:center; padding:9px 12px; border-radius:14px; background:var(--glass-soft); border:1px solid var(--line); }
 .past .pitem.left { background:var(--glass-strong); border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .past .pt { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .past .pm { grid-column:1; color:var(--muted); font-size:12px; }
-.past .pitem button { grid-row:1 / span 2; grid-column:2; } .past input[type=search] { width:100%; }
+.past .pitem > button, .past .pitem > .pacts { grid-row:1 / span 2; grid-column:2; }
+.past .pitem .pacts { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; } .past input[type=search] { width:100%; }
 .hist { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; opacity:.92; }
 .histsep { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.07em; text-align:center; border-top:1px solid var(--line); padding-top:6px; }
-.spin { display:inline-block; margin-left:8px; color:var(--muted); font-size:12px; } .spin.run::before { content:""; display:inline-block; width:9px; height:9px; margin-right:5px; border:2px solid var(--accent); border-right-color:transparent; border-radius:50%; vertical-align:-1px; animation:spin .8s linear infinite; }
+.spin { display:inline-block; margin-left:8px; color:var(--muted); font-size:12px; } .spin.wait { font-style:italic; } .spin.run::before { content:""; display:inline-block; width:9px; height:9px; margin-right:5px; border:2px solid var(--accent); border-right-color:transparent; border-radius:50%; vertical-align:-1px; animation:spin .8s linear infinite; }
 .spin.ok { color:var(--ok); } .spin.bad { color:var(--bad); }
 @keyframes spin { to { transform:rotate(360deg); } }
 .st .doing { font-weight:600; } .st .quiet { color:var(--warn); font-weight:600; } .st .agent { color:var(--accent-2); }
@@ -505,7 +506,7 @@ function paintPast() {
       const cl = el("button", "Close"); cl.type = "button";
       cl.title = "Stop this Claude Code session (its conversation stays, to resume later)";
       cl.addEventListener("click", async () => { await api("api/sessions/" + x.id + "/close", {}).catch(() => {}); await loadSessions(); paintPast(); });
-      row.append(go, cl); box.append(row);
+      const acts = el("div", null, "pacts"); acts.append(go, cl); row.append(acts); box.append(row);
     }
   }
   const item = (p, left) => {
@@ -902,7 +903,7 @@ setInterval(() => {   // the running ones count their time
     ln.querySelector(".sdur").textContent = clock(Math.round((Date.now() - +ln.dataset.at) / 1000));
 }, 1000);
 function settleTools(f, why) {   // the turn ended: a call still marked running did not say how it went
-  for (const sp of f.querySelectorAll(".spin.run")) {
+  for (const sp of f.querySelectorAll(".spin.run, .spin.wait")) {
     const ln = sp.closest("details.subline");
     if (ln && ln.dataset.bg) continue;   // a background subagent goes on after the turn
     sp.className = "spin"; sp.textContent = why; if (ln) delete ln.dataset.run;
@@ -944,7 +945,8 @@ function paint(ev, into) {
       const d = el("details", null, "ev tool"); const s = el("summary");
       s.append(el("span", toolName(ev.name), "nm"), " " + (ev.label || ev.view.file || ev.view.command || "").slice(0, 90));
       if (ev.agent) s.title = "by the subagent " + ev.agent;
-      if (!ev.past) { const sp = el("span", "running", "spin run"); sp.dataset.at = String(ev.at ? ev.at * 1000 : Date.now()); s.append(sp); }
+      // asked for: "queued" until Claude Code starts it (calls made together can wait their turn), then running
+      if (!ev.past) { const sp = el("span", "queued", "spin wait"); sp.title = "Asked for; Claude Code has not started it yet"; s.append(sp); }
       d.append(s, toolView(ev.view)); d.dataset.tid = ev.id;
       const ln = ev.parent ? subOf(f, ev.parent) : null;   // a subagent's own call: inside its one line
       if (ln) { ln.querySelector(".subcalls").append(d); subCount(ln, ev.name, ev.label || ev.view.file || ev.view.command || ""); }
@@ -956,10 +958,25 @@ function paint(ev, into) {
       else subDone(f, ev.id, ev.error ? "failed" : "done", ev.ms);
       const pre = el("pre", ev.text || "(no output)"); if (ev.error) pre.className = "old"; ln.querySelector(".subcalls").append(pre);
     }
+    else if (ev.type === "tool_start" || ev.type === "tool_done") {   // one call of several: its own start, its own end
+      const t = f.querySelector('[data-tid="' + CSS.escape(ev.id) + '"]'), sp = t && t.querySelector(".spin");
+      if (t && sp && !t.dataset.result) {
+        if (ev.type === "tool_start") { sp.className = "spin run"; sp.textContent = "running"; sp.dataset.at = String(ev.at * 1000); }
+        else {
+          let pre = t.querySelector(":scope > pre.out"); if (!pre) { pre = el("pre", "", "out"); t.append(pre); }
+          pre.textContent = ev.text || "(no output)"; t.dataset.done = "1";
+          sp.className = "spin ok"; sp.textContent = "✓" + (ev.ms != null ? " " + (ev.ms < 1000 ? ev.ms + " ms" : (ev.ms / 1000).toFixed(1) + " s") : "");
+        }
+      }
+    }
     else if (ev.type === "tool_result") {
-      const t = f.querySelector('[data-tid="' + CSS.escape(ev.id) + '"]'); const pre = el("pre", ev.text || "(no output)"); if (ev.error) pre.className = "old"; (t || f).append(pre);
+      const t = f.querySelector('[data-tid="' + CSS.escape(ev.id) + '"]');
+      let pre = t && t.querySelector(":scope > pre.out");
+      if (!pre) { pre = el("pre", "", "out"); (t || f).append(pre); }
+      pre.textContent = ev.text || "(no output)"; pre.classList.toggle("old", !!ev.error);
+      if (t) t.dataset.result = "1";
       const sp = t && t.querySelector(".spin");
-      if (sp) { sp.className = "spin " + (ev.error ? "bad" : "ok"); sp.textContent = (ev.error ? "✗ failed" : "✓") + (ev.ms != null ? " " + (ev.ms < 1000 ? ev.ms + " ms" : (ev.ms / 1000).toFixed(1) + " s") : ""); }
+      if (sp && (ev.error || !t.dataset.done || ev.ms != null)) { sp.className = "spin " + (ev.error ? "bad" : "ok"); sp.textContent = (ev.error ? "✗ failed" : "✓") + (ev.ms != null ? " " + (ev.ms < 1000 ? ev.ms + " ms" : (ev.ms / 1000).toFixed(1) + " s") : ""); }
     }
     else if (ev.type === "permission") f.append(askCard(ev));
     else if (ev.type === "permission_done") { const c = S.cards[ev.request]; if (c) { c.classList.add("done"); const a = c.querySelector(".acts"); if (a) a.replaceChildren(el("span", ev.allow ? (ev.always ? "Allowed always" : "Allowed") : "Denied" + (ev.message ? ": " + ev.message : ""))); } }

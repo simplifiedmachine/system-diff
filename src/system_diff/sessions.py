@@ -236,6 +236,25 @@ def asked_why(project: Path, tool: str, options: Dict[str, Any]) -> str:
             "outside the files system-diff reads, or a check Claude Code keeps in every mode.")
 
 
+def _response_text(got: Any) -> str:
+    """What a tool gave back, as the PostToolUse hook has it: a command's output, a text, else its JSON."""
+    if isinstance(got, str):
+        return got
+    if isinstance(got, dict):
+        out = "\n".join(str(got.get(k) or "") for k in ("stdout", "stderr") if got.get(k))
+        if out:
+            return out
+        for k in ("content", "result", "text", "output"):
+            if isinstance(got.get(k), str):
+                return got[k]
+    if isinstance(got, list):
+        return _text_of(got)
+    try:
+        return json.dumps(got, default=str)[:2000] if got is not None else ""
+    except (TypeError, ValueError):
+        return str(got)[:2000]
+
+
 def tool_input_view(name: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """What the page shows of a tool call: its file and, for an edit, what changes; a command; else the input, cut."""
     data = data if isinstance(data, dict) else {"input": data}
@@ -289,6 +308,7 @@ class Session:
         self.turn_at = 0.0                # when the turn under way began (0: none)
         self.last_at = time.time()        # when Claude Code last said anything
         self.doing: Dict[str, Any] = {}   # what it does now: {"what", "tool", "detail", "agent"}
+        self.tool_began: Dict[str, float] = {}   # when each call began (PreToolUse), by its id
         self.tools: Dict[str, Dict[str, Any]] = {}
         self.subs: Dict[str, Dict[str, Any]] = {}   # its subagents, by the id of the Task call that started each   # this turn's tool calls, by id: name, label, when begun
         self.forget = False               # closed by the person: not offered to continue after a restart
@@ -656,6 +676,17 @@ class Session:
 
         async def run(hook_input: Dict[str, Any], tool_use_id: Optional[str], context: Any) -> Dict[str, Any]:
             said: List[str] = []
+            event = str(dict(hook_input).get("hook_event_name") or "")
+            if event == "PreToolUse":   # it starts now (calls made together may wait their turn): its row says so
+                if tool_use_id:
+                    self.tool_began[tool_use_id] = time.time()
+                    self.emit("tool_start", keep=False, id=tool_use_id, at=round(time.time(), 3))
+                return {}
+            if event == "PostToolUse" and tool_use_id:   # it ended now, with its output: before the calls made with it
+                began = self.tool_began.pop(tool_use_id, None)
+                self.emit("tool_done", keep=False, id=tool_use_id, text=_cut(_redact(_response_text(
+                    dict(hook_input).get("tool_response"))), 600),
+                    ms=int((time.time() - began) * 1000) if began else None)
             if str(dict(hook_input).get("hook_event_name") or "") == "SubagentStop":
                 self.sub_stopped()   # its line in the feed and on the Agents tab says done
             env = {k: v for k, v in os.environ.items() if k != "SYSTEM_DIFF_APP_SESSION"}
@@ -675,8 +706,8 @@ class Session:
                 if isinstance(got, dict):
                     return got
             return {}
-        return {ev: [HookMatcher(hooks=[run])] for ev in ("UserPromptSubmit", "PostToolUse", "Stop", "SubagentStart",
-                                                          "SubagentStop")}
+        return {ev: [HookMatcher(hooks=[run])] for ev in ("UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop",
+                                                          "SubagentStart", "SubagentStop")}
 
     def sdk_options(self) -> Any:
         import warnings

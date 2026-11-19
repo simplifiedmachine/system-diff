@@ -207,4 +207,15 @@ def test_a_conversation_open_in_a_session_is_not_resumed_twice():
 def test_each_running_call_shows_for_how_long():
     from system_diff import app_page
     p = app_page.PAGE
-    assert 'sp.dataset.at = String(ev.at ? ev.at * 1000 : Date.now())' in p and '"running · " + clock(' in p
+    assert 'sp.dataset.at = String(ev.at * 1000)' in p and '"running · " + clock(' in p
+
+
+def test_each_call_says_queued_running_and_done_on_its_own():
+    """Calls made together: each row says queued until Claude Code starts it, running then, and done with its own
+    output when it ends (the hooks), not when the slowest of them ends."""
+    from system_diff import app_page, sessions
+    p = app_page.PAGE
+    assert 'el("span", "queued", "spin wait")' in p and 'ev.type === "tool_start" || ev.type === "tool_done"' in p
+    assert sessions._response_text({"stdout": "quick", "stderr": ""}) == "quick"
+    assert sessions._response_text("x") == "x" and sessions._response_text(None) == ""
+    assert '"pacts"' in p   # the open sessions' Open and Close side by side
