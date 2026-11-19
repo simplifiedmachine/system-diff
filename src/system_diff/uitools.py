@@ -79,9 +79,10 @@ def within(seconds: float, fn: Any, what: str) -> Dict[str, Any]:
     t.join(seconds)
     if "out" in box:
         return box["out"]
+    tail = (" Go on without it: launch the agents you planned yourself; add_agent puts each one on the person's board."
+            if what in ("plan_agents", "run_workflow") else " Go on without it, and tell the person it timed out.")
     return {"error": f"{what} is still reading the system after {int(seconds)} s (no engine answered for this "
-                     "repository; `system-diff watch` keeps one ready). Go on without it: launch the agents you "
-                     "planned yourself; add_agent puts each one on the person's board."}
+                     "repository; `system-diff watch` keeps one ready)." + tail}
 
 
 def project_root(root: Path, project: str = "") -> Path:

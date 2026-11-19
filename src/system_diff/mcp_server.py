@@ -155,6 +155,17 @@ def _out(root: Path, *parts: str) -> Path:
     return git_dir(root, *parts)
 
 
+def _via_engine(name: str, args: Dict[str, Any], here: Any) -> Dict[str, Any]:
+    """A tool that reads the whole system: answered by the repository's running engine, which holds it (a moment);
+    with none, read here, for a bounded time (a large repository on a slow machine takes minutes: never a hung
+    tool)."""
+    from . import uitools
+    got = uitools.engine_post(_root(), "tool", {"tool": name, "args": args}, timeout=90)
+    if isinstance(got, dict) and "result" in got:
+        return got["result"]
+    return uitools.within(90, here, name)
+
+
 def tool_map(root: Path, ref: str = ".", diagram: bool = False) -> Dict[str, Any]:
     sha, label = cmp.resolve(root, ref)
     source = GitSource(sha, root)
@@ -199,7 +210,8 @@ def tool_explain(root: Path, part: str = "", base: str = "checkpoint") -> Dict[s
         if found is None:
             return {"error": f"no part called {part!r}", "parts": parts}
     else:
-        found = activity.now(activity.events(root), CodeOf(c.cfg))["part"]
+        now = activity.now(activity.events(root), CodeOf(c.cfg))
+        found = now["part"] if now else None
         if found is None:
             return {"error": "no part has been read or edited yet: name one", "parts": parts}
     les = learn.lesson(c, found, GitSource(c.head_sha, root))
@@ -271,7 +283,7 @@ def build() -> Server:
         """The system's structure: its parts by column, the connections between them, how many entry points and
         tables, and its outside systems. `ref`: a commit, or "." for the working tree. Returns the picture's path;
         with `diagram`, also the map as text to show the person in a code block."""
-        return tool_map(_root(), ref, diagram)
+        return _via_engine("map", {"ref": ref, "diagram": diagram}, lambda: tool_map(_root(), ref, diagram))
 
     @server.tool()
     def system_diff(base: str = "checkpoint", head: str = ".", diagram: bool = False) -> Dict[str, Any]:
@@ -280,7 +292,8 @@ def build() -> Server:
         `base` "checkpoint" is what the person last marked as seen (HEAD if nothing yet), "turn" the working tree
         when they sent their last prompt; `head` "." is the working tree, uncommitted files included. With
         `diagram`, also the picture as text for a code block. Explain it from the plan, never beyond it."""
-        return tool_diff(_root(), base, head, diagram)
+        return _via_engine("diff", {"base": base, "head": head, "diagram": diagram},
+                           lambda: tool_diff(_root(), base, head, diagram))
 
     @_read_only(server)
     def explain(part: str = "", base: str = "checkpoint") -> Dict[str, Any]:
@@ -288,7 +301,7 @@ def build() -> Server:
         changing in it since `base` and why that matters, topics worth knowing (the technologies its code imports
         and the ideas behind it, each with a link), and a diagram of the part zoomed in, to paste in a code block.
         `part`: its name or id, an outside system's name, or a file in it; empty for the part being worked on."""
-        return tool_explain(_root(), part, base)
+        return _via_engine("explain", {"part": part, "base": base}, lambda: tool_explain(_root(), part, base))
 
     @server.tool()
     def draw(spec: Spec, name: str = "picture") -> Dict[str, Any]:

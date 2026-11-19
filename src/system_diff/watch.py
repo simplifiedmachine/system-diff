@@ -2611,6 +2611,20 @@ def handler(w: Watcher):
                 return self._post_mark()
             if urlsplit(self.path).path == "/ui/state":
                 return self._post_ui_state()
+            if urlsplit(self.path).path == "/tool":   # Claude's system_diff / system_map / explain, from what this holds
+                if self.headers.get("X-Token") != w.token or not hub.host_ok(self.headers.get("Host"),
+                                                                             self.server.server_address[1]):
+                    self._drain()
+                    return self._json(403, {"error": "forbidden"})
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                    body = json.loads(self.rfile.read(n).decode("utf-8") or "{}") if 0 < n <= 65536 else {}
+                    from . import mcp_server
+                    name, a = str(body.get("tool") or ""), body.get("args") if isinstance(body.get("args"), dict) else {}
+                    fn = {"diff": mcp_server.tool_diff, "map": mcp_server.tool_map, "explain": mcp_server.tool_explain}[name]
+                    return self._json(200, {"result": fn(w.root, **{str(k): v for k, v in a.items()})})
+                except (KeyError, TypeError, ValueError, UnicodeDecodeError) as exc:
+                    return self._json(400, {"error": f"{type(exc).__name__}: {exc}"})
             if urlsplit(self.path).path == "/agents/plan":   # Claude's plan_agents, from the system this engine holds
                 if self.headers.get("X-Token") != w.token or not hub.host_ok(self.headers.get("Host"),
                                                                              self.server.server_address[1]):

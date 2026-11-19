@@ -100,3 +100,13 @@ def test_parallel_writers_in_one_process_never_share_a_temporary_file(tmp_path):
         t.join()
     assert not errors and target.read_text().startswith('{"n"')
     assert not [p for p in tmp_path.iterdir() if p.name != "state.json"]   # no temporary file left
+
+
+def test_the_system_tools_ask_the_engine_and_never_hang():
+    """system_diff, system_map and explain read the whole system: the running engine answers them (POST /tool); with
+    none, a bounded read here that says it timed out."""
+    from system_diff import mcp_server, uitools
+    src = watch.__loader__.get_source("system_diff.watch")
+    assert '"/tool"' in src and "mcp_server.tool_diff" in src
+    assert uitools.within(0.1, lambda: time.sleep(1), "system_diff")["error"].endswith("tell the person it timed out.")
+    assert callable(mcp_server._via_engine)
