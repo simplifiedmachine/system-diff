@@ -265,6 +265,10 @@ class Session:
         self.client: Any = None
         self.created = time.time()
         self.title = ""
+        self.key_env: Optional[Dict[str, str]] = None   # the keys stored for this project (vault.py), read at start
+        self.key_list: List[Dict[str, Any]] = []
+        self.masks: List[tuple] = []
+        self._held = ""                                  # streamed text held back while it may end in part of a key
         self._log = self._log_path()
 
     # ── the log ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -275,7 +279,45 @@ class Session:
         except Exception:  # noqa: BLE001 - kept in memory only
             return None
 
+    def load_keys(self) -> Dict[str, str]:
+        """The keys stored for this project, read once as the session starts: its environment, and what its events
+        mask (a stored value never reaches the page or the log)."""
+        if self.key_env is not None:
+            return self.key_env
+        self.key_env, problems = {}, []
+        try:
+            from . import vault
+            folder = getattr(self.manager, "vault_folder", None)
+            self.key_env = vault.env_for(self.project, folder, problems)
+            listed = [k for k in vault.listing(self.project, folder) if k["name"] in self.key_env]
+            self.key_list = list({k["name"]: k for k in listed}.values())
+            self.masks = vault.masks_of(self.key_env)
+        except Exception as exc:  # noqa: BLE001 - the session starts without them
+            problems.append(type(exc).__name__)
+        if problems:
+            self.emit("note", text="Keys that could not be read, so this session goes without them: "
+                                   + "; ".join(problems)[:400])
+        return self.key_env
+
+    def _mask(self, obj: Any) -> Any:
+        if not self.masks:
+            return obj
+        from .vault import mask
+        return mask(obj, self.masks)
+
+    def _delta(self, text: str) -> None:
+        """Streamed text, masked: with keys, the tail that may be the start of one waits for the next piece."""
+        if not self.masks:
+            self.emit("delta", keep=False, text=text)
+            return
+        self._held = self._mask(self._held + text)
+        back = min(256, max(len(v) for v, _ in self.masks) - 1)
+        out, self._held = (self._held[:-back], self._held[-back:]) if len(self._held) > back else ("", self._held)
+        if out:
+            self.emit("delta", keep=False, text=out)
+
     def emit(self, kind: str, keep: bool = True, **data: Any) -> Dict[str, Any]:
+        data = self._mask(data)
         with self.cond:
             ev = {"n": self.first + len(self.events), "at": round(time.time(), 3), "type": kind, **data}
             self.events.append(ev)
@@ -301,7 +343,9 @@ class Session:
                 "mode": getattr(self, "mode", "") or self.options.get("permission_mode") or "",
                 "model": self.model or self.options.get("model") or "", "options": self.public_options(),
                 "title": self.title, "created": self.created, "error": self.error,
-                "pending": [{"request": k, **{x: v[x] for x in ("tool", "view")}} for k, v in self.pending.items()]}
+                "keys": [k["name"] for k in self.key_list],
+                "pending": [{"request": k, **{x: self._mask(v[x]) for x in ("tool", "view")}}
+                            for k, v in self.pending.items()]}
 
     def public_options(self) -> Dict[str, Any]:
         o = self.options
@@ -326,7 +370,7 @@ class Session:
         if self.status in ("closed", "failed"):
             raise ValueError(f"the session is {self.status}: start a new one (or resume it)")
         if not self.title:
-            self.title = text[:80]
+            self.title = self._mask(text)[:80]
         self.emit("user", text=text)
         self.manager.call(self._put(text))
 
@@ -458,8 +502,13 @@ class Session:
             "cwd": str(self.project), "permission_mode": mode, "can_use_tool": self.can_use_tool,
             "include_partial_messages": True, "hooks": self.hooks(), "setting_sources": sources,
             "system_prompt": {"type": "preset", "preset": "claude_code", "append": APPEND},
-            "env": {"SYSTEM_DIFF_APP_SESSION": "1"},
+            "env": {**self.load_keys(), "SYSTEM_DIFF_APP_SESSION": "1"},   # the keys stored for it, by name
         }
+        try:
+            from .vault import prompt_note
+            kw["system_prompt"]["append"] = APPEND + prompt_note(self.key_list)
+        except Exception:  # noqa: BLE001
+            pass
         configured = configured_servers(self.project, sources)
         plugin = plugin_enabled(self.project, sources)
         sd_ours = not plugin and "system-diff" not in configured
@@ -503,8 +552,9 @@ class Session:
             ev = getattr(msg, "event", None) or {}
             delta = (ev.get("delta") or {}) if isinstance(ev, dict) else {}
             if delta.get("type") == "text_delta" and delta.get("text"):
-                self.emit("delta", keep=False, text=delta["text"])
+                self._delta(delta["text"])
             return
+        self._held = ""   # the whole text follows (masked): what was held back is not needed
         if kind == "AssistantMessage":
             self.model = getattr(msg, "model", "") or self.model
             for b in getattr(msg, "content", None) or []:
@@ -555,6 +605,10 @@ class Session:
     async def run(self) -> None:
         self.queue = self.queue or asyncio.Queue()
         try:
+            await asyncio.get_running_loop().run_in_executor(None, self.load_keys)   # a keyring may take a moment
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             self.client = self.manager.client_factory(self)
             await self.client.connect()
         except Exception as exc:  # noqa: BLE001
@@ -594,6 +648,7 @@ class Manager:
 
     def __init__(self, client_factory: Callable[[Session], Any] = _sdk_client):
         self.client_factory = client_factory
+        self.vault_folder: Optional[Path] = None   # where the keys are (the Studio's state folder): vault.py
         self.sessions: Dict[str, Session] = {}
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self.loop.run_forever, name="system-diff sessions", daemon=True)

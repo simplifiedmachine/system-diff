@@ -152,6 +152,13 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
 .notice { margin:10px 12px 0; padding:10px 12px; border-radius:14px; background:color-mix(in srgb, var(--warn) 12%, transparent);
   border:1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
 .notice code { font-family:var(--mono); }
+/* keys: names only, the value never comes back to the page */
+.keys { display:grid; gap:5px; min-width:0; }
+.keys .k { display:flex; gap:6px; align-items:center; min-width:0; font-size:12px; }
+.keys .k code { font:12px var(--mono); font-weight:600; } .keys .k .s { color:var(--muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.keys .k button { padding:1px 9px; font-size:12px; }
+.keys form, .card form { display:grid; gap:6px; } .keys form input, .keys form select, .card input, .card select { width:100%; min-width:0; }
+input[type=password] { background:var(--glass-soft); border:1px solid var(--line); border-radius:12px; padding:6px 10px; }
 ::-webkit-scrollbar { width:10px; height:10px; } ::-webkit-scrollbar-thumb { background:var(--code); border-radius:999px; border:3px solid transparent; background-clip:padding-box; }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root { --glass:var(--glass-strong); } }
@@ -202,6 +209,7 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
         <label for="mode">Permissions</label><select id="mode"></select>
         <label for="agentpick">Agent</label><select id="agentpick"><option value="">Claude (no saved agent)</option></select>
         <label for="pastpick">Resume</label><div class="row"><select id="pastpick"><option value="">a past conversation…</option></select><button type="button" id="resume">Resume</button></div>
+        <label>Keys</label><div class="keys" id="keys"><span class="ev meta">…</span></div>
         <span></span><div class="row"><span class="ev meta" id="choicefrom"></span><button type="button" id="ownoff" hidden>Use the all-projects choice</button></div>
         <span></span><div class="row"><button type="button" id="forall" title="These choices for every project (a project's own change still wins there)">Use for all projects</button><button type="button" id="applyopen" hidden title="The model and the permission mode change now in every open session; settings, effort and agent from the next session">Apply to open sessions</button></div>
         <span></span><div class="row"><button type="button" id="fork" hidden title="Continue this conversation in a new session; this one stays as it is">Fork</button><button type="button" id="apply" hidden title="Start a session with these settings that continues this conversation">Apply to this conversation</button></div>
@@ -211,6 +219,7 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
     <div id="agentsbox" hidden></div>
     <div class="compose" id="compose">
       <div class="aboutchip" id="aboutchip" hidden title="Sent with your message, so Claude knows what you are looking at on the page"><span id="abouttext"></span><button type="button" id="aboutx" aria-label="Do not send this">×</button></div>
+      <div id="keyask" hidden></div>
       <textarea id="msg" placeholder="Ask Claude… (Enter sends, Shift+Enter a new line, ↑ ↓ past messages)" aria-label="Message to Claude"></textarea>
       <div class="row"><span class="st" id="sstatus"></span><button type="button" id="stop" class="danger" disabled>Interrupt</button><button type="button" id="closesess">Close</button><button type="button" id="send" class="primary">Send</button></div>
     </div>
@@ -302,7 +311,7 @@ async function openProject(p) {
   f.src = "p/" + p.id + "/?studio=1" + (S.scope ? "#scope=" + encodeURIComponent(S.scope) : ""); box.append(f);
   if (same && p.kind === "folder") return;   // the same repository, another of its projects: its sessions stay
   api("api/projects/open", { project:p.id, wait:0 }).catch(() => {});
-  await Promise.allSettled([loadChoices(), loadSessions(), loadPast()]);   // side by side: one slow list never holds the others
+  await Promise.allSettled([loadChoices(), loadSessions(), loadPast(), loadKeys()]);   // side by side: one slow list never holds the others
   if ($("tabagents").getAttribute("aria-selected") === "true") loadAgents();
 }
 $("reload").addEventListener("click", () => { const f = $("view"); if (f) f.src = f.src; });
@@ -635,7 +644,7 @@ function histPush(text) {
   const list = histList();
   if (text && list[list.length - 1] !== text) list.push(text);
   while (list.length > 200) list.shift();
-  keep.set(histKey(), JSON.stringify(list.filter(x => !KEYLIKE.test(x))));
+  keep.set(histKey(), JSON.stringify(list.filter(x => !KEYLIKE.test(x) && !(typeof findKeys === "function" && findKeys(x).length))));
   HIST.pos = -1; HIST.draft = "";
 }
 function histStep(dir) {   // true when it moved (the key is then not the caret's)
@@ -713,6 +722,7 @@ function askCard(ev) {
 }
 async function send() {
   const text = $("msg").value.trim(); if (!text) return;
+  if (keysFirst(text)) return;   // a key in the message: offered to the key store first (keys, below)
   let s = S.session && S.session.status && !["closed", "failed"].includes(S.session.status) ? S.session : await start();
   if (!s) return;
   try { await api("api/sessions/" + s.id + "/send", { text:withAbout(text) }); $("msg").value = ""; } catch (e) { $("sstatus").textContent = e.message; }
@@ -726,6 +736,144 @@ $("msg").addEventListener("keydown", e => {
 });
 $("stop").addEventListener("click", () => { if (S.session) api("api/sessions/" + S.session.id + "/interrupt", {}).catch(e => { $("sstatus").textContent = e.message; }); });
 $("closesess").addEventListener("click", async () => { if (S.session && S.session.id) { await api("api/sessions/" + S.session.id + "/close", {}).catch(() => {}); loadSessions(); } });
+
+// ── keys: kept by the operating system, given to sessions as environment variables, never sent in a message ──────
+/*keys-detect:start*/
+const KEY_NAME = /^(?=.*(key|token|pat|secret|passw|pwd|api[_-]?key|credential))/i;
+const PLACEHOLDER = /^(x+|\*+|\.+|<.*>|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|your[_-].*|changeme|example.*|placeholder|redacted|null|none|true|false|undefined)$/i;
+const KNOWN = [
+  [/\b(gh[pousr]_[A-Za-z0-9]{36,255})\b/g, "GITHUB_TOKEN", "a GitHub token"],
+  [/\b(github_pat_[A-Za-z0-9_]{22,255})\b/g, "GITHUB_TOKEN", "a GitHub token"],
+  [/\b((?:AKIA|ASIA)[0-9A-Z]{16})\b/g, "AWS_ACCESS_KEY_ID", "an AWS access key"],
+  [/\b(xox[abposr]-[A-Za-z0-9-]{10,})\b/g, "SLACK_TOKEN", "a Slack token"],
+  [/\b(sk-ant-[A-Za-z0-9_-]{20,})\b/g, "CLAUDE_API_KEY", "an Anthropic API key"],
+  [/\b(sk-(?!ant-)[A-Za-z0-9_-]{20,})\b/g, "OPENAI_API_KEY", "an OpenAI API key"],
+  [/\b(AIza[0-9A-Za-z_-]{35})\b/g, "GOOGLE_API_KEY", "a Google API key"],
+  [/\b(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b/g, "JWT", "a JSON web token"],
+  [/\b([a-z2-7]{52})\b/g, "AZURE_DEVOPS_EXT_PAT", "an Azure DevOps personal access token"],
+  [/\b([A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4})\b/g, "AZURE_DEVOPS_EXT_PAT", "an Azure DevOps personal access token"],
+  [/(-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----)/g, "PRIVATE_KEY", "a private key"],
+];
+function keyEntropy(s) { const n = {}; for (const c of s) n[c] = (n[c] || 0) + 1; let h = 0; for (const c in n) { const p = n[c] / s.length; h -= p * Math.log2(p); } return h; }
+function looksRandom(v) {
+  if (v.length < 32 || /^[0-9a-f]+$/i.test(v) && v.length <= 64) return false;          // a commit or a checksum
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return false;   // an id
+  const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(r => r.test(v)).length;
+  return kinds >= 3 && keyEntropy(v) >= 3.5;
+}
+function keyName(text) { return String(text || "").toUpperCase().replace(/[^A-Z0-9_]+/g, "_").replace(/^([0-9])/, "_$1").replace(/_+$/, "").slice(0, 64) || "SECRET"; }
+function findKeys(text) {   // [{value, start, name, what}]: what in this text looks like a key, longest first, no overlaps
+  const out = [], taken = [];
+  const add = (start, value, name, what) => {
+    const end = start + value.length;
+    if (taken.some(([a, b]) => start < b && a < end) || PLACEHOLDER.test(value)) return;
+    taken.push([start, end]); out.push({ value, start, name, what });
+  };
+  for (const [re, name, what] of KNOWN) for (const m of text.matchAll(re)) add(m.index + m[0].indexOf(m[1]), m[1], name, what);
+  const assign = /(^|[\s,;{(])["']?([A-Za-z_][A-Za-z0-9_.-]{0,63})["']?\s*[:=]\s*["']?([^\s"',;]{8,})["']?/g;
+  for (const m of text.matchAll(assign)) {
+    if (!KEY_NAME.test(m[2]) || /^\$|^https?:/i.test(m[3])) continue;
+    const after = text.slice(m.index + m[0].length);
+    if (/^\s*[:=]/.test(after) || (m[3].length < 20 && !/[0-9]|[^A-Za-z0-9_]/.test(m[3]))) continue;   // a name, or a word
+    const at = m.index + m[0].lastIndexOf(m[3]);
+    const known = out.find(k => k.start === at);
+    if (known) { if (known.name !== "AZURE_DEVOPS_EXT_PAT") known.name = keyName(m[2]); continue; }   // its own name
+    const ado = /azure|ado|devops/i.test(m[2]) && /pat|token/i.test(m[2]);
+    add(at, m[3], ado ? "AZURE_DEVOPS_EXT_PAT" : keyName(m[2]), ado ? "an Azure DevOps personal access token" : "a key");
+  }
+  for (const m of text.matchAll(/[A-Za-z0-9+\/=_-]{32,}/g)) if (looksRandom(m[0])) add(m.index, m[0], "SECRET", "a long random string");
+  return out.sort((a, b) => a.start - b.start);
+}
+/*keys-detect:end*/
+S.keysSent = "";   // the text the person chose to send as it is
+async function loadKeys() {
+  const box = $("keys"); if (!box) return;
+  if (!S.project) { box.replaceChildren(el("span", "Pick a project first.", "ev meta")); return; }
+  let d; try { d = await api("api/secrets?project=" + S.project); } catch (e) { box.replaceChildren(el("span", e.message, "ev meta")); return; }
+  box.replaceChildren();
+  for (const k of d.keys || []) {
+    const r = el("div", null, "k"); r.append(el("code", k.name), el("span", [k.scope, k.description].filter(Boolean).join(" · "), "s"));
+    const f = el("button", "Forget", "danger"); f.type = "button"; f.title = "Remove it from " + k.kept_in;
+    f.addEventListener("click", async () => {
+      if (!confirm("Forget the key " + k.name + " (" + k.scope + ")? Sessions started from now on go without it.")) return;
+      try { await api("api/secrets/forget", { project:S.project, name:k.name, scope:k.scope === "all projects" ? "all" : "project" }); loadKeys(); } catch (e) { alert(e.message); }
+    });
+    r.append(f); box.append(r);
+  }
+  if (!(d.keys || []).length) box.append(el("span", "None: a token your agents need (an Azure DevOps PAT to open a pull request) is kept here, not in the chat.", "ev meta"));
+  const add = el("button", "Add a key…"); add.type = "button"; add.style.justifySelf = "start";
+  add.addEventListener("click", () => { add.replaceWith(keyForm({}, async got => { await loadKeys(); offerRestart(got); })); });
+  box.append(add, el("span", "Kept in " + d.store + ". Sessions get them as environment variables; Claude sees their names only.", "ev meta"));
+}
+function keyForm(k, done, cancel) {   // name, value (hidden), for this project or all, what it is for
+  const f = el("form"), name = el("input"), value = el("input"), scope = el("select"), desc = el("input");
+  name.type = "text"; name.placeholder = "its name, such as AZURE_DEVOPS_EXT_PAT"; name.value = k.name || ""; name.setAttribute("aria-label", "Key name");
+  name.addEventListener("input", () => { name.value = keyName(name.value) === "SECRET" && !name.value ? "" : name.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"); });
+  value.type = "password"; value.placeholder = "its value (never shown again)"; value.autocomplete = "off"; value.setAttribute("aria-label", "Key value");
+  if (k.value) { value.value = k.value; value.hidden = true; }
+  option(scope, "project", "for this project"); option(scope, "all", "for all projects"); scope.setAttribute("aria-label", "For which projects");
+  desc.type = "text"; desc.placeholder = "what it is for (the agents read this)"; desc.value = k.what || ""; desc.setAttribute("aria-label", "Description");
+  const acts = el("div", null, "acts"), ok = el("button", "Store", "primary"), no = el("button", "Cancel"); no.type = "button";
+  acts.append(ok, no); f.append(name, value, scope, desc, acts);
+  no.addEventListener("click", () => cancel ? cancel() : loadKeys());
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    try { const got = await api("api/secrets/save", { project:S.project, name:name.value.trim(), value:value.value, scope:scope.value, description:desc.value.trim() });
+          value.value = ""; done(got); }
+    catch (err) { alert(err.message); }
+  });
+  return f;
+}
+function sessionOpen() { const s = S.session; return s && s.id && s.status && !["closed", "failed"].includes(s.status) ? s : null; }
+async function restartWithKeys() {   // the same conversation, in a session that has the keys
+  const s = sessionOpen(); if (!s) return null;
+  const t = await api("api/sessions/" + s.id + "/restart", {}); await loadSessions(); $("sesspick").value = t.id; follow(t.id); return t;
+}
+function offerRestart(got) {
+  if (!(got.open_sessions || []).length || !sessionOpen() || !got.open_sessions.includes(S.session.id)) { $("sstatus").textContent = got.name + " is stored: sessions started from now on get it."; return; }
+  const n = el("div", null, "card"), b = el("button", "Restart this session with it", "primary"); b.type = "button";
+  n.append(el("div", got.name + " is stored. This session started before it: restart it to give it the key (the conversation goes on).", "q"));
+  b.addEventListener("click", async () => { try { await restartWithKeys(); n.remove(); } catch (e) { $("sstatus").textContent = e.message; } });
+  const x = el("button", "Later"); x.type = "button"; x.addEventListener("click", () => n.remove());
+  const acts = el("div", null, "acts"); acts.append(b, x); n.append(acts); $("feed").append(n); $("feed").scrollTop = $("feed").scrollHeight;
+}
+function keysFirst(text) {   // true: the message waits for the person's answer on the card above the box
+  if (S.keysSent && S.keysSent === text) { S.keysSent = ""; return false; }
+  const found = findKeys(text); if (!found.length) return false;
+  const box = $("keyask"), c = el("div", null, "card"); box.replaceChildren(c); box.hidden = false;
+  c.append(el("div", "This looks like a key. Store it safely instead of sending it?", "q"),
+           el("div", "Stored, it is kept by your system and given to this project's sessions as an environment variable: Claude uses it by name and never sees it.", "ev meta"));
+  const rows = found.map(k => {
+    const name = el("input"); name.type = "text"; name.value = k.name; name.setAttribute("aria-label", "Name for " + k.what);
+    const r = el("div", null, "acts"); r.append(el("span", k.what + ", named", "s"), name); c.append(r); return { k, name };
+  });
+  const scope = el("select"); option(scope, "project", "for this project"); option(scope, "all", "for all projects"); scope.setAttribute("aria-label", "For which projects");
+  const acts = el("div", null, "acts"), store = el("button", "Store and send without it", "primary"), as = el("button", "Send as it is"), no = el("button", "Cancel");
+  for (const b of [store, as, no]) b.type = "button";
+  acts.append(scope, store, as, no); c.append(acts);
+  const close = () => { box.replaceChildren(); box.hidden = true; };
+  no.addEventListener("click", close);
+  as.addEventListener("click", () => { close(); S.keysSent = text; send(); });
+  store.addEventListener("click", async () => {
+    let out = text, names = [], restart = false;
+    try {
+      for (const { k, name } of rows.slice().reverse()) {   // from the end: the earlier positions stay right
+        const got = await api("api/secrets/save", { project:S.project, name:name.value.trim(), value:k.value, scope:scope.value, description:k.what + " (from your message)" });
+        out = out.slice(0, k.start) + "$" + got.name + out.slice(k.start + k.value.length); names.unshift(got.name);
+        if ((got.open_sessions || []).length) restart = true;
+      }
+    } catch (e) { alert(e.message); return; }
+    out += "\n\n[" + names.join(", ") + (names.length > 1 ? " are" : " is") + " stored in system-diff's key store and in your environment: use " + (names.length > 1 ? "them" : "it") + " by name, never print " + (names.length > 1 ? "them" : "it") + ".]";
+    close(); loadKeys();
+    const s = sessionOpen();
+    if (restart && s) {
+      if (["working", "waiting"].includes(s.status)) $("sstatus").textContent = "Claude is working: this session gets " + names.join(", ") + " when you restart it (Session options, Keys).";
+      else { try { await restartWithKeys(); } catch (e) { $("sstatus").textContent = e.message; } }
+    }
+    $("msg").value = out; S.keysSent = out.trim(); send();
+  });
+  return true;
+}
 
 // ── agents ───────────────────────────────────────────────────────────────────────────────────────────────────
 function tab(which) {

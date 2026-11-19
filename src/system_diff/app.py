@@ -96,6 +96,8 @@ class Studio:
         self.folder = folder
         self.token = token or secrets.token_hex(24)
         self.manager = manager
+        if manager is not None:
+            manager.vault_folder = folder   # the sessions' keys are kept beside the Studio's state
         self.lock = threading.Lock()
         self.added: List[str] = []
         got = _read(folder / PROJECTS) if folder is not None else None
@@ -110,6 +112,7 @@ class Studio:
         if self.manager is None:
             from . import sessions
             self.manager = sessions.Manager()
+            self.manager.vault_folder = self.folder
         return self.manager
 
     # ── projects ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -418,6 +421,10 @@ def handler(studio: Studio):
                     root = self._root(q)
                     m = studio.manager
                     return self._json(200, {"sessions": [s.head() for s in m.of(root)] if m is not None else []})
+                if path == "/api/secrets":   # the keys for this project: names, never values
+                    from . import vault
+                    return self._json(200, {"keys": vault.listing(self._root(q), studio.folder),
+                                            "store": vault.store_name()})
                 if path == "/api/past":
                     from . import sessions
                     return self._json(200, {"past": sessions.past(self._root(q))})
@@ -526,6 +533,16 @@ def handler(studio: Studio):
                     t = studio.sessions().start(s.project, opts, resume=s.claude_id, fork=True)
                     t.emit("note", text=f"A fork of session {s.id}: the same conversation so far, going its own way")
                     return self._json(200, t.head())
+                if act == "restart":   # the same choices, the same conversation, and the keys stored since
+                    if s.status in ("working", "waiting"):
+                        raise ValueError("Claude is working: restart it when this turn is done")
+                    opts = dict(s.options)
+                    s.close()
+                    t = studio.sessions().start(s.project, opts, resume=s.claude_id)
+                    t.title = s.title
+                    t.emit("note", text=(f"Continues session {s.id}" if s.claude_id else "A new session")
+                                        + " with the keys stored for this project")
+                    return self._json(200, t.head())
                 if act == "switch":   # new options, the same conversation: a new session resuming it
                     if not s.claude_id:
                         raise ValueError("this session has no conversation yet: just start a new one")
@@ -537,6 +554,20 @@ def handler(studio: Studio):
                                         f"{opts['settings_profile']}")
                     studio.remember(s.project, opts)
                     return self._json(200, t.head())
+            if path in ("/api/secrets/save", "/api/secrets/forget"):   # a key: kept by the OS, never said back
+                from . import vault
+                root = self._root({"project": str(b.get("project") or "")})
+                everywhere = str(b.get("scope") or "project") in ("all", "*", "everywhere")
+                if path.endswith("/forget"):
+                    return self._json(200, vault.forget(str(b.get("name") or ""), root, everywhere, studio.folder))
+                got = vault.save(str(b.get("name") or ""), str(b.get("value") or ""), root, everywhere,
+                                 str(b.get("description") or ""), studio.folder)
+                m = studio.manager
+                same = vault._same(root)
+                open_ = [x.id for x in (list(m.sessions.values()) if m is not None else [])
+                         if x.status not in ("closed", "failed") and (everywhere or vault._same(x.project) == same)
+                         and got["name"] not in [k["name"] for k in x.key_list]]
+                return self._json(200, {**got, "open_sessions": open_})
             if path == "/api/defaults/all":   # these choices for every project
                 studio.use_for_all(profiles.options_for(studio.root_of(str(b.get("project") or "")) or Path.home(), b))
                 m = studio.manager

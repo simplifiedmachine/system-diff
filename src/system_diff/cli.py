@@ -276,6 +276,19 @@ def parser() -> argparse.ArgumentParser:
     st.add_argument("--status", action="store_true", help="what the Studio sees: its projects, the engines, and why")
     st.add_argument("--foreground", action="store_true",
                     help="run it here until Ctrl-C, not in the background (to see what it prints)")
+    sc = sub.add_parser("secrets", help="keys your Studio sessions and their agents get as environment variables "
+                                        "(an Azure DevOps PAT, a GitHub token), kept in your system's own store")
+    scs = sc.add_subparsers(dest="action", required=True)
+    sl = scs.add_parser("list", help="the keys stored (names, never values)")
+    sl.add_argument("--project", help="only those a repository gets (its own and all projects')")
+    for verb, text in (("set", "store a key (its value is asked for, or read from stdin)"), ("forget", "remove a key")):
+        sx = scs.add_parser(verb, help=text)
+        sx.add_argument("name", help="its environment variable's name, such as AZURE_DEVOPS_EXT_PAT")
+        g = sx.add_mutually_exclusive_group()
+        g.add_argument("--all", action="store_true", help="for every project")
+        g.add_argument("--project", help="for this repository (default: the one holding the current directory)")
+        if verb == "set":
+            sx.add_argument("--description", default="", help="what it is for, as the agents will read it")
     sp = sub.add_parser("stop", help="stop the Studio and every system-diff engine of yours (they start again when "
                                      "needed)")
     sp.add_argument("--dry-run", action="store_true", help="say what it would stop, and stop nothing")
@@ -465,6 +478,45 @@ def _mcp_fallback(error: str, stdin=None, stdout=None) -> int:
     return 0
 
 
+def _secrets(args: argparse.Namespace) -> int:
+    """`system-diff secrets`: list, set or forget the keys Studio sessions get. Never prints a value."""
+    from . import vault
+    from .agent import find_root
+
+    def project() -> Path:
+        root = find_root(Path(args.project or ".").resolve())
+        if root is None:
+            raise ValueError(f"{args.project or 'here'} is not in a git repository (--all stores a key for every project)")
+        return root
+    try:
+        if args.action == "list":
+            keys = vault.listing(project() if args.project else None)
+            print(f"Kept in: {vault.store_name()}")
+            for k in keys:
+                print(f"  {k['name']}  ({k['scope']})" + (f"  {k['description']}" if k["description"] else ""))
+            if not keys:
+                print("  none stored")
+            return 0
+        where = None if args.all else project()
+        if args.action == "forget":
+            got = vault.forget(args.name, where, args.all)
+            print(f"Forgot {got['forgot']} ({got['scope']})")
+            return 0
+        vault.check_name(args.name)
+        if sys.stdin.isatty():
+            import getpass
+            value = getpass.getpass(f"Value for {args.name} (not shown): ")
+        else:
+            value = sys.stdin.read().rstrip("\r\n")
+        got = vault.save(args.name, value, where, args.all, args.description)
+        print(f"Stored {got['name']} for {got['scope']}, in {got['kept_in']}. Studio sessions started from now on get "
+              f"it as ${got['name']}.")
+        return 0
+    except ValueError as exc:
+        print(f"system-diff secrets: {exc}", file=sys.stderr)
+        return 2
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     _utf8()
     args = parser().parse_args(argv)
@@ -480,6 +532,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         from . import update
         return update.run(channel=args.channel or "", yes=args.yes, dry=args.dry_run, mcp=not args.no_mcp,
                           plugin=not args.no_plugin, relaunched=args.relaunched)
+    if args.cmd == "secrets":   # the person's keys: a repository only for a project's own
+        return _secrets(args)
     if args.cmd == "app":   # every repository's, not one: no repository needed
         from . import app
         if args.stop:
