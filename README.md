@@ -276,8 +276,11 @@ One local page for all your work: your projects on the left (each with its submo
 under it), the project's system-diff page in the middle (every tab, extensions' too), and a **Claude Code session**
 beside it, run by the app with your own Claude Code login and gateway:
 
-- Streaming answers, tool calls as they happen, and a question card when a tool call needs your say (**Allow**,
-  **Allow always**, **Deny** with a reason). **Interrupt** stops a turn; a reload or a second tab replays the
+- Streaming answers, rendered as Markdown (lists, tables, code with a Copy button, links; raw HTML and script links
+  stay text), tool calls as they happen, and a question card when a tool call needs your say (**Allow**,
+  **Allow always**, **Deny** with a reason). When Claude Code asks in a mode that should not ask (`bypassPermissions`),
+  the card says why: its own reason, a subagent asking, an `ask` rule in your settings, or your organization's policy.
+  In the message box, ↑ on the first line brings back what you sent in this project and ↓ goes forward to your draft. **Interrupt** stops a turn; a reload or a second tab replays the
   conversation; **Resume** continues one of Claude Code's past conversations of the repository.
 - Dropdowns for the **settings** (Claude Code's own, or one settings file such as `~/.claude/settings.bedrock.json`;
   secrets never reach the page), the **model** (any alias or id) and the **permission mode** (`bypassPermissions` is
@@ -295,6 +298,18 @@ beside it, run by the app with your own Claude Code login and gateway:
   session. One app per user (`system-diff app` again opens it); it uses each repository's own engine, so a terminal
   session in the same repository shares it. Every route checks the host name, the token and the page's origin.
 
+### Keys for your agents
+
+A token your agents need (an Azure DevOps PAT to open a pull request, a GitHub token) is kept by system-diff, not
+pasted into a chat. In the Studio: Session options → Keys → Add a key…, for this project or all projects. Or from a
+terminal: `system-diff secrets set AZURE_DEVOPS_EXT_PAT [--all]` (the value is asked for, never shown);
+`system-diff secrets list`; `system-diff secrets forget NAME`. Values are kept by your system: Windows' protected
+storage (DPAPI), the macOS Keychain, the Secret Service keyring on Linux, or a file only you can read where there is
+none. Every Studio session started afterwards gets them as environment variables (a session open when you add one
+offers to restart with it, keeping the conversation). Claude is told their names, never their values, and a value
+that shows up in output is masked on the page and in the session log. A key pasted into a message is caught before
+sending: store it and send `$NAME` instead. `az devops` and `az repos` read `AZURE_DEVOPS_EXT_PAT` themselves.
+
 `system-diff doctor` says whether the app runs, its sessions, the Agent SDK and the `claude` it found;
 `system-diff app --status` what the Studio sees: the engines registered (and whether each answers), its project list,
 and every copy of system-diff on PATH.
@@ -308,12 +323,23 @@ edit of the config would give, written nowhere) and `ui_show` (moves your page t
 offering Back; untick "Let Claude move my page" and it only offers). The diagrams stay computed from the code and the
 config: Claude renames or groups a box by editing `system-diff.toml`, and the page redraws.
 
+When a diagram looks wrong, say so in the chat. `ui_check` compares it with the code and names the cause: an import
+through a path alias or a source folder the config does not know, code in no part, a part with no connections, a stale
+config entry. Claude previews the `system-diff.toml` fix with `ui_config_preview` before editing it. What the config
+cannot fix, `report_diagram_issue` keeps in `.git/system-diff/diagram-issues.jsonl` as a report to paste to
+system-diff's maintainers, with secrets masked.
+
+A view that takes long to draw never holds the page up: within three seconds you see the page drawn before, or
+"Drawing …", and the view comes in when it is ready (the Studio never answers 502 for it).
+
 ## Projects inside a repository
 
 A repository often holds several independent projects as plain folders: a monorepo's `api/`, `web/` and `worker/`
-(each with its own `pyproject.toml`, `package.json`, `go.mod`...), or a research repository's `1_x/` ... `6_y/`. The
-page lists them on the left under "Projects in this repository", with the whole repository first; a click draws
-every tab for that folder (its parts, and the shared ones no project claims), from the same engine. Shared folders
+(each with its own `pyproject.toml`, `package.json`, `go.mod`...), or a research repository's studies. They are found
+by what the folders hold, never by their names: a folder with its own manifest, or one an extension names (an
+extension's `projects(ctx)` hook: research-diff's studies). The page lists them on the left under "Projects in this repository", with the whole repository first; a click draws
+every tab for that folder (its parts, and the shared ones no project claims), from the same engine; the project stays
+picked from tab to tab and on Back. It is the left column's one list: an extension's own lists come below it. Shared folders
 (`scripts/`, `docs/`, `tests/`, ...) never count. **Show as one project** at the end of the list turns it off for the
 repository (and **Split into N projects** back on); `projects = ["api", "web"]` in `system-diff.toml` names them, and
 `projects = false` turns finding them off.
@@ -323,8 +349,9 @@ system-diff's own behind one **System** tab.
 
 ## Repositories inside a repository
 
-Git submodules and nested repositories (a folder with its own `.git`) are systems of their own. The web page lists
-them on the left, under the outer repository, with their branch; a click opens that repository's own engine and
+Git submodules and nested repositories (a folder with its own `.git`) are systems of their own. One that sits inside
+a project's folder is part of that project, not a row of its own; the others are listed on the left, under the outer
+repository, with their branch (by path when two share a name); a click opens that repository's own engine and
 page (its own checkpoint, history and caches), and every repository of the family shows the same list, so you can go
 back. In the outer repository's diagram each submodule is one box, at its commit, marked changed when its pointer
 moves; an edit inside one reaches that repository's own engine too. Extensions get the outer repository as
