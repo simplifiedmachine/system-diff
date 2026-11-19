@@ -573,3 +573,68 @@ def sdk_agents(root: Path) -> Dict[str, Any]:
         out[a["name"]] = AgentDefinition(description=a["description"] or a["name"], prompt=a["prompt"], tools=tools,
                                          model=model)
     return out
+
+
+def ran_agents(root: Path) -> List[Dict[str, Any]]:
+    """The subagents that ran in this project, newest first: {"id", "title", "type", "role", "prompt", "at"}, from the
+    runs the hooks recorded (the Task call's description and prompt) and what Claude Code keeps beside each one's
+    transcript."""
+    from . import agents
+    by: Dict[str, Dict[str, Any]] = {}
+    for r in agents.runs(Path(root)):
+        aid = str(r.get("agent_id") or "")
+        if not aid:
+            continue
+        e = by.setdefault(aid, {"id": aid, "title": "", "type": "", "prompt": "", "at": 0.0, "transcript": ""})
+        e["at"] = max(e["at"], float(r.get("at") or 0))
+        e["seq"] = len(by) if "seq" not in e else e["seq"]   # the order they were recorded: ties of time
+        e["type"] = e["type"] or str(r.get("agent_type") or "")
+        e["title"] = e["title"] or str(r.get("description") or "")
+        e["prompt"] = e["prompt"] or str(r.get("prompt") or "")
+        e["transcript"] = e["transcript"] or str(r.get("transcript") or "")
+    out = []
+    for e in by.values():
+        if (not e["title"] or not e["prompt"]) and e["transcript"]:
+            info = agents.subagent_info(e["transcript"])
+            e["title"] = e["title"] or str(info.get("description") or "")
+            e["type"] = e["type"] or str(info.get("type") or "")
+            e["prompt"] = e["prompt"] or str(info.get("prompt") or "")
+        e["role"] = role_of(e["title"], e["type"]) if (e["title"] or e["type"]) else ""
+        e.pop("transcript", None)
+        out.append(e)
+    out.sort(key=lambda e: (-e["at"], -e["seq"]))
+    for e in out:
+        e.pop("seq", None)
+    return out
+
+
+def keep_ran(root: Path, which: str, name: str = "", scope: str = "project", description: str = "") -> Dict[str, Any]:
+    """Keep a subagent that ran here as an agent: `which` is its id ("sub:<id>" too), its role, or words of its
+    description. Several different ones match: they are listed to choose from, never guessed."""
+    want = str(which or "").strip()
+    if want.startswith("sub:"):
+        want = want[4:]
+    if not want:
+        raise ValueError("which: the subagent's id, its role, or words of what it did")
+    every = [e for e in ran_agents(root) if e["prompt"]]
+    words = re.findall(r"[a-z0-9]+", want.lower())
+    hits = [e for e in every if e["id"] == want or (len(want) >= 6 and e["id"].startswith(want))]
+    hits = hits or [e for e in every if e["role"] and e["role"] == _name(want)]
+    hits = hits or [e for e in every if words and all(w in (e["title"] + " " + e["type"]).lower() for w in words)]
+    listing = [{"which": "sub:" + e["id"], "title": e["title"] or e["type"], "role": e["role"]}
+               for e in (hits or every)[:10]]
+    if not hits:
+        return {"kept": False, "error": f"no subagent that ran here matches {which!r}", "ran": listing}
+    if len({e["role"] or e["id"] for e in hits}) > 1:
+        return {"kept": False, "choose": listing,
+                "say": "several subagents match: ask the person which one, then call keep_agent with its which"}
+    hit = hits[0]   # the newest of that role: its latest prompt
+    kind = str(scope or "project").strip().lower()
+    if kind == "kind":
+        kinds = sorted(kind_of(Path(root)))
+        kind = kinds[0] if kinds else "software"
+    title = hit["title"] or hit["type"] or hit["role"]
+    if not description:
+        description = ("Use to " + title[:1].lower() + title[1:]) if title else "A subagent kept from a run"
+    got = save(name or hit["role"] or _name(title), description, hit["prompt"], "", "", kind, root=Path(root))
+    return {"kept": True, "from": "sub:" + hit["id"], "title": title, "runs_of_this_role": len(hits), **got}

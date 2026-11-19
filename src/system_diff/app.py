@@ -549,7 +549,10 @@ def handler(studio: Studio):
                     agent = str(s.options.get("agent") or "")
                     if agent and not s.title:   # a saved agent picked: the first message goes to it
                         text = f"Use the `{agent}` subagent (Task tool, subagent_type {agent!r}) for this:\n\n{text}"
-                    s.send(text)
+                    got = s.send(text, interrupt=bool(b.get("interrupt")))
+                    return self._json(200, {"ok": True, **(got or {})})
+                if act == "queued":   # a message sent mid-turn, changed or withdrawn while Claude has not read it
+                    s.edit_queued(str(b.get("id") or ""), str(b.get("text") or ""), withdraw=bool(b.get("withdraw")))
                     return self._json(200, {"ok": True})
                 if act == "mode":   # its permission mode, now (auto behind a gateway refuses every action)
                     mode = str(b.get("mode") or "")

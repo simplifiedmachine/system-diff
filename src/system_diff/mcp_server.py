@@ -46,7 +46,8 @@ INSTRUCTIONS = (
     "tell the person what you found. A team can run "
     "in stages (plan_agents order=staged, or after=...): launch each stage as `how` says. When the person asks for "
     "another agent, add_agent (agent_kinds lists extensions' kinds and saved agents); save_workflow keeps a team to "
-    "reuse with run_workflow; workflow and agent_log show who runs, who waits, and what each one did. A project's "
+    "reuse with run_workflow; workflow and agent_log show who runs, who waits, and what each one did. When the person "
+    "asks to keep or save an agent that ran, keep_agent saves it from its run. A project's "
     "settings (hosts, users, ports) and secrets (passwords, tokens) are in your environment by name: project_settings "
     "lists them, save_setting stores a setting the person gives you, and a secret's value is asked for with "
     "ask_for_secret (a password field), never taken from the chat."
@@ -520,6 +521,15 @@ def build() -> Server:
         description says when to use it, its prompt is its standing instructions. Say what you saved."""
         from . import agentlib
         return _safe(lambda: agentlib.save(name, description, prompt, tools, model, scope, root=_root()))
+
+    @server.tool()
+    def keep_agent(which: str, name: str = "", scope: str = "project", description: str = "") -> Dict[str, Any]:
+        """Keep a subagent that ran (or runs) in this project as an agent, when the person asks to save or keep one:
+        `which` is its description's words ("the survey agent"), its role, or its id ("sub:<id>"). Its prompt
+        becomes the agent's standing instructions. scope: "project", "kind" (the person's library, for projects of
+        this kind) or "everywhere". When several match, it lists them: ask the person which one."""
+        from . import agentlib
+        return _safe(lambda: agentlib.keep_ran(_root(), which, name, scope, description))
 
     @server.tool()
     def install_agents(names: List[str]) -> Dict[str, Any]:

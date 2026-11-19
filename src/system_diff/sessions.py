@@ -38,7 +38,12 @@ APPEND = (
     "diagram. Read ui_view when they say 'this', 'here' or 'the one I picked'. While explaining, ui_show and point_to "
     "the parts you name. The diagrams are computed from the code and system-diff.toml: change them through their "
     "sources (ui_source finds them, ui_config_preview shows the result first), and never claim a change the page does "
-    "not show.")
+    "not show. The person can write while you work: such a message comes in marked '[Sent while you were working]'. "
+    "It may be a question to answer now, a change to the plan, or a task to hand to a subagent (SendMessage to one "
+    "that runs, or a new one): say in a line what you do with it, then go on with the work.")
+
+HANDOFF_TOOLS = ("Task", "Agent", "SendMessage")   # a message the person sent mid-turn, handed to a subagent
+FOLLOW_UP = 2.5   # seconds a turn's end is watched for a turn Claude Code starts by itself for a message given late
 
 
 def plugin_enabled(project: Path, sources: List[str], home: Optional[Path] = None) -> bool:
@@ -277,6 +282,10 @@ class Session:
         self.doing: Dict[str, Any] = {}   # what it does now: {"what", "tool", "detail", "agent"}
         self.tools: Dict[str, Dict[str, Any]] = {}   # this turn's tool calls, by id: name, label, when begun
         self.forget = False               # closed by the person: not offered to continue after a restart
+        self.lock = threading.Lock()
+        self.held: List[Dict[str, Any]] = []   # the person's messages sent mid-turn, not read by Claude yet
+        self.read_by: List[str] = []           # those Claude has read, until its next word (or hand-off) about them
+        self.gave = False                      # some were given to the turn under way
         self._log = self._log_path()
 
     # ── the log ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -407,7 +416,10 @@ class Session:
         return {"session": self.head(), "events": got, "next": self.first + len(self.events), "gap": gap}
 
     # ── the conversation ──────────────────────────────────────────────────────────────────────────────────────
-    def send(self, text: str) -> None:
+    def send(self, text: str, interrupt: bool = False) -> Dict[str, Any]:
+        """The person's message. While Claude works it is held ("queued") and given to the running turn at its next
+        step (a tool's result), as Claude Code takes a message typed mid-turn; until then it can be edited or
+        withdrawn. `interrupt`: stop the turn under way, and this message starts the next."""
         text = str(text or "").strip()
         if not text:
             raise ValueError("nothing to send")
@@ -415,8 +427,68 @@ class Session:
             raise ValueError(f"the session is {self.status}: start a new one (or resume it)")
         if not self.title:
             self.title = self._mask(text)[:80]
+        if self.status in ("working", "waiting") and not interrupt:
+            qid = uuid.uuid4().hex[:10]
+            with self.lock:
+                self.held.append({"id": qid, "text": text, "at": time.time()})
+            self.emit("user", text=text, queued=qid)
+            if self.manager is not None and any(not t.get("done") for t in self.tools.values()):
+                self.manager.call(self._deliver_soon())   # a tool runs: Claude Code takes it in with its result
+            return {"queued": qid}
+        if interrupt and self.status in ("working", "waiting"):
+            self.interrupt()
         self.emit("user", text=text)
         self.manager.call(self._put(text))
+        return {"queued": ""}
+
+    def edit_queued(self, qid: str, text: str = "", withdraw: bool = False) -> None:
+        """Change or withdraw a held message, while Claude has not read it."""
+        with self.lock:
+            hit = next((h for h in self.held if h["id"] == qid), None)
+            if hit is None:
+                raise ValueError("Claude has read that message already (or it was withdrawn)")
+            if withdraw:
+                self.held.remove(hit)
+            else:
+                text = str(text or "").strip()
+                if not text:
+                    raise ValueError("nothing to send: withdraw it instead")
+                hit["text"] = text
+        if withdraw:
+            self.emit("queued_withdrawn", id=qid)
+        else:
+            self.emit("queued_edit", id=qid, text=text)
+
+    def _take_held(self) -> List[Dict[str, Any]]:
+        with self.lock:
+            got, self.held = self.held, []
+        return got
+
+    async def _deliver_soon(self) -> None:
+        if self.status in ("working", "waiting"):
+            self._deliver()
+
+    def _deliver(self) -> None:
+        """Give the held messages to the running turn (on the sessions' loop): Claude reads them at its next step."""
+        for h in self._take_held():
+            asyncio.get_running_loop().create_task(self.client.query(
+                "[Sent while you were working] " + h["text"]))
+            self.read_by.append(h["id"])
+            self.gave = True
+            self.emit("delivered", id=h["id"])
+
+    async def _follow_up(self) -> bool:
+        """After a turn in which the person's messages were given to Claude Code: a turn it starts by itself for them
+        (they came after its last step) is read too, not left for the next request. False when none comes."""
+        it = self.client.receive_response().__aiter__()
+        try:
+            first = await asyncio.wait_for(it.__anext__(), FOLLOW_UP)
+        except (asyncio.TimeoutError, StopAsyncIteration):
+            return False
+        self.record(first)
+        async for msg in it:
+            self.record(msg)
+        return True
 
     async def _put(self, text: str) -> None:
         if self.queue is None:
@@ -634,6 +706,9 @@ class Session:
                 bk = type(b).__name__
                 if bk == "TextBlock":
                     self.emit("text", text=b.text, model=self.model, sub=bool(getattr(msg, "parent_tool_use_id", None)))
+                    if self.read_by and not agent and (b.text or "").strip():   # Claude's word after it read them
+                        self.emit("replied", ids=list(self.read_by))
+                        self.read_by = []
                 elif bk == "ThinkingBlock":
                     if (b.thinking or "").strip():   # often withheld: nothing to show then
                         self.emit("thinking", text=_cut(b.thinking, 6000))
@@ -643,6 +718,12 @@ class Session:
                     self.emit("tool_use", id=b.id, name=b.name, view=tool_input_view(b.name, b.input), label=label,
                               agent=agent, sub=bool(getattr(msg, "parent_tool_use_id", None)))
                     self.state("tool", tool=b.name, detail=label, agent=agent)
+                    if self.held and not agent:   # a step begins: Claude Code takes them in with its result
+                        self._deliver()
+                    elif self.read_by and not agent and b.name in HANDOFF_TOOLS:   # a message of the person's, handed on
+                        inp = b.input if isinstance(b.input, dict) else {}
+                        to = str(inp.get("description") or inp.get("to") or inp.get("subagent_type") or b.name)
+                        self.emit("handed", ids=list(self.read_by), to=self._mask(to)[:120])
             return
         if kind == "UserMessage":
             content = getattr(msg, "content", None)
@@ -711,12 +792,23 @@ class Session:
                 if text is None:
                     break
                 self.set_status("working")
+                self.gave = False
                 try:
                     await self.client.query(text)
                     async for msg in self.client.receive_response():
                         self.record(msg)
+                    while self.gave:   # what the person added mid-turn may come back as a turn of its own
+                        self.gave = False
+                        await self._follow_up()
                 except Exception as exc:  # noqa: BLE001 - this turn failed; the session goes on
                     self.emit("error", text=f"{type(exc).__name__}: {exc}")
+                self.read_by = []
+                left = self._take_held()   # written while the turn ended with no step left to read them at
+                if left:
+                    for h in left:
+                        self.emit("delivered", id=h["id"], next_turn=True)
+                    self.read_by = [h["id"] for h in left]
+                    await self.queue.put("\n\n".join(h["text"] for h in left))
                 self.set_status("idle")
         finally:
             try:

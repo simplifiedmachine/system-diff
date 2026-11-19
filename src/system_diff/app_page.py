@@ -104,6 +104,14 @@ iframe#view { width:100%; height:100%; border:0; background:transparent; border-
 @keyframes in { from { opacity:0; transform:translateY(4px); } }
 .ev.user { justify-self:end; max-width:88%; white-space:pre-wrap; color:#fff; border-bottom-right-radius:6px;
   background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent)); box-shadow:0 4px 14px color-mix(in srgb, var(--accent) 25%, transparent); }
+.ev.user .qstate { font-size:11px; opacity:.85; margin-top:4px; }
+.ev.user.waitq { opacity:.8; border:1px dashed color-mix(in srgb, white 60%, transparent); }
+.ev.user.waitq .qstate::before { content:"◷ "; }
+.ev.user.withdrawn .qtext { text-decoration:line-through; opacity:.7; }
+.ev.user .qacts, .ev.user .qedit { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+.ev.user .qacts button, .ev.user .qedit button { font-size:11px; padding:2px 10px; }
+.ev.user .qedit textarea { flex:1 1 100%; font:inherit; color:var(--ink); }
+.ev.text .aboutq { display:block; font-size:11px; color:var(--muted); background:none; border:0; padding:0 0 4px; cursor:pointer; }
 .ev.text { justify-self:start; max-width:96%; white-space:pre-wrap; background:var(--glass-strong); border:1px solid var(--hair); border-bottom-left-radius:6px; }
 .ev.text.md { white-space:normal; }
 .md > :first-child { margin-top:0; } .md > :last-child { margin-bottom:0; }
@@ -149,7 +157,8 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
 .compose { border-top:1px solid var(--line); padding:10px 12px 12px; display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
 .compose .row .st { min-width:0; }
 .compose textarea { width:100%; min-height:64px; max-height:40vh; resize:vertical; border-radius:14px; padding:9px 12px; }
-.compose .row { display:flex; gap:6px; align-items:center; }
+.compose .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+.compose .row .st { flex-basis:100% !important; }   /* what Claude is doing: a line of its own, above the buttons */
 .aboutchip { justify-self:start; display:flex; gap:6px; align-items:center; max-width:100%; font-size:12px; padding:3px 4px 3px 10px;
   border-radius:999px; background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--ink); }
 .aboutchip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -232,7 +241,7 @@ input[type=password] { background:var(--glass-soft); border:1px solid var(--line
       <div class="aboutchip" id="aboutchip" hidden title="Sent with your message, so Claude knows what you are looking at on the page"><span id="abouttext"></span><button type="button" id="aboutx" aria-label="Do not send this">×</button></div>
       <div id="keyask" hidden></div>
       <textarea id="msg" placeholder="Ask Claude… (Enter sends, Shift+Enter a new line, ↑ ↓ past messages)" aria-label="Message to Claude"></textarea>
-      <div class="row"><span class="st" id="sstatus"></span><button type="button" id="stop" class="danger" disabled>Interrupt</button><button type="button" id="closesess">Close</button><button type="button" id="send" class="primary">Send</button></div>
+      <div class="row"><span class="st" id="sstatus"></span><button type="button" id="stop" class="danger" disabled>Interrupt</button><button type="button" id="closesess">Close</button><button type="button" id="isend" hidden title="Stop what Claude is doing and send this as the next request">Stop &amp; send</button><button type="button" id="send" class="primary">Send</button></div>
     </div>
   </aside>
 </div>
@@ -551,6 +560,10 @@ function paintStatus() {
   }
   if (s.model) st.append(" · " + s.model);
   $("stop").disabled = !busy;
+  // while Claude works, Enter adds the message to this turn (read at its next step); Interrupt & send starts anew
+  $("send").textContent = busy ? "Add to turn" : "Send";
+  $("send").title = busy ? "Claude reads it at its next step, without stopping (Enter)" : "";
+  $("isend").hidden = !busy;
   offerApply(); offerFork();
 }
 function clock(sec) { return sec < 60 ? sec + " s" : Math.floor(sec / 60) + " min " + (sec % 60) + " s"; }
@@ -729,7 +742,7 @@ function histStep(dir) {   // true when it moved (the key is then not the caret'
   const list = histList();
   if (!list.length) {   // nothing sent from here yet: this session's own messages (a resumed one)
     for (const u of document.querySelectorAll("#feed .ev.user")) {
-      const t = u.textContent.replace(/^\[About: [^\]\n]*\]\n/, "");
+      const t = (u.querySelector(".qtext") || u).textContent.replace(/^\[About: [^\]\n]*\]\n/, "");
       if (t && list[list.length - 1] !== t) list.push(t);
     }
   }
@@ -774,7 +787,21 @@ function paint(ev, into) {
     }
     if (ev.type === "text") { if (S.streaming) { S.streaming.remove(); S.streaming = null; } const d = el("div", null, "ev text md"); mdPaint(d, ev.text); f.append(d); return; }
     if (S.streaming && ev.type !== "status") { S.streaming.remove(); S.streaming = null; }
-    if (ev.type === "user") f.append(el("div", ev.text, "ev user"));
+    if (ev.type === "user") f.append(ev.queued ? queuedBubble(ev) : el("div", ev.text, "ev user"));
+    else if (ev.type === "delivered") qState(f, ev.id, ev.next_turn ? "read: it starts Claude's next turn" : "read by Claude", true);
+    else if (ev.type === "queued_edit") { const b = qBubble(f, ev.id); if (b) b.querySelector(".qtext").textContent = ev.text; }
+    else if (ev.type === "queued_withdrawn") { const b = qBubble(f, ev.id); if (b) b.classList.add("withdrawn"); qState(f, ev.id, "withdrawn", true); }
+    else if (ev.type === "handed") for (const id of ev.ids || []) qState(f, id, "→ handed to " + ev.to, true);
+    else if (ev.type === "replied") {
+      const texts = f.querySelectorAll(".ev.text"), last = texts[texts.length - 1];
+      for (const id of ev.ids || []) {
+        const b = qBubble(f, id); if (!b) continue;
+        const was = b.querySelector(".qstate").textContent;
+        qState(f, id, (was.startsWith("→") ? was + " · " : "") + "answered below ↓", true);
+        if (last) { const a = el("button", "↩ about: “" + b.querySelector(".qtext").textContent.slice(0, 50) + "”", "aboutq"); a.type = "button";
+                    a.addEventListener("click", () => b.scrollIntoView({ block:"center", behavior:"smooth" })); last.prepend(a); }
+      }
+    }
     else if (ev.type === "thinking") { const d = el("details", null, "ev tool"); d.append(el("summary", "Thinking")); d.append(el("pre", ev.text)); f.append(d); }
     else if (ev.type === "tool_use") {
       const d = el("details", null, "ev tool"); const s = el("summary");
@@ -827,15 +854,49 @@ function askCard(ev) {
   acts.append(no, msg); c.append(acts);
   return c;
 }
-async function send() {
+// A message written while Claude works: held, then read at Claude's next step (a tool's result); until then it can be
+// changed or withdrawn. Its line says where it is: queued, read, handed to a subagent, answered.
+function qBubble(f, id) { return (f || $("feed")).querySelector('.ev.user[data-q="' + CSS.escape(id) + '"]'); }
+function qState(f, id, text, settled) {
+  const b = qBubble(f, id); if (!b) return;
+  b.querySelector(".qstate").textContent = text;
+  if (settled) { b.classList.remove("waitq"); const a = b.querySelector(".qacts"); if (a) a.remove(); }
+}
+function queuedBubble(ev) {
+  const b = el("div", null, "ev user waitq"); b.dataset.q = ev.queued;
+  b.append(el("div", ev.text, "qtext"), el("div", "queued: Claude reads it at its next step", "qstate"));
+  if (ev.past) return b;
+  const acts = el("div", null, "qacts"), ed = el("button", "Edit"), wd = el("button", "Withdraw");
+  ed.type = wd.type = "button";
+  const sid = S.session && S.session.id;
+  ed.addEventListener("click", () => {
+    const box = el("textarea"); box.value = b.querySelector(".qtext").textContent; box.rows = 3;
+    const ok = el("button", "Save"), no = el("button", "Cancel"); ok.type = no.type = "button";
+    const form = el("div", null, "qedit"); form.append(box, ok, no); acts.replaceWith(form); box.focus();
+    const done = () => form.replaceWith(acts);
+    no.addEventListener("click", done);
+    ok.addEventListener("click", async () => {
+      try { await api("api/sessions/" + sid + "/queued", { id:ev.queued, text:box.value }); done(); }
+      catch (e) { form.replaceWith(el("div", e.message, "qstate")); }
+    });
+  });
+  wd.addEventListener("click", async () => {
+    try { await api("api/sessions/" + sid + "/queued", { id:ev.queued, withdraw:true }); }
+    catch (e) { b.querySelector(".qstate").textContent = e.message; }
+  });
+  acts.append(ed, wd); b.append(acts);
+  return b;
+}
+async function send(interrupt) {
   const text = $("msg").value.trim(); if (!text) return;
   if (keysFirst(text)) return;   // a key in the message: offered to the key store first (keys, below)
   let s = S.session && S.session.status && !["closed", "failed"].includes(S.session.status) ? S.session : await start();
   if (!s) return;
-  try { await api("api/sessions/" + s.id + "/send", { text:withAbout(text) }); $("msg").value = ""; } catch (e) { $("sstatus").textContent = e.message; }
+  try { await api("api/sessions/" + s.id + "/send", { text:withAbout(text), interrupt:interrupt === true }); $("msg").value = ""; } catch (e) { $("sstatus").textContent = e.message; }
   histPush(text);   // Up brings it back
 }
-$("send").addEventListener("click", send);
+$("send").addEventListener("click", () => send(false));
+$("isend").addEventListener("click", () => send(true));
 $("msg").addEventListener("keydown", e => {
   if (e.isComposing) return;
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); return; }
