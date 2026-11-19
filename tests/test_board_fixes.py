@@ -109,3 +109,14 @@ def test_a_team_row_opens_any_recorded_subagents_log(repo, monkeypatch):
     got = agents.agent_log(repo, "agent-af47b0")
     assert got["agent"]["title"] == "Survey files in api" and got["agent"]["status"] == "done"
     assert got["brief"] == "List the files under api/"
+
+
+def test_a_tie_to_an_agent_of_an_earlier_plan_does_not_break_the_board(repo, monkeypatch):
+    """A subagent tied to 'agent-a-guardrails' under an earlier plan, then a new plan without that name: the board
+    (and the Studio's Agents tab) still reads ("the team could not be read: KeyError" before)."""
+    from system_diff import agents
+    monkeypatch.setattr(agents, "_load", lambda root: {"plan": {"at": 0, "task": "t", "agents": [{"name": "api", "blocks": [], "waits_for": []}]},
+                                                       "ids": {"a1": "agent-a-guardrails"}, "agents": {}})
+    monkeypatch.setattr(agents, "runs", lambda root, since=0: [{"at": 1.0, "event": "start", "agent_id": "a1", "agent_type": "general-purpose"}])
+    wf = agents.workflow(repo)
+    assert [a["name"] for a in wf["agents"]] == ["api"]

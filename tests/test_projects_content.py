@@ -137,3 +137,35 @@ def test_ctx_scope_reaches_extensions(monkeypatch, repo):
     pane.web_view(repo, "evidence")
     pane._show(repo, 100, "evidence")
     assert seen == [("web", "api"), ("pane", "api")]
+
+
+def test_an_extension_that_failed_is_asked_again(monkeypatch, repo):
+    """The first ask came while the engine was still starting and the extension failed: its empty answer is not kept
+    (it was, until the index changed: the person's studies never reached the list)."""
+    from system_diff import projects
+    calls = {"n": 0}
+
+    def named(root, failed=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            failed.append("research")
+            return []
+        return [{"path": "app", "name": "App", "why": "x", "by": "research"},
+                {"path": "web", "name": "Web", "why": "x", "by": "research"}]
+    monkeypatch.setattr(projects, "_from_extensions", named)
+    (repo / "app").mkdir(exist_ok=True); (repo / "web").mkdir(exist_ok=True)
+    projects._CACHE.clear()
+    assert projects.detect(repo) == []
+    assert [p["path"] for p in projects.detect(repo)] == ["app", "web"]
+
+
+def test_inside_the_studio_the_page_does_not_list_the_repositories_again():
+    from system_diff import watch
+    assert "if (IN_STUDIO) break;" in watch.PAGE
+
+
+def test_the_page_draws_a_views_filters_and_an_extensions_progress():
+    from system_diff import watch
+    p, src = watch.PAGE, watch.__loader__.get_source("system_diff.watch")
+    assert "const EXT_VIEWS = __EXT_VIEWS__;" in p and 'fetch("ext/progress?"' in p and "Array.isArray(d.filters)" in p
+    assert '"/ext/progress"' in src and '"/projects/folders"' in src

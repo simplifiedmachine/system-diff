@@ -192,14 +192,28 @@ class Studio:
             except Exception:  # noqa: BLE001
                 entry["kids"] = []
             try:   # projects inside it as plain folders: its own page, drawn for that folder
-                from . import projects
-                entry["kids"] += [{"id": entry["id"], "scope": f["path"], "path": str(p / f["path"]), "name": f["path"],
+                folders = self._folders(p)
+                for k in entry["kids"]:   # a repository inside one of them is part of it (research-diff's <study>/paper)
+                    rel = os.path.relpath(k["path"], str(p)).replace("\\", "/")
+                    hit = next((f["path"] for f in folders if rel == f["path"] or rel.startswith(f["path"] + "/")), "")
+                    if hit:
+                        k["within"] = hit
+                entry["kids"] += [{"id": entry["id"], "scope": f["path"], "path": str(p / f["path"]), "name": f.get("name") or f["path"],
                                    "kind": "folder", "branch": "", "port": entry["port"], "why": f["why"], "sessions": 0,
-                                   "waiting": 0} for f in projects.listed(p)]
+                                   "waiting": 0} for f in folders]
             except Exception:  # noqa: BLE001
                 pass
             seen[entry["id"]] = entry
         return list(seen.values())
+
+    def _folders(self, p: Path) -> List[Dict[str, Any]]:
+        """A repository's folder projects: from its engine (which holds the system, and asks the extensions there),
+        else worked out here."""
+        from . import projects, uitools
+        got = uitools.engine_get(p, "projects/folders", timeout=5)
+        if isinstance(got, dict) and isinstance(got.get("folders"), list):
+            return got["folders"]
+        return projects.listed(p)
 
     def _entry(self, p: Path, kind: str, rel: str = "") -> Dict[str, Any]:
         from . import repos

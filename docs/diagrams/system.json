@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 15,
-   "lines": 7358,
+   "lines": 7396,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 3480,
+   "lines": 3530,
    "hub": false,
    "quiet": false
   }
@@ -690,7 +690,7 @@
   "watch>panel": 3,
   "watch>pictures": 1,
   "watch>sources": 1,
-  "watch>src/system_diff": 9
+  "watch>src/system_diff": 10
  },
  "api": {},
  "uses": {
@@ -1823,9 +1823,9 @@
   ],
   "watch>src/system_diff": [
    "list",
+   "listed",
    "as_one",
    "detect",
-   "listed",
    "py",
    "set_one"
   ]
@@ -2239,8 +2239,8 @@
    "json": 13,
    "os": 13,
    "threading": 10,
+   "time": 10,
    "re": 9,
-   "time": 9,
    "sys": 5,
    "hashlib": 3,
    "importlib": 3,
@@ -2659,8 +2659,8 @@
    "json": 13,
    "os": 13,
    "threading": 10,
+   "time": 10,
    "re": 9,
-   "time": 9,
    "sys": 5,
    "hashlib": 3,
    "shutil": 3,

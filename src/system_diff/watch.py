@@ -127,6 +127,12 @@ pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
              display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
 .card > h2 .aside { text-transform:none; letter-spacing:0; font-weight:400; }
 .headline { font-size:18px; font-weight:600; margin:0; }
+.extprog { display:flex; align-items:center; gap:10px; margin-top:4px; color:var(--muted); font-size:13px; }
+.extprog i { display:block; width:160px; height:6px; border-radius:3px; background:var(--line); overflow:hidden; }
+.extprog i[hidden] { display:none; } .extprog b { display:block; height:100%; width:0; background:var(--accent, #3b6fd8); transition:width .4s; }
+.filters { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.filters button { border-radius:999px; padding:2px 10px; font-size:12.5px; }
+.filters button[aria-pressed="true"] { background:var(--ink); color:var(--bg); border-color:var(--ink); }
 .sub { color:var(--muted); font-size:13px; }
 .error { color:var(--attn); white-space:pre-wrap; }
 .error:empty { display:none; }
@@ -461,7 +467,7 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
 <div class="withnav">
 <nav id="leftnav" aria-label="Repositories and lists" hidden></nav>
 <main>
-  <div><p class="headline" id="headline">Reading the code…</p><div class="error" id="error"></div></div>
+  <div><p class="headline" id="headline">Reading the code…</p><div class="extprog" id="extprog" hidden><span></span><i><b></b></i></div><div class="filters" id="filters" hidden></div><div class="error" id="error"></div></div>
   <section class="card" id="status" hidden></section>
   <div id="before" style="display:grid;gap:16px"></div>
   <section class="card dia" id="diacard" hidden><h2 id="diatitle"></h2>
@@ -492,6 +498,7 @@ const TOKEN = "__TOKEN__";
 const IN_STUDIO = window.parent !== window && /(^|[?&])studio=1(&|$)/.test(location.search);
 const $ = id => document.getElementById(id);
 const VIEWS = ["now", "review", "agents", "topics", "history"].concat(__EXT_VIEWS__);
+const EXT_VIEWS = __EXT_VIEWS__;   // the extensions' own views
 const EXT_KEYS = __EXT_KEYS__;   // an extension's tab keys: {key: view}
 const HOME = __HOME__;           // the view this repository opens on, when an extension says so (research: its own)
 const SYSTEM_VIEWS = ["now", "review", "agents", "topics", "history"];
@@ -1232,6 +1239,7 @@ function paintNav(items, family, mode) {
   if (family.length || (mode && mode.one)) {
     const ul = el("ul");
     for (const r of family) {
+      if (IN_STUDIO) break;   // the Studio's own column lists the repositories and their projects: not twice
       if (r.within && !r.current) continue;   // a repository inside a project's folder is part of that project
       const b = el("button"); b.type = "button";
       const here = r.kind === "folder" ? ui.scope === r.scope : r.current && !ui.scope;
@@ -1256,7 +1264,7 @@ function paintNav(items, family, mode) {
       });
       const li = el("li"); li.append(b); ul.append(li);
     }
-    fam.append(el("h3", "Projects in this repository"), ul);
+    if (ul.childNodes.length) fam.append(el("h3", IN_STUDIO ? "This repository" : "Projects in this repository"), ul);
   }
   if (fam.childNodes.length) nav.append(...fam.childNodes);   // one list of projects, always open
   if (items.length) {   // a view's own list (an extension's, not of projects) below it
@@ -1388,7 +1396,9 @@ function jumpTo(c) {
   if (!pre || !sp) return;
   for (const x of pre.querySelectorAll("span.hl")) x.classList.remove("hl");
   for (let i = c.line - 1; i < Math.min(c.end, cv.spans.length); i++) cv.spans[i].classList.add("hl");
-  pre.scrollTop = sp.offsetTop - pre.offsetTop - 8;
+  // measured on screen (offsets are relative to whichever ancestor is positioned, which need not be the code box)
+  if (pre.scrollHeight > pre.clientHeight + 4) pre.scrollTop += sp.getBoundingClientRect().top - pre.getBoundingClientRect().top - 8;
+  else sp.scrollIntoView({ block:"center", behavior:"smooth" });   // the code box does not scroll: the page does
   markHere(c.line);
 }
 function firstVisibleLine(pre) {
@@ -1705,6 +1715,14 @@ function changed(key, value) {
 }
 function render(d) {
   ui.data = d;
+  {   // a view's own filters (an extension's "All · Needs attention · Changed"): chips; the part carries the choice
+    const fb = $("filters"), fs = Array.isArray(d.filters) ? d.filters : [];
+    fb.replaceChildren(); fb.hidden = !fs.length;
+    for (const f of fs) {
+      const b = el("button", f.title || f.id || ""); b.type = "button"; b.setAttribute("aria-pressed", String(!!f.active));
+      const tg = f.target || {}; b.addEventListener("click", () => go(tg.view || ui.view, tg.part || "")); fb.append(b);
+    }
+  }
   if (changed("head", [d.title, d.headline])) {
     $("headline").textContent = d.headline || d.title || "";
     document.title = "System diff" + (d.title ? " · " + d.title : "");
@@ -1861,6 +1879,20 @@ async function load(wait) {
     throw e;
   } finally { if (polling === ctl) polling = null; }
 }
+// While an extension's view is still drawing ("Drawing …", "· updating…"), its own word on what it is doing, once a
+// second ("reading files 40% · 160 of 400 files"), with a bar when it says how far.
+setInterval(async () => {
+  const box = $("extprog"), busy = EXT_VIEWS.includes(ui.view) && (!!$("headline").dataset.updating || !!(ui.data && ui.data.drawing));
+  if (!busy || document.hidden) { box.hidden = true; return; }
+  try {
+    const q = new URLSearchParams({ view:ui.view }); if (ui.scope) q.set("scope", ui.scope);
+    const r = await fetch("ext/progress?" + q, { cache:"no-store", headers:{ "X-Token":TOKEN } });
+    const t = r.ok ? String((await r.json()).progress || "") : "";
+    box.hidden = !t; box.firstChild.textContent = t;
+    const pct = /(\d{1,3})\s*%/.exec(t), bar = box.querySelector("i");
+    bar.hidden = !pct; if (pct) bar.firstChild.style.width = Math.min(100, +pct[1]) + "%";
+  } catch (e) { box.hidden = true; }
+}, 1000);
 // The engine is gone (it stopped, or its machine slept): say why, if it told us, and how it comes back. The pane's next
 // look starts a fresh one; this page keeps asking and follows it when it comes back on the same port.
 function stoppedText() {
@@ -2242,6 +2274,24 @@ def handler(w: Watcher):
                 if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
                     return self._json(403, {"error": "forbidden"})
                 return self._ext("GET", path, b"")
+            if path == "/ext/progress":   # an extension's own word on what it is doing (its view still drawing)
+                if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                    return self._json(403, {"error": "forbidden"})
+                q = self._query()
+                ext = extensions.owner(q.get("view", ""))
+                fn = getattr(ext, "progress", None) if ext is not None else None
+                said = ""
+                if callable(fn):
+                    try:
+                        said = str(fn(extensions.context(w.root, q.get("view", ""), "", 160, 0, q.get("scope", "")[:300])) or "")
+                    except Exception as exc:  # noqa: BLE001 - its failure is only its own
+                        extensions.failed(str(getattr(ext, "NAME", "extension")) + " progress", exc)
+                return self._json(200, {"progress": said[:300]})
+            if path == "/projects/folders":   # the Studio's list: the folder projects, worked out where the system is
+                if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                    return self._json(403, {"error": "forbidden"})
+                from . import projects
+                return self._json(200, {"folders": projects.listed(w.root)})
             if path == "/check":   # Claude's ui_check, from the working tree this engine holds
                 if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
                     return self._json(403, {"error": "forbidden"})

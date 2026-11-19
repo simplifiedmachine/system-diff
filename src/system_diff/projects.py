@@ -17,6 +17,7 @@ import inspect
 import json
 import os
 import re
+import time
 import threading
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional
@@ -77,7 +78,8 @@ def detect(root: Path, files: Optional[List[str]] = None, cfg: Optional[Dict[str
     root = Path(root)
     key = str(root.resolve())
     stamp = _stamp(root)
-    if files is None and cfg is None and key in _CACHE and _CACHE[key][0] == stamp:
+    if files is None and cfg is None and key in _CACHE and _CACHE[key][0] == stamp \
+            and (_CACHE[key][2] is None or time.monotonic() - _CACHE[key][2] < EXT_FRESH):
         return _CACHE[key][1]
     if cfg is None:
         from .config import lenient
@@ -86,11 +88,26 @@ def detect(root: Path, files: Optional[List[str]] = None, cfg: Optional[Dict[str
     if said is not None:
         out = [{**p, "why": "named in system-diff.toml"} for p in said if (root / p["path"]).is_dir()]
     else:
-        out = _find(root, files if files is not None else _files(root), cfg, _from_extensions(root))
+        failed: List[str] = []
+        named = _from_extensions(root, failed)
+        out = _find(root, files if files is not None else _files(root), cfg, named)
     out = out if len(out) >= 2 else []
-    if files is None:
-        _CACHE[key] = (stamp, out)
+    if files is None and not (said is None and failed):   # an extension that failed (still starting): asked again
+        # what an extension names can change without the index (its "show as one study"): asked again in a while
+        _CACHE[key] = (stamp, out, time.monotonic() if said is None and _has_hook() else None)
     return out
+
+
+EXT_FRESH = 2.0    # seconds an extension's projects (and their progress text) are kept before it is asked again
+
+
+def _has_hook() -> bool:
+    try:
+        from . import extensions
+        return any(callable(getattr(e, "projects", None)) and not inspect.ismodule(getattr(e, "projects"))
+                   for e in extensions.load())
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _clean(path: Any) -> str:
@@ -102,7 +119,7 @@ def _clean(path: Any) -> str:
     return p
 
 
-def _from_extensions(root: Path) -> List[Dict[str, str]]:
+def _from_extensions(root: Path, failed: Optional[List[str]] = None) -> List[Dict[str, str]]:
     """The folders the extensions that apply here name as projects: [{"path", "name", "why", "by"}]. One extension's
     failure hides only its own."""
     try:
@@ -132,6 +149,8 @@ def _from_extensions(root: Path) -> List[Dict[str, str]]:
                 got = fn(extensions.context(Path(root), "", ""))
             except Exception as exc:  # noqa: BLE001
                 extensions.failed(name + " projects", exc)
+                if failed is not None:
+                    failed.append(name)
                 continue
             for item in got if isinstance(got, (list, tuple)) else []:
                 if not isinstance(item, dict):

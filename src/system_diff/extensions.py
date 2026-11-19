@@ -44,6 +44,11 @@ may define:
     WORKFLOW_TEMPLATES = [{"name", "description", "agents", "steps", "waits", "order"}]
                                                             # ready-made workflows, offered where applies(root); it saves
                                                             #   its own with system_diff.workflows.save(..., by=NAME)
+    def progress(ctx) -> str                                # while its view is still drawing: what it is doing now
+                                                            #   ("reading files 40% · 160 of 400 files"; "N%" draws a
+                                                            #   bar), asked once a second; "" when nothing is under way.
+                                                            #   A view's JSON may carry "filters": [{"id", "title",
+                                                            #   "active", "target": {"view", "part"}}], drawn as chips
     def projects(ctx) -> [{"path", "title", "why"}]         # the folders that are projects in a repository it applies
                                                             #   to (research-diff's studies), relative to the root: the
                                                             #   page's list of projects shows them (system-diff finds

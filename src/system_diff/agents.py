@@ -926,7 +926,7 @@ def workflow(root: Path) -> Dict[str, Any]:
                                        for g in agents_}
     for r in runs(root, since):
         who = ids.get(r["agent_id"]) or (r.get("agent_type") if r.get("agent_type") in names else "")
-        if not who:
+        if not who or who not in info:   # tied to an agent of an earlier plan, or to none
             continue
         i = info[who]
         if r["agent_id"] not in i["ids"]:
