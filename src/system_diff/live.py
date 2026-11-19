@@ -79,6 +79,7 @@ PAGE_TTL = 15.0               # seconds a drawn page is served for at one versio
 WANTED_FOR = 120.0            # seconds a page asked for is kept drawn in the background as versions move
 RACY = 2.0                    # a file changed this recently is hashed again next time, whatever its size and time
 FIRST_WAIT = 20.0             # seconds a comparison waits for the engine's first blueprint before snapshotting
+FIRST_WAIT = 3.0              # seconds a page never drawn before is waited for; then "drawing" and it ends later
 BUSY_WAIT = 2.0               # seconds a page ask waits for a drawing under way before taking the one drawn before
 
 
@@ -1339,8 +1340,11 @@ class Pages:
     in the background when the version moves. `build(key)` draws one (the caller serialises what must be)."""
 
     def __init__(self, engine: Engine, build: Callable[[tuple], dict], ttl: float = PAGE_TTL,
-                 placeholder: Optional[Callable[[tuple], dict]] = None):
+                 placeholder: Optional[Callable[[tuple], dict]] = None,
+                 drawing: Optional[Callable[[tuple], dict]] = None):
         self.engine, self._build, self.ttl, self.placeholder = engine, build, ttl, placeholder
+        self.drawing = drawing     # the page shown while a page never drawn before is drawn (None: wait for it)
+        self.jobs: Dict[tuple, threading.Event] = {}
         self.cache: Dict[tuple, Tuple[int, float, dict]] = {}
         self.wanted: Dict[tuple, float] = {}
         self.locks: Dict[tuple, threading.Lock] = {}
@@ -1377,7 +1381,15 @@ class Pages:
                 got = self.cache.get(key)
             if got is not None:
                 return got[0], got[2]
+            if self.drawing is not None:   # nothing drawn yet, and it takes long: say so, never hold the asker
+                if lock.acquire(timeout=max(FIRST_WAIT - BUSY_WAIT, 0.1)):
+                    lock.release()
+                    return self.get(key)
+                return -1, self.drawing(key)
             lock.acquire()   # nothing drawn yet: wait for the drawing under way
+        if self.drawing is not None:
+            lock.release()
+            return self._first(key)
         try:   # one drawing of a page at a time: a second asker waits for it
             hit = self._hit(key)
             if hit is not None:
@@ -1391,6 +1403,45 @@ class Pages:
             return version, page
         finally:
             lock.release()
+
+    def _first(self, key: tuple) -> Tuple[int, dict]:
+        """Draw `key` in the background and wait FIRST_WAIT for it; longer: the page drawn before (any version), else
+        the drawing page (version -1, so the page asks again), and the drawing ends by itself and is kept."""
+        with self.guard:
+            job = self.jobs.get(key)
+            if job is None:
+                job = self.jobs[key] = threading.Event()
+                threading.Thread(target=self._draw, args=(key, job), name="system-diff page", daemon=True).start()
+        job.wait(FIRST_WAIT)
+        with self.guard:
+            got = self.cache.get(key)
+            err = getattr(job, "error", None)
+        if got is not None:
+            return got[0], got[2]
+        if err is not None:
+            raise err
+        return -1, self.drawing(key)
+
+    def _draw(self, key: tuple, job: threading.Event) -> None:
+        with self.guard:
+            lock = self.locks.setdefault(key, threading.Lock())
+        try:
+            with lock:
+                if self._hit(key) is None:
+                    version = self.engine.version
+                    page = self.build(key)
+                    with self.guard:
+                        self.cache[key] = (version, time.monotonic(), page)
+                        while len(self.cache) > 64:
+                            del self.cache[next(iter(self.cache))]
+        except Exception as exc:  # noqa: BLE001 - said to the one waiting, and logged
+            job.error = exc   # type: ignore[attr-defined]
+            log_error(self.engine.root, f"drawing the page {key[:2]}", exc)
+        finally:
+            job.set()
+            with self.guard:
+                if self.jobs.get(key) is job:
+                    del self.jobs[key]
 
     def current(self, key: tuple) -> bool:
         """Whether this page is drawn at the current version (a long poll for it then waits for the next)."""

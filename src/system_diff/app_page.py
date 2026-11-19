@@ -278,7 +278,7 @@ function paintProjects() {
   const ul = $("tree"); ul.replaceChildren();
   for (const p of S.projects) {
     const li = el("li"); li.append(projBtn(p, 0));
-    if ((p.kids || []).length) { const sub = el("ul"); for (const k of p.kids) { const l2 = el("li"); l2.append(projBtn(k, 1)); sub.append(l2); } li.append(sub); }
+    if ((p.kids || []).length) { const sub = el("ul"); for (const k of p.kids) { if (k.within) continue; const l2 = el("li"); l2.append(projBtn(k, 1)); sub.append(l2); } li.append(sub); }
     ul.append(li);
   }
   if (!S.projects.length) ul.append(el("li", "No projects yet: add a repository's folder below, or open Claude Code in one.", "ev meta"));

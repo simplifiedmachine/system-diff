@@ -279,8 +279,15 @@ def show(root: Path, view_: str, part: str = "", pick: str = "", note: str = "",
     known = {v["view"] for v in views()}
     if view_ not in known:
         return {"error": f"no view {view_!r}: one of {', '.join(sorted(known))}"}
-    r = project_root(root, project)
-    rec = chat.show_page(r, view_, part, pick, note)
+    scope = None
+    try:   # a folder project of this repository: the same page, drawn for that folder
+        from . import projects
+        if project and projects.valid(root, project.strip("/")):
+            scope = project.strip("/")
+    except Exception:  # noqa: BLE001
+        pass
+    r = root if scope is not None else project_root(root, project)
+    rec = chat.show_page(r, view_, part, pick, note, scope=scope)
     deadline = time.time() + max(0.0, min(wait, 10.0))
     state = None
     while time.time() < deadline:

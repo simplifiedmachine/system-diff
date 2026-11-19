@@ -1156,6 +1156,7 @@ function paintNav(items, family, mode) {
   if (family.length || (mode && mode.one)) {
     const ul = el("ul");
     for (const r of family) {
+      if (r.within && !r.current) continue;   // a repository inside a project's folder is part of that project
       const b = el("button"); b.type = "button";
       const here = r.kind === "folder" ? ui.scope === r.scope : r.current && !ui.scope;
       if (here) b.setAttribute("aria-current", "true");
@@ -1181,7 +1182,8 @@ function paintNav(items, family, mode) {
     }
     fam.append(el("h3", "Projects in this repository"), ul);
   }
-  if (items.length) {   // the view's own list first (an extension's studies); the projects folded below it
+  if (fam.childNodes.length) nav.append(...fam.childNodes);   // one list of projects, always open
+  if (items.length) {   // a view's own list (an extension's, not of projects) below it
     const ul = el("ul");
     for (const it of items) {
       const b = el("button"); b.type = "button";
@@ -1190,18 +1192,20 @@ function paintNav(items, family, mode) {
       if (it.badge !== undefined && it.badge !== "") t.append(el("span", String(it.badge), "badge"));
       b.append(t); if (it.sub) b.append(el("span", it.sub, "s"));
       const tg = it.target || {};
-      b.addEventListener("click", () => go(tg.view || ui.view, tg.part || ""));
+      b.addEventListener("click", () => typeof tg.scope === "string" ? openScope(tg.scope, tg.view || ui.view, tg.part || "")
+                                                                   : go(tg.view || ui.view, tg.part || ""));
       { const li = el("li"); li.append(b); ul.append(li); }
     }
     nav.append(el("h3", (ui.data && ui.data.nav_title) || "In this view"), ul);
-    if (fam.childNodes.length) { const d = el("details"); d.append(el("summary", "Projects in this repository")); fam.firstChild.remove(); d.append(...fam.childNodes); nav.append(d); }
-  } else if (fam.childNodes.length) nav.append(...fam.childNodes);
+  }
   const on = !!nav.childNodes.length;
   nav.hidden = !on; nav.parentElement.classList.toggle("on", on);
 }
-function openScope(scope) {   // a project inside this repository: the same engine, every tab drawn for its folder
-  if (ui.scope === scope) return;
-  ui.scope = scope; ui.part = ""; reset(true);
+function openScope(scope, view, part) {   // a project inside this repository: every tab drawn for its folder
+  if (ui.scope === scope && (view === undefined || view === ui.view) && (part || "") === ui.part) return;
+  ui.history.push({ view:ui.view, part:ui.part, scope:ui.scope });   // Back returns to the project before
+  if (ui.history.length > 50) ui.history.shift();
+  ui.scope = scope; if (view) ui.view = view; ui.part = part || ""; reset(true);
 }
 async function openRepo(r, b) {
   if (r.current) return;
@@ -1250,11 +1254,12 @@ function takeShow(sh) {
   const where = sh.view + (sh.part ? " · " + sh.part : "") + (sh.pick ? " · " + sh.pick : "");
   const why = "Claude showed you: " + where + (sh.note ? " — " + sh.note : "");
   const move = () => {
-    const from = { view:ui.view, part:ui.part };
+    const from = { view:ui.view, part:ui.part, scope:ui.scope };
+    if (typeof sh.scope === "string" && sh.scope !== ui.scope) { ui.history.push({ view:ui.view, part:ui.part, scope:ui.scope }); ui.scope = sh.scope; ui.view = ""; }
     go(sh.view, sh.part || "");
     if (sh.pick) { ui.pick = sh.pick.includes(":") ? sh.pick : "b:" + sh.pick; ui.mine = true; }
     seen.shown = sh.id; seen.moved = true; tellState();
-    showBanner(why, [["Back", () => { hideBanner(); go(from.view, from.part); }], ["Stay here", hideBanner]]);
+    showBanner(why, [["Back", () => { hideBanner(); if (from.scope !== ui.scope) { ui.scope = from.scope; ui.view = ""; } go(from.view, from.part); }], ["Stay here", hideBanner]]);
   };
   if (movesAllowed()) move();
   else {
@@ -1783,7 +1788,7 @@ async function follow() {
 }
 function go(view, part) {
   if (view === ui.view && part === ui.part) return;
-  ui.history.push({ view:ui.view, part:ui.part });
+  if (ui.view) ui.history.push({ view:ui.view, part:ui.part, scope:ui.scope });   // the project goes back too
   if (ui.history.length > 50) ui.history.shift();
   ui.view = view; ui.part = part; reset(true);
 }
@@ -1795,7 +1800,7 @@ function reset(top) {
 function back() {
   const h = ui.history.pop();
   if (!h) return;
-  ui.view = h.view; ui.part = h.part; reset(true);
+  ui.view = h.view; ui.part = h.part; if (typeof h.scope === "string") ui.scope = h.scope; reset(true);
 }
 function zoomBy(d) {
   const z = Math.max(0, Math.min(2, (ui.zoom < 0 ? 0 : ui.zoom) + d));
@@ -2148,6 +2153,12 @@ def handler(w: Watcher):
                 if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
                     return self._json(403, {"error": "forbidden"})
                 return self._ext("GET", path, b"")
+            if path == "/check":   # Claude's ui_check, from the working tree this engine holds
+                if not (hub.host_ok(self.headers.get("Host"), self.server.server_address[1]) and self._authorized()):
+                    return self._json(403, {"error": "forbidden"})
+                q = self._query()
+                from . import diagcheck
+                return self._json(200, diagcheck.check(w.root, q.get("part", "")[:300], q.get("view", "now")[:40]))
             if path == "/web":
                 return self._web()
             if path == "/page":
@@ -2290,7 +2301,7 @@ def handler(w: Watcher):
             if route is None:
                 return self._json(404, {"error": f"no extension {name!r}"})
             try:
-                status, ctype, data = route(extensions.context(w.root, "", "", 160, 0), method, rest, self._query(),
+                status, ctype, data = route(extensions.context(w.root, "", "", 160, 0, self._query().get("scope", "")[:300]), method, rest, self._query(),
                                             body)
             except Exception as exc:  # noqa: BLE001
                 extensions.failed(name, exc)
@@ -2624,6 +2635,14 @@ def _build(w: "Watcher", key: tuple) -> Dict[str, Any]:
     e = w.engine
     held = e.held if e is not None else None
     part_read = (held.blueprint.get("partial") if held is not None else None) or None
+    if key[0] != "pane" and extensions.owner(key[1]) is not None:
+        # an extension's view: drawn outside the pane's lock (it does not use the pane's module state; its project
+        # comes as ctx.scope), so a slow one never holds system-diff's own views up
+        _k, view, zoom, part, *rest = key
+        page = pane.web_view(w.root, view, part, zoom, scope=rest[0] if rest else "")
+        if rest:
+            page["scope"] = rest[0]
+        return page
     with PANE_LOCK:  # the pane's views set its module's zoom: one view at a time
         if key[0] == "pane":
             _k, view, width, zoom, part = key
@@ -2667,6 +2686,25 @@ def reading_page(w: "Watcher", key: tuple) -> Dict[str, Any]:
                                                          "items": [{"text": r[0][0].strip(), "style": r[0][1]}
                                                                    for r in rows]}],
             "hover": {}, "web": None, "send": [], "reading": got}
+
+
+def drawing_page(w: "Watcher", key: tuple) -> Dict[str, Any]:
+    """The page while a view is drawn for the first time and it takes more than a moment: which view, never a wait
+    (the page asks again and gets the view when it is drawn)."""
+    view = str(key[1])
+    name = next((label for v, label, _k in extensions.views(w.root) if v == view), view.capitalize())
+    text = f"Drawing {name}… it shows here as soon as it is ready."
+    if key[0] == "pane":
+        _k, _view, width, zoom, part = key
+        rows = [[["◐ " + text, "attention"]]]
+        return {"protocol": 2, "view": view, "part": part or "", "width": width, "wide": max(width, len(text) + 2),
+                "rows": rows, "blocks": [], "lights": {}, "details": {}, "pick": "", "zoom": max(zoom, 0),
+                "web": None, "send": [], "drawing": True}
+    _k, _view, _zoom, part, *rest = key
+    return {"view": view, "part": part or "", "title": name, "headline": text, "status": None, "diagram": {},
+            "sections": [{"title": "Drawing", "aside": "", "kind": "lines",
+                          "items": [{"text": text, "style": "attention"}]}],
+            "hover": {}, "web": None, "send": [], "drawing": True, **({"scope": rest[0]} if rest else {})}
 
 
 def progress_line(got: Dict[str, Any]) -> str:
@@ -3268,7 +3306,8 @@ def serve(root: Path, base: str = "checkpoint", port: int = 8765, config_path: O
             try:
                 w.engine = live.Engine(root, interval=min(interval, live.INTERVAL)).start()
                 w.pages = live.Pages(w.engine, lambda key: _build(w, key),
-                                     placeholder=lambda key: reading_page(w, key)).start()
+                                     placeholder=lambda key: reading_page(w, key),
+                                     drawing=lambda key: drawing_page(w, key)).start()
             except Exception as exc:  # noqa: BLE001 - no engine: every look reads for itself, as before
                 live.log_error(root, "starting the resident engine (each look reads for itself)", exc)
                 w.engine, w.pages = None, None

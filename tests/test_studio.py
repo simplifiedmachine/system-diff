@@ -671,3 +671,17 @@ def test_an_older_studio_is_replaced(monkeypatch, tmp_path, capsys):
     state["have"] = {"port": 1, "token": "t", "pid": 1}
     monkeypatch.setattr(app, "studio_version", lambda have: app.__dict__.get("__version__") or __import__("system_diff").__version__)
     assert app.start(port=0, folder=None) == 0 and calls["stop"] == 1 and "running at" in capsys.readouterr().out
+
+
+def test_a_card_says_why_claude_code_asked_in_bypass(monkeypatch, tmp_path):
+    """bypassPermissions should never ask; when Claude Code does, the card names the cause it can find."""
+    from system_diff import sessions
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude" / "settings.json").write_text(
+        '{"permissions": {"ask": ["Bash(cd:*)", "Edit"], "disableBypassPermissionsMode": "disable"}}', encoding="utf-8")
+    monkeypatch.setattr(sessions.Path, "home", lambda: home)
+    monkeypatch.setattr(sessions, "managed_settings_files", lambda: [])
+    said = sessions.asked_why(tmp_path, "Bash", {"setting_sources": ["user"]})
+    assert "Bash(cd:*)" in said and "Edit" not in said and "disableBypassPermissionsMode" in said
+    assert "without saying why" in sessions.asked_why(tmp_path, "Bash", {"setting_sources": []})

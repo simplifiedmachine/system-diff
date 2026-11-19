@@ -263,14 +263,15 @@ def point(root: Path, parts: List[str], note: str = "") -> Dict[str, Any]:
     return rec
 
 
-def show_page(root: Path, view: str, part: str = "", pick: str = "", note: str = "") -> Dict[str, Any]:
+def show_page(root: Path, view: str, part: str = "", pick: str = "", note: str = "",
+              scope: Optional[str] = None) -> Dict[str, Any]:
     """Claude asks the person's page to show a view (zoomed into a part, a block picked): the page moves there at its
     next look (or offers to, if the person said so), with a banner saying why and a way back."""
     import uuid
     from .extract import redact
     rec = {"id": uuid.uuid4().hex[:12], "view": str(view)[:40], "part": str(part or "")[:200],
            "pick": str(pick or "")[:200], "note": redact(str(note or ""))[:NOTE_MAX], "by": "claude",
-           "at": round(time.time(), 3)}
+           "at": round(time.time(), 3), **({"scope": str(scope)[:300]} if scope is not None else {})}
     _replace(_dir(root) / SHOW, json.dumps(rec, ensure_ascii=False))
     return rec
 

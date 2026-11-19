@@ -13,10 +13,12 @@ reads need the token or the app's own page; changes need both, as /send does.
 from __future__ import annotations
 
 import hashlib
+import html
 import http.client
 import json
 import os
 import secrets
+import socket
 import sys
 import threading
 import time
@@ -154,7 +156,9 @@ class Studio:
                 continue
             entry = self._entry(p, "outer" if root in self.added or outer is None else "nested")
             try:
-                entry["kids"] = [self._entry((p / k["path"]).resolve(), k["kind"], k["path"]) for k in repos.inside(p)]
+                # a repository inside a listed folder project is part of it: kept (looked up by id), not shown apart
+                entry["kids"] = [{**self._entry((p / k["path"]).resolve(), k["kind"], k["name"]),
+                                  **({"within": k["within"]} if k.get("within") else {})} for k in repos.placed(p)]
             except Exception:  # noqa: BLE001
                 entry["kids"] = []
             try:   # projects inside it as plain folders: its own page, drawn for that folder
@@ -576,6 +580,25 @@ def handler(studio: Studio):
             return self._json(404, {"error": "not found"})
 
         # ── the project's engine, through the app ─────────────────────────────────────────────────────────────
+        def _slow(self, root: Path, rest: str, q: str, page: bool):
+            """The engine is up but did not answer in time (a view still drawing): never a 502. The page itself, a
+            page that says so and loads again; a view, the same said as a view the page shows and asks for again."""
+            view = (parse_qs(q).get("view") or [""])[0][:60]
+            what = f"the {view} view" if view else "this page"
+            text = (f"Still drawing {what}: the engine is busy and it shows here when ready. If it stays, "
+                    "system-diff doctor shows what the engine is doing (engine.log).")
+            if page:
+                body = ("<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=3><title>Drawing…</title>"
+                        "<body style='font:15px system-ui;padding:24px;color:#555'>" + html.escape(text))
+                return self._send(200, body.encode("utf-8"), "text/html; charset=utf-8")
+            if rest.startswith("/web"):
+                return self._json(200, {"version": -1, "view": view, "part": "", "title": view or "Drawing",
+                                        "headline": text, "status": None, "diagram": {}, "hover": {}, "send": [],
+                                        "web": None, "drawing": True, "slow": True,
+                                        "sections": [{"title": "Drawing", "aside": "", "kind": "lines",
+                                                      "items": [{"text": text, "style": "attention"}]}]})
+            return self._json(504, {"error": text, "slow": True})
+
         def _proxy(self, method: str, path: str):
             """/p/<project>/<rest> → that repository's engine, with its token. Only this app's own page (or the
             token) gets through, as the engine itself would ask; the engine's page is served to any local load."""
@@ -634,6 +657,8 @@ def handler(studio: Studio):
                     if method == "POST":
                         headers.update({"Origin": f"http://127.0.0.1:{eng['port']}",
                                         "Referer": f"http://127.0.0.1:{eng['port']}/"})
+                except (TimeoutError, socket.timeout):
+                    return self._slow(root, rest, q, page)
                 except (OSError, http.client.HTTPException) as exc:
                     return self._json(502, {"error": f"the project's engine did not answer: {type(exc).__name__}"})
                 finally:

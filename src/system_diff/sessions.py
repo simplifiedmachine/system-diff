@@ -20,7 +20,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 PERMISSION_MODES = ("default", "acceptEdits", "plan", "dontAsk", "auto", "bypassPermissions")
@@ -176,6 +176,51 @@ def _redact(text: str) -> str:
         return redact(text)
     except Exception:  # noqa: BLE001
         return text
+
+
+def managed_settings_files() -> List[Path]:
+    """Where an organization's managed Claude Code settings live (they win over everything the person sets)."""
+    if os.name == "nt":
+        return [Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "ClaudeCode" / "managed-settings.json",
+                Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "ClaudeCode" / "managed-settings.json"]
+    if sys.platform == "darwin":
+        return [Path("/Library/Application Support/ClaudeCode/managed-settings.json")]
+    return [Path("/etc/claude-code/managed-settings.json")]
+
+
+def asked_why(project: Path, tool: str, options: Dict[str, Any]) -> str:
+    """Why Claude Code asked although the mode chosen should not have: the `ask` rules that name this tool in the
+    settings this session reads, an organization's policy turning bypass off, else the remaining reasons."""
+    files: List[Tuple[str, Path]] = [("your organization's managed settings", f) for f in managed_settings_files()]
+    sources = options.get("setting_sources")
+    sources = ["user", "project", "local"] if sources is None else list(sources)
+    home = Path.home() / ".claude"
+    if "user" in sources:
+        files.append(("~/.claude/settings.json", home / "settings.json"))
+    if "project" in sources:
+        files.append((".claude/settings.json", Path(project) / ".claude" / "settings.json"))
+    if "local" in sources:
+        files.append((".claude/settings.local.json", Path(project) / ".claude" / "settings.local.json"))
+    if options.get("settings"):
+        files.append((Path(str(options["settings"])).name, Path(str(options["settings"]))))
+    found: List[str] = []
+    for label, f in files:
+        try:
+            perms = (json.loads(f.read_text(encoding="utf-8")) or {}).get("permissions") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        if not isinstance(perms, dict):
+            continue
+        rules = [str(r) for r in perms.get("ask") or [] if str(r).split("(")[0].strip() in (tool, "*")
+                 or str(r).startswith("mcp__") and tool.startswith(str(r).split("(")[0])]
+        if rules:
+            found.append(f"an ask rule in {label}: {', '.join(rules[:4])}")
+        if str(perms.get("disableBypassPermissionsMode") or "") == "disable":
+            found.append(f"bypass is turned off by {label} (disableBypassPermissionsMode)")
+    if found:
+        return "Claude Code asks because of " + "; ".join(found) + "."
+    return ("Claude Code asked without saying why, though this session should not ask: an ask rule or a hook "
+            "outside the files system-diff reads, or a check Claude Code keeps in every mode.")
 
 
 def tool_input_view(name: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -362,6 +407,11 @@ class Session:
         view = tool_input_view(tool_name, tool_input)
         self.pending[req] = {"future": fut, "tool": tool_name, "view": view, "suggestions": suggestions}
         why = str(getattr(context, "decision_reason", "") or getattr(context, "description", "") or "")
+        if getattr(context, "agent_id", None):
+            why = ("A subagent asks. " + why).strip()
+        if not getattr(context, "decision_reason", None) and (getattr(self, "mode", "") or self.options.get(
+                "permission_mode")) in ("bypassPermissions", "dontAsk", "acceptEdits"):
+            why = (why + " " + asked_why(self.project, tool_name, self.options)).strip()
         self.emit("permission", request=req, tool=tool_name, view=view, why=why[:400],
                   can_always=bool(suggestions))
         if self.status != "waiting":

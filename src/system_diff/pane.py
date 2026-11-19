@@ -1790,7 +1790,8 @@ def _web_topics(root: Path, zoom: int) -> Dict[str, Any]:
             "sections": [_web_section("The stack", "chips", chips, "pick one to light where it is used")]}
 
 
-def web_view(root: Path, view: str = "now", part: str = "", zoom: int = 0) -> Dict[str, Any]:
+def web_view(root: Path, view: str = "now", part: str = "", zoom: int = 0,
+             scope: Optional[str] = None) -> Dict[str, Any]:
     """A view of the pane (now, review, agents, topics) structured for a web page instead of rows of text:
     {"view", "part", "title", "headline", "status" (Now only), "diagram": {"svg", "title", "aside", "lights",
     "details", "enter", "pick"}, "sections": [{"title", "aside", "kind", "items"}], "web", "send"}. Section kinds:
@@ -1802,7 +1803,7 @@ def web_view(root: Path, view: str = "now", part: str = "", zoom: int = 0) -> Di
     ext = extensions.owner(view)
     if ext is not None and getattr(ext, "web", None):
         try:
-            out = ext.web(extensions.context(root, view, part or "", 160, zoom, SCOPE))
+            out = ext.web(extensions.context(root, view, part or "", 160, zoom, SCOPE if scope is None else scope))
         except Exception as exc:  # noqa: BLE001
             out = {"view": view, "part": part or "", "title": view, "headline": extensions.failed(view, exc)["text"],
                    "diagram": {}, "sections": []}
