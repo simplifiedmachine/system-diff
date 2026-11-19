@@ -298,6 +298,12 @@ beside it, run by the app with your own Claude Code login and gateway:
   session. One app per user (`system-diff app` again opens it); it uses each repository's own engine, so a terminal
   session in the same repository shares it. Every route checks the host name, the token and the page's origin.
 
+**The team, readable.** On the Agents tab each subagent shows as what it does (its Task description), with its type
+small; its row counts its work ("34 reads · 1 edit") and a click lists everything it did. Subagents Claude launches on
+its own, without a plan, appear on the workflow board too: side by side when they ran at the same time, one after
+another when one started once the other had finished, each with its status, duration and session log. A role Claude
+keeps launching (two runs, here or across your projects) is offered to keep as an agent, with its prompt.
+
 ### Keys for your agents
 
 A token your agents need (an Azure DevOps PAT to open a pull request, a GitHub token) is kept by system-diff, not
@@ -309,6 +315,14 @@ none. Every Studio session started afterwards gets them as environment variables
 offers to restart with it, keeping the conversation). Claude is told their names, never their values, and a value
 that shows up in output is masked on the page and in the session log. A key pasted into a message is caught before
 sending: store it and send `$NAME` instead. `az devops` and `az repos` read `AZURE_DEVOPS_EXT_PAT` themselves.
+
+Beside secrets, a project keeps settings that are not secret (a server's host or IP, a user name, a port), under a group
+such as "staging server": sessions get them as environment variables and Claude is told their values. Write
+"staging server 10.1.2.3 user deploy password …" in a message and the Studio offers to keep the host and user as
+settings and the password as a secret. Claude can list and change settings (`project_settings`, `save_setting`) but
+asks you for a secret's value in a password field (`ask_for_secret`), never in the chat. Keys → All projects, or
+`system-diff secrets list --all-projects`, shows every project's entries without secret values;
+`system-diff secrets set NAME --setting VALUE` keeps a setting from a terminal.
 
 `system-diff doctor` says whether the app runs, its sessions, the Agent SDK and the `claude` it found;
 `system-diff app --status` what the Studio sees: the engines registered (and whether each answers), its project list,
