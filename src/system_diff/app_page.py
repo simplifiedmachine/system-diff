@@ -105,6 +105,24 @@ iframe#view { width:100%; height:100%; border:0; background:transparent; border-
 .ev.user { justify-self:end; max-width:88%; white-space:pre-wrap; color:#fff; border-bottom-right-radius:6px;
   background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent)); box-shadow:0 4px 14px color-mix(in srgb, var(--accent) 25%, transparent); }
 .ev.text { justify-self:start; max-width:96%; white-space:pre-wrap; background:var(--glass-strong); border:1px solid var(--hair); border-bottom-left-radius:6px; }
+.ev.text.md { white-space:normal; }
+.md > :first-child { margin-top:0; } .md > :last-child { margin-bottom:0; }
+.md p { margin:0 0 .6em; } .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin:.7em 0 .35em; line-height:1.25; letter-spacing:-.01em; }
+.md h1 { font-size:1.3em; } .md h2 { font-size:1.18em; } .md h3 { font-size:1.06em; } .md h4, .md h5, .md h6 { font-size:1em; }
+.md ul, .md ol { margin:0 0 .6em; padding-left:1.4em; } .md li { margin:.15em 0; } .md li > p { margin:0 0 .3em; }
+.md li > ul, .md li > ol { margin:.15em 0 .2em; } .md li.task { list-style:none; margin-left:-1.2em; } .md li.task input { margin:0 .45em 0 0; vertical-align:-1px; }
+.md code { font:.92em var(--mono); background:var(--code); border-radius:6px; padding:.08em .35em; }
+.md .mdcode { margin:.5em 0 .7em; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--code); }
+.md .mdbar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:3px 6px 3px 10px; font-size:11px; color:var(--muted); border-bottom:1px solid var(--line); }
+.md .mdbar button { padding:1px 9px; font-size:11px; box-shadow:none; }
+.ev .md .mdcode pre, .md .mdcode pre { margin:0; border-radius:0; background:transparent; white-space:pre; overflow:auto; overflow-wrap:normal; word-break:normal; max-height:420px; }
+.md .mdcode pre code { background:none; padding:0; font:12px/1.5 var(--mono); }
+.md blockquote { margin:0 0 .6em; padding:.1em 0 .1em .9em; border-left:3px solid color-mix(in srgb, var(--accent) 45%, transparent); color:var(--muted); }
+.md hr { border:0; border-top:1px solid var(--line); margin:.8em 0; }
+.md a { color:var(--accent); text-decoration:none; } .md a:hover { text-decoration:underline; }
+.md .mdtable { overflow-x:auto; margin:0 0 .7em; }
+.md table { border-collapse:collapse; font-size:13px; } .md th, .md td { border:1px solid var(--line); padding:4px 9px; vertical-align:top; overflow-wrap:normal; }
+.md th { background:var(--code); font-weight:600; }
 .ev.meta { color:var(--muted); font-size:12px; padding:0 4px; animation:none; }
 .ev.err { color:var(--bad); font-size:13px; background:color-mix(in srgb, var(--bad) 10%, transparent); }
 .ev.tool { border:1px solid var(--line); background:var(--glass-soft); font-size:13px; padding:7px 12px; }
@@ -193,7 +211,7 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
     <div id="agentsbox" hidden></div>
     <div class="compose" id="compose">
       <div class="aboutchip" id="aboutchip" hidden title="Sent with your message, so Claude knows what you are looking at on the page"><span id="abouttext"></span><button type="button" id="aboutx" aria-label="Do not send this">×</button></div>
-      <textarea id="msg" placeholder="Ask Claude… (Enter sends, Shift+Enter a new line)" aria-label="Message to Claude"></textarea>
+      <textarea id="msg" placeholder="Ask Claude… (Enter sends, Shift+Enter a new line, ↑ ↓ past messages)" aria-label="Message to Claude"></textarea>
       <div class="row"><span class="st" id="sstatus"></span><button type="button" id="stop" class="danger" disabled>Interrupt</button><button type="button" id="closesess">Close</button><button type="button" id="send" class="primary">Send</button></div>
     </div>
   </aside>
@@ -471,14 +489,185 @@ function toolView(v) {
   if (v.input) box.append(el("pre", v.input));
   return box;
 }
+// ── Claude's replies, as Markdown: everything escaped first, only these tags made (no raw HTML, no script links) ──
+/* md:start */
+function mdEsc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+function mdLink(u, text) { return '<a href="' + mdEsc(u) + '" target="_blank" rel="noopener noreferrer">' + text + "</a>"; }
+function mdInline(src) {
+  const held = [], hold = html => "\u0000" + (held.push(html) - 1) + "\u0000";
+  let s = String(src).replace(/\u0000/g, "");
+  s = s.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (m, t, c) =>
+    hold("<code>" + mdEsc(c.length > 2 && c[0] === " " && c[c.length - 1] === " " ? c.slice(1, -1) : c) + "</code>"));
+  s = s.replace(/\[([^\]\n]+)\]\(\s*<?([^\s)>]+)>?(?:\s+"[^"\n]*")?\s*\)/g, (m, t, u) =>
+    hold(/^(https?:\/\/|mailto:)/i.test(u) ? mdLink(u, mdInline(t)) : mdEsc(m)));   // javascript:, data:: shown as text
+  s = s.replace(/<((?:https?:\/\/|mailto:)[^\s>\u0000]+)>/gi, (m, u) => hold(mdLink(u, mdEsc(u))));
+  s = s.replace(/\bhttps?:\/\/[^\s<>"'\u0000]*[^\s<>"'\u0000.,;:!?)\]*_~]/gi, u => hold(mdLink(u, mdEsc(u))));
+  s = mdEsc(s)
+    .replace(/\*\*\*(?=\S)([\s\S]*?\S)\*\*\*/g, "<strong><em>$1</em></strong>")
+    .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^\w])__(?=\S)([\s\S]*?\S)__(?!\w)/g, "$1<strong>$2</strong>")
+    .replace(/\*([^\s*](?:[^*]*?[^\s*])?)\*/g, "<em>$1</em>")
+    .replace(/(^|[^\w])_([^\s_](?:[^_]*?[^\s_])?)_(?!\w)/g, "$1<em>$2</em>")
+    .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "<del>$1</del>")
+    .replace(/\n/g, "<br>");
+  return s.replace(/\u0000(\d+)\u0000/g, (m, i) => held[+i]);
+}
+const MD = {
+  fence: l => /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l),
+  hr: l => /^ {0,3}([-*_])(?:[ ]*\1){2,}[ ]*$/.test(l),
+  head: l => /^ {0,3}(#{1,6})(?:[ ]+(.*?))?[ ]*#*[ ]*$/.exec(l),
+  item: l => /^([ ]*)([-*+]|\d{1,9}[.)])[ ]+(.*)$/.exec(l),
+  quote: l => /^ {0,3}>/.test(l),
+  delim: l => l.includes("-") && /^[ ]*\|?[ ]*:?-+:?[ ]*(\|[ ]*:?-+:?[ ]*)*\|?[ ]*$/.test(l),
+  lead: l => l.length - l.replace(/^ +/, "").length,
+};
+MD.table = (l, next) => l.includes("|") && next !== undefined && next.includes("|") && MD.delim(next);
+MD.starts = (l, next) => !!(MD.fence(l) || MD.hr(l) || MD.head(l) || MD.item(l) || MD.quote(l) || MD.table(l, next));
+function mdCells(l) {
+  const out = []; let cur = "", code = false; const t = l.trim().replace(/^\|/, "").replace(/\|$/, "");
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === "\\" && t[i + 1] === "|") { cur += "|"; i++; continue; }
+    if (c === "`") code = !code;
+    if (c === "|" && !code) { out.push(cur.trim()); cur = ""; continue; }
+    cur += c;
+  }
+  out.push(cur.trim()); return out;
+}
+function mdList(lines, i) {
+  const first = MD.item(lines[i]), ind = first[1].length, ordered = /\d/.test(first[2]);
+  const items = []; let loose = false;
+  while (i < lines.length) {
+    if (!lines[i].trim()) {   // a blank line between two items of this list: it goes on, loosely
+      let j = i; while (j < lines.length && !lines[j].trim()) j++;
+      const n = j < lines.length && MD.item(lines[j]);
+      if (n && n[1].length === ind && /\d/.test(n[2]) === ordered) { loose = true; i = j; } else break;
+    }
+    const m = MD.item(lines[i]);
+    if (!m || m[1].length !== ind || /\d/.test(m[2]) !== ordered) break;
+    const inner = m[0].length - m[3].length, body = [m[3]]; i++;
+    while (i < lines.length) {
+      const l = lines[i];
+      if (!l.trim()) {
+        let j = i; while (j < lines.length && !lines[j].trim()) j++;
+        if (j < lines.length && MD.lead(lines[j]) > ind) { for (; i < j; i++) body.push(""); loose = true; continue; }
+        break;
+      }
+      const li = MD.lead(l);
+      if (li > ind) { body.push(l.slice(Math.min(li, inner))); i++; continue; }
+      if (!MD.starts(l, lines[i + 1]) && body[body.length - 1].trim()) { body.push(l.trim()); i++; continue; }   // lazy continuation
+      break;
+    }
+    items.push({ body, num:m[2] });
+  }
+  const start = ordered ? parseInt(items[0].num, 10) : 1, tag = ordered ? "ol" : "ul";
+  let html = "<" + tag + (ordered && start !== 1 ? ' start="' + start + '"' : "") + ">";
+  for (const it of items) {
+    const task = /^\[([ xX])\][ ]+/.exec(it.body[0]);
+    if (task) it.body[0] = it.body[0].slice(task[0].length);
+    let inner = mdBlocks(it.body);
+    if (!loose) inner = inner.replace(/^<p>([\s\S]*?)<\/p>/, "$1");
+    html += task ? '<li class="task"><input type="checkbox" disabled' + (task[1] === " " ? "" : " checked") + ">" + inner + "</li>" : "<li>" + inner + "</li>";
+  }
+  return { html:html + "</" + tag + ">", i };
+}
+function mdBlocks(lines) {
+  let out = "", i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!l.trim()) { i++; continue; }
+    let m;
+    if ((m = MD.fence(l))) {
+      const mark = m[1], pad = MD.lead(l), lang = (m[2].trim().split(/\s+/)[0] || "").replace(/[^\w+#.-]/g, "").slice(0, 24), code = [];
+      const close = new RegExp("^ {0,3}" + (mark[0] === "`" ? "`" : "~") + "{" + mark.length + ",}[ ]*$");
+      i++;
+      while (i < lines.length && !close.test(lines[i])) { code.push(lines[i].slice(Math.min(pad, MD.lead(lines[i])))); i++; }
+      i++;   // the closing fence (none yet, while it streams: the block runs to the end)
+      out += '<div class="mdcode"><div class="mdbar"><span>' + mdEsc(lang || "text") + '</span><button type="button" class="mdcopy">Copy</button></div><pre><code>' + mdEsc(code.join("\n")) + "</code></pre></div>";
+      continue;
+    }
+    if ((m = MD.head(l))) { const n = m[1].length; out += "<h" + n + ">" + mdInline(m[2] || "") + "</h" + n + ">"; i++; continue; }
+    if (MD.hr(l)) { out += "<hr>"; i++; continue; }
+    if (MD.quote(l)) {
+      const q = []; while (i < lines.length && MD.quote(lines[i])) { q.push(lines[i].replace(/^ {0,3}> ?/, "")); i++; }
+      out += "<blockquote>" + mdBlocks(q) + "</blockquote>"; continue;
+    }
+    if (MD.table(l, lines[i + 1])) {
+      const head = mdCells(l), align = mdCells(lines[i + 1]).map(c => /^:-+:$/.test(c) ? "center" : /-:$/.test(c) ? "right" : /^:-/.test(c) ? "left" : "");
+      const cell = (tag, c, k) => "<" + tag + (align[k] ? ' style="text-align:' + align[k] + '"' : "") + ">" + mdInline(c) + "</" + tag + ">";
+      let t = '<div class="mdtable"><table><thead><tr>' + head.map((c, k) => cell("th", c, k)).join("") + "</tr></thead><tbody>";
+      i += 2;
+      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
+        const row = mdCells(lines[i]); t += "<tr>" + head.map((h, k) => cell("td", row[k] || "", k)).join("") + "</tr>"; i++;
+      }
+      out += t + "</tbody></table></div>"; continue;
+    }
+    if (MD.item(l)) { const got = mdList(lines, i); out += got.html; i = got.i; continue; }
+    const para = [l.trim()]; i++;
+    while (i < lines.length && lines[i].trim() && !MD.starts(lines[i], lines[i + 1])) { para.push(lines[i].trim()); i++; }
+    out += "<p>" + mdInline(para.join("\n")) + "</p>";
+  }
+  return out;
+}
+function md(text) { return mdBlocks(String(text || "").replace(/\r\n?/g, "\n").replace(/\t/g, "    ").split("\n")); }
+/* md:end */
+function mdPaint(box, text) { box.innerHTML = md(text); }   // md() escapes everything it is given
+$("feed").addEventListener("click", e => {   // a code block's Copy
+  const b = e.target.closest && e.target.closest(".mdcopy"); if (!b) return;
+  const pre = b.closest(".mdcode").querySelector("pre"), text = pre.textContent;
+  const done = () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1400); };
+  const pick = () => { const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); b.textContent = "Selected: Ctrl+C"; };
+  try { navigator.clipboard.writeText(text).then(done, pick); } catch (err) { pick(); }
+});
+
+// ── the message box's history: Up and Down walk the messages sent in this project, as in Claude Code ──
+const HIST = { mem:{}, pos:-1, draft:"", key:"" };
+// a message that looks like it holds a key is remembered for this page only, never written to the browser's storage
+const KEYLIKE = /\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}|xox[abprs]-[\w-]{10,}|sk-[\w-]{20,}|eyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{5,})|(?<![a-z])(pat|token|secret|password|passwd|api[_-]?key|key)(?![a-z])[^\n]{0,24}?[:=]\s*\S{12,}/i;
+function histKey() { return "hist:" + (S.project || ""); }
+function histList() {
+  const k = histKey();
+  if (!HIST.mem[k]) { let got = []; try { got = JSON.parse(keep.get(k, "[]")); } catch (e) { got = []; }
+                      HIST.mem[k] = Array.isArray(got) ? got.filter(x => typeof x === "string" && x) : []; }
+  return HIST.mem[k];
+}
+function histPush(text) {
+  const list = histList();
+  if (text && list[list.length - 1] !== text) list.push(text);
+  while (list.length > 200) list.shift();
+  keep.set(histKey(), JSON.stringify(list.filter(x => !KEYLIKE.test(x))));
+  HIST.pos = -1; HIST.draft = "";
+}
+function histStep(dir) {   // true when it moved (the key is then not the caret's)
+  const ta = $("msg"), v = ta.value, at = ta.selectionStart;
+  if (at !== ta.selectionEnd) return false;
+  if (dir < 0 ? at > 0 && v.lastIndexOf("\n", at - 1) !== -1 : v.indexOf("\n", at) !== -1) return false;   // not on the first (last) line
+  if (HIST.key !== histKey()) { HIST.key = histKey(); HIST.pos = -1; HIST.draft = ""; }
+  const list = histList();
+  if (!list.length) {   // nothing sent from here yet: this session's own messages (a resumed one)
+    for (const u of document.querySelectorAll("#feed .ev.user")) {
+      const t = u.textContent.replace(/^\[About: [^\]\n]*\]\n/, "");
+      if (t && list[list.length - 1] !== t) list.push(t);
+    }
+  }
+  if (!list.length) return false;
+  if (HIST.pos === -1) { if (dir > 0) return false; HIST.draft = v; HIST.pos = list.length; }
+  const to = HIST.pos + dir;
+  if (to < 0) return true;
+  if (to >= list.length) { HIST.pos = -1; ta.value = HIST.draft; } else { HIST.pos = to; ta.value = list[to]; }
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  return true;
+}
 function paint(ev) {
   scrolled(() => {
     const f = $("feed");
     if (ev.type === "delta") {
-      if (!S.streaming) { S.streaming = el("div", "", "ev text"); f.append(S.streaming); }
-      S.streaming.textContent += ev.text; return;
+      if (!S.streaming) { S.streaming = el("div", "", "ev text md"); S.streaming.raw = ""; f.append(S.streaming); }
+      const box = S.streaming; box.raw += ev.text;
+      if (!box.queued) { box.queued = true; requestAnimationFrame(() => { box.queued = false; if (box.isConnected) scrolled(() => mdPaint(box, box.raw)); }); }
+      return;
     }
-    if (ev.type === "text") { if (S.streaming) { S.streaming.remove(); S.streaming = null; } f.append(el("div", ev.text, "ev text")); return; }
+    if (ev.type === "text") { if (S.streaming) { S.streaming.remove(); S.streaming = null; } const d = el("div", null, "ev text md"); mdPaint(d, ev.text); f.append(d); return; }
     if (S.streaming && ev.type !== "status") { S.streaming.remove(); S.streaming = null; }
     if (ev.type === "user") f.append(el("div", ev.text, "ev user"));
     else if (ev.type === "thinking") { const d = el("details", null, "ev tool"); d.append(el("summary", "Thinking")); d.append(el("pre", ev.text)); f.append(d); }
@@ -527,9 +716,14 @@ async function send() {
   let s = S.session && S.session.status && !["closed", "failed"].includes(S.session.status) ? S.session : await start();
   if (!s) return;
   try { await api("api/sessions/" + s.id + "/send", { text:withAbout(text) }); $("msg").value = ""; } catch (e) { $("sstatus").textContent = e.message; }
+  histPush(text);   // Up brings it back
 }
 $("send").addEventListener("click", send);
-$("msg").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+$("msg").addEventListener("keydown", e => {
+  if (e.isComposing) return;
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); return; }
+  if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && histStep(e.key === "ArrowUp" ? -1 : 1)) e.preventDefault();
+});
 $("stop").addEventListener("click", () => { if (S.session) api("api/sessions/" + S.session.id + "/interrupt", {}).catch(e => { $("sstatus").textContent = e.message; }); });
 $("closesess").addEventListener("click", async () => { if (S.session && S.session.id) { await api("api/sessions/" + S.session.id + "/close", {}).catch(() => {}); loadSessions(); } });
 
