@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 14,
-   "lines": 6950,
+   "lines": 7185,
    "hub": false,
    "quiet": false
   },
@@ -2250,6 +2250,7 @@
    "signal": 1,
    "socket": 1,
    "tomllib": 1,
+   "traceback": 1,
    "uuid": 1,
    "warnings": 1
   },
@@ -2670,6 +2671,7 @@
    "signal": 1,
    "socket": 1,
    "tomllib": 1,
+   "traceback": 1,
    "urllib.error": 1,
    "urllib.request": 1,
    "uuid": 1,
@@ -2767,6 +2769,7 @@
   "tests/test_slow_pages.py": 1,
   "tests/test_slow_start.py": 1,
   "tests/test_studio.py": 1,
+  "tests/test_studio_agents.py": 1,
   "tests/test_studio_chat.py": 1,
   "tests/test_studio_phase0.py": 1,
   "tests/test_studio_sessions.py": 1,

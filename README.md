@@ -315,6 +315,11 @@ Claude takes it into the turn it is on, as a question it answers, a change of pl
 the message's line shows what became of it and the reply links back to it. **Stop & send** interrupts instead. Ask
 Claude to keep a subagent that ran ("keep the survey agent") and `keep_agent` saves it as an agent from its prompt.
 
+In the chat a subagent is one line: its task, what it is doing, its reads and edits and its time; click it for its
+own calls. The Studio's Agents tab lists the subagents of this project's sessions, running first, with the roles worth
+keeping. Session options → Keys shows what you stored: a setting's value in full, a secret hidden until you press
+**Show** (30 s, this page only); what Claude saves from the chat appears there by itself.
+
 ### Keys for your agents
 
 A token your agents need (an Azure DevOps PAT to open a pull request, a GitHub token) is kept by system-diff, not
