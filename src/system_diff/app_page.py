@@ -220,7 +220,7 @@ input[type=password] { background:var(--glass-soft); border:1px solid var(--line
         <label for="mode">Permissions</label><select id="mode"></select>
         <label for="agentpick">Agent</label><select id="agentpick"><option value="">Claude (no saved agent)</option></select>
         <label for="pastbtn">Resume</label><div class="row"><button type="button" id="pastbtn" title="Claude Code's past conversations of this project, like /resume">Past conversations…</button></div>
-        <label>Keys</label><div class="keys" id="keys"><span class="ev meta">…</span></div>
+        <label style="align-self:start;padding-top:8px">Keys</label><div class="keys" id="keys"><span class="ev meta">…</span></div>
         <span></span><div class="row"><span class="ev meta" id="choicefrom"></span><button type="button" id="ownoff" hidden>Use the all-projects choice</button></div>
         <span></span><div class="row"><button type="button" id="forall" title="These choices for every project (a project's own change still wins there)">Use for all projects</button><button type="button" id="applyopen" hidden title="The model and the permission mode change now in every open session; settings, effort and agent from the next session">Apply to open sessions</button></div>
         <span></span><div class="row"><button type="button" id="fork" hidden title="Continue this conversation in a new session; this one stays as it is">Fork</button><button type="button" id="apply" hidden title="Start a session with these settings that continues this conversation">Apply to this conversation</button></div>
