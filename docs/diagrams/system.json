@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 14,
-   "lines": 7217,
+   "lines": 7218,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 701,
+   "lines": 714,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 3451,
+   "lines": 3465,
    "hub": false,
    "quiet": false
   }
@@ -597,7 +597,7 @@
   "mcp>objectives": 2,
   "mcp>pictures": 1,
   "mcp>sources": 1,
-  "mcp>src/system_diff": 23,
+  "mcp>src/system_diff": 24,
   "mcp>textmap": 1,
   "names>graph": 1,
   "narrate>live": 1,
@@ -684,6 +684,7 @@
   "watch>hub": 1,
   "watch>learn": 1,
   "watch>live": 1,
+  "watch>mcp": 1,
   "watch>narrate": 2,
   "watch>panel": 3,
   "watch>pictures": 1,
@@ -1789,6 +1790,11 @@
    "Engine",
    "FIRST_WAIT",
    "Pages"
+  ],
+  "watch>mcp": [
+   "tool_diff",
+   "tool_explain",
+   "tool_map"
   ],
   "watch>narrate": [
    "QUIET",

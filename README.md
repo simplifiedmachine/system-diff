@@ -298,6 +298,12 @@ beside it, run by the app with your own Claude Code login and gateway:
   session. One app per user (`system-diff app` again opens it); it uses each repository's own engine, so a terminal
   session in the same repository shares it. Every route checks the host name, the token and the page's origin.
 
+**Agents remember, and a plan resumes.** Each agent of a plan keeps notes as it works (`agent_note`), with what it
+read and edited, its messages and its last answer. If the session stops (a Studio restart, an interrupt), continue
+the conversation: the Studio offers **Resume them**, and `resume_plan` relaunches the unfinished agents with briefs
+saying what they had already done, so they pick up where they were. The board shows each agent's attempts and latest
+note; its pop-up has a Memory tab.
+
 **What Claude did with the plan.** A subagent is tied to its planned agent as it starts. The board says how many
 planned agents Claude launched, which it skipped and which it started before the ones they wait for had finished; in
 the Studio a button has Claude launch the missing ones. Messages for an agent that never ran say they are waiting.
