@@ -479,7 +479,7 @@ function paintPast() {
   nb.addEventListener("click", () => start());
   top.append(nb);
   if (S.showingPast && S.session && S.session.id) {
-    const bk = el("button", "Back to the open session"); bk.type = "button";
+    const bk = el("button", "Back to: " + String(S.session.title || "the session shown").replace(/\s+/g, " ").slice(0, 40)); bk.type = "button";
     bk.addEventListener("click", () => { S.showingPast = false; follow(S.session.id); }); top.append(bk);
   }
   box.append(top);
@@ -492,7 +492,8 @@ function paintPast() {
       const doing = x.now && x.now.what ? doingText(x.now, x.status)
                   : ({ idle:"Ready", working:"Working", waiting:"Asks you", starting:"Starting" }[x.status] || x.status);
       row.append(el("div", [doing, String(x.claude_session || "").slice(0, 8)].filter(Boolean).join(" · "), "pm"));
-      const go = el("button", x.id === (S.session || {}).id ? "Here" : "Go to"); go.type = "button";
+      const go = el("button", x.id === (S.session || {}).id ? "Open · shown" : "Open", "primary"); go.type = "button";
+      go.title = "Show this session's conversation and send to it";
       go.addEventListener("click", () => { S.showingPast = false; $("sesspick").value = x.id; follow(x.id); });
       const cl = el("button", "Close"); cl.type = "button";
       cl.title = "Stop this Claude Code session (its conversation stays, to resume later)";
