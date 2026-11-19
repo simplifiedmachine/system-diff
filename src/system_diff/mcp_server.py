@@ -46,7 +46,10 @@ INSTRUCTIONS = (
     "tell the person what you found. A team can run "
     "in stages (plan_agents order=staged, or after=...): launch each stage as `how` says. When the person asks for "
     "another agent, add_agent (agent_kinds lists extensions' kinds and saved agents); save_workflow keeps a team to "
-    "reuse with run_workflow; workflow and agent_log show who runs, who waits, and what each one did."
+    "reuse with run_workflow; workflow and agent_log show who runs, who waits, and what each one did. A project's "
+    "settings (hosts, users, ports) and secrets (passwords, tokens) are in your environment by name: project_settings "
+    "lists them, save_setting stores a setting the person gives you, and a secret's value is asked for with "
+    "ask_for_secret (a password field), never taken from the chat."
 )
 WIDTH = 100  # the columns a diagram is drawn for
 
@@ -540,6 +543,61 @@ def build() -> Server:
         return {"plan": st["plan"], "claims": st["claims"], "messages": agents.messages(root)[-20:],
                 "workflow": agents.workflow(root)}
 
+    # ── a project's settings and secrets (vault.py): what sessions get as environment variables ──
+    def _project(project: str) -> Path:
+        if not project:
+            return _root()
+        p = Path(project).expanduser()
+        if not p.is_dir():
+            raise ValueError(f"{project} is not a folder")
+        return p.resolve()
+
+    @_read_only(server)
+    def project_settings(project: str = "") -> Dict[str, Any]:
+        """The settings and secrets stored for this project (and for all projects), which Studio sessions get as
+        environment variables: name, kind (setting or secret), group ("staging server"), description, scope; a
+        setting's value (a host, a user, a port: not secret), never a secret's."""
+        from . import vault
+        return _safe(lambda: {"entries": vault.listing(_project(project)), "store": vault.store_name(),
+                              "use": "by name: $NAME in bash, $env:NAME in PowerShell (sessions started from now on)"})
+
+    @server.tool()
+    def save_setting(name: str, value: str, group: str = "", description: str = "", scope: str = "project",
+                     project: str = "") -> Dict[str, Any]:
+        """Store or change a project setting that is not secret (a server's host or IP, a user name, a port, a URL),
+        e.g. STAGING_HOST under group "staging server". scope: "project" or "all" (every project). Refused for anything
+        that looks secret (a password, a token, a key): those go through ask_for_secret, never through you."""
+        from . import vault
+        return _safe(lambda: {**vault.save(name, value, _project(project), scope in ("all", "*", "everywhere"),
+                                           description, kind="setting", group=group),
+                              "note": "Studio sessions started from now on get it; an open one after a restart"})
+
+    @server.tool()
+    def forget_setting(name: str, scope: str = "project", project: str = "") -> Dict[str, Any]:
+        """Remove a stored setting (or secret) by name, from this project ("project") or all projects ("all")."""
+        from . import vault
+        return _safe(lambda: vault.forget(name, _project(project), scope in ("all", "*", "everywhere")))
+
+    @server.tool()
+    def ask_for_secret(name: str, description: str = "", group: str = "", scope: str = "project",
+                       project: str = "") -> Dict[str, Any]:
+        """Ask the person for a secret's value (a server's password, a token): in the Studio, a card with a password
+        field above the message box; elsewhere, the command they run in a terminal. The value never passes through
+        you or the chat; sessions started afterwards get it as $NAME."""
+        from . import vault
+
+        def go() -> Dict[str, Any]:
+            vault.check_name(name)
+            root = _project(project)
+            cmd = f"system-diff secrets set {name}" + (" --all" if scope in ("all", "*") else f' --project "{root}"')
+            asked = _ask_studio({"name": name, "description": description, "group": group, "scope": scope,
+                                 "project": str(root)})
+            if asked:
+                return {**asked, "next": "wait for the person to store it; then it is $" + name + " in sessions started "
+                                         "afterwards (the Studio offers to restart the open one)", "or": cmd}
+            return {"asked": False, "tell_the_person": f"run `{cmd}` in a terminal (the value is asked for, never shown)"}
+        return _safe(go)
+
     from . import extensions
     off = {n.strip() for n in os.environ.get("SYSTEM_DIFF_EXT_TOOLS_OFF", "").split(",") if n.strip()}
     for ext in extensions.load():                  # the extensions' own tools (research-diff's, …)
@@ -550,6 +608,31 @@ def build() -> Server:
             except Exception as exc:  # noqa: BLE001
                 extensions.failed(getattr(ext, "NAME", "extension") + " tools", exc)
     return server
+
+
+def _ask_studio(body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Put a card asking for a secret in the running Studio (its token from app.json); None when no Studio runs."""
+    import http.client
+    import json as _json
+    try:
+        from . import app
+        have = app.running()
+    except Exception:  # noqa: BLE001
+        have = None
+    if not have:
+        return None
+    conn = http.client.HTTPConnection("127.0.0.1", int(have["port"]), timeout=5)
+    try:
+        conn.request("POST", "/api/secrets/ask", body=_json.dumps(body),
+                     headers={"X-Token": str(have.get("token") or ""), "Content-Type": "application/json",
+                              "Host": f"127.0.0.1:{have['port']}"})
+        r = conn.getresponse()
+        got = _json.loads(r.read().decode("utf-8") or "{}")
+        return got if r.status == 200 else None
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+    finally:
+        conn.close()
 
 
 def _safe(fn) -> Dict[str, Any]:

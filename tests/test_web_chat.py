@@ -412,4 +412,4 @@ def test_the_tools_that_only_read_say_so():
     marked = {t.name for t in tools
               if (t.model_dump(by_alias=True, exclude_none=True).get("annotations") or {}).get("readOnlyHint")}
     assert marked == {"explain", "objectives", "team", "ui_view", "ui_graph", "ui_source", "ui_config_preview", "ui_check",
-                      "saved_agents", "agent_kinds", "workflow", "agent_log", "workflows"}
+                      "saved_agents", "agent_kinds", "workflow", "agent_log", "workflows", "project_settings"}

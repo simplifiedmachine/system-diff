@@ -276,11 +276,13 @@ def parser() -> argparse.ArgumentParser:
     st.add_argument("--status", action="store_true", help="what the Studio sees: its projects, the engines, and why")
     st.add_argument("--foreground", action="store_true",
                     help="run it here until Ctrl-C, not in the background (to see what it prints)")
-    sc = sub.add_parser("secrets", help="keys your Studio sessions and their agents get as environment variables "
-                                        "(an Azure DevOps PAT, a GitHub token), kept in your system's own store")
+    sc = sub.add_parser("secrets", help="secrets (an Azure DevOps PAT, a server's password, kept in your system's "
+                                        "own store) and settings (a host, a user: not secret) your Studio sessions "
+                                        "and their agents get as environment variables")
     scs = sc.add_subparsers(dest="action", required=True)
-    sl = scs.add_parser("list", help="the keys stored (names, never values)")
+    sl = scs.add_parser("list", help="what is stored (a setting's value, never a secret's)")
     sl.add_argument("--project", help="only those a repository gets (its own and all projects')")
+    sl.add_argument("--all-projects", action="store_true", help="every project's, with the project each is for")
     for verb, text in (("set", "store a key (its value is asked for, or read from stdin)"), ("forget", "remove a key")):
         sx = scs.add_parser(verb, help=text)
         sx.add_argument("name", help="its environment variable's name, such as AZURE_DEVOPS_EXT_PAT")
@@ -289,6 +291,9 @@ def parser() -> argparse.ArgumentParser:
         g.add_argument("--project", help="for this repository (default: the one holding the current directory)")
         if verb == "set":
             sx.add_argument("--description", default="", help="what it is for, as the agents will read it")
+            sx.add_argument("--group", default="", help='entries that go together, such as "staging server"')
+            sx.add_argument("--setting", metavar="VALUE", help="a setting that is not secret (a host, a user, a port), "
+                                                                "given here; without it the value is a secret, asked for")
     sp = sub.add_parser("stop", help="stop the Studio and every system-diff engine of yours (they start again when "
                                      "needed)")
     sp.add_argument("--dry-run", action="store_true", help="say what it would stop, and stop nothing")
@@ -490,10 +495,14 @@ def _secrets(args: argparse.Namespace) -> int:
         return root
     try:
         if args.action == "list":
-            keys = vault.listing(project() if args.project else None)
-            print(f"Kept in: {vault.store_name()}")
+            every = getattr(args, "all_projects", False)
+            keys = vault.everything() if every else vault.listing(project() if args.project else None)
+            print(f"Secrets kept in: {vault.store_name()}")
             for k in keys:
-                print(f"  {k['name']}  ({k['scope']})" + (f"  {k['description']}" if k["description"] else ""))
+                where = ("all projects" if not k.get("project") else k["project"]) if every else k["scope"]
+                shown = f" = {k['value']}" if k.get("kind") == "setting" else "  (secret)"
+                about = ", ".join(x for x in (k.get("group"), k.get("description")) if x)
+                print(f"  {k['name']}{shown}  [{where}]" + (f"  {about}" if about else ""))
             if not keys:
                 print("  none stored")
             return 0
@@ -503,12 +512,17 @@ def _secrets(args: argparse.Namespace) -> int:
             print(f"Forgot {got['forgot']} ({got['scope']})")
             return 0
         vault.check_name(args.name)
+        if getattr(args, "setting", None) is not None:
+            got = vault.save(args.name, args.setting, where, args.all, args.description, kind="setting",
+                             group=args.group)
+            print(f"Stored the setting {got['name']} = {got['value']} for {got['scope']}.")
+            return 0
         if sys.stdin.isatty():
             import getpass
             value = getpass.getpass(f"Value for {args.name} (not shown): ")
         else:
             value = sys.stdin.read().rstrip("\r\n")
-        got = vault.save(args.name, value, where, args.all, args.description)
+        got = vault.save(args.name, value, where, args.all, args.description, group=getattr(args, "group", ""))
         print(f"Stored {got['name']} for {got['scope']}, in {got['kept_in']}. Studio sessions started from now on get "
               f"it as ${got['name']}.")
         return 0

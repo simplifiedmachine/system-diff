@@ -249,6 +249,29 @@ class Studio:
     # ── defaults per project ──────────────────────────────────────────────────────────────────────────────────
     CHOICES = ("settings_profile", "model", "effort", "permission_mode", "setting_sources")
 
+    # ── cards asking the person for a secret's value (Claude's ask_for_secret): kept in memory, an hour at most ──
+    def ask_secret(self, b: Dict[str, Any]) -> Dict[str, Any]:
+        from . import vault
+        name = vault.check_name(str(b.get("name") or ""))
+        project = str(b.get("project") or "")
+        root = Path(project).resolve() if project and Path(project).is_dir() else None
+        ask = {"id": secrets.token_hex(6), "name": name, "project": str(root or ""),
+               "description": str(b.get("description") or "")[:300], "group": str(b.get("group") or "")[:80],
+               "scope": "all" if str(b.get("scope") or "") in ("all", "*") else "project", "at": time.time()}
+        with self.lock:
+            self.asks = [a for a in getattr(self, "asks", []) if time.time() - a["at"] < 3600 and a["name"] != name] + [ask]
+        return {"asked": name, "id": ask["id"], "where": "the Studio, above the message box"}
+
+    def asks_for(self, root: Optional[Path]) -> List[Dict[str, Any]]:
+        from . import vault
+        here = vault._same(root) if root is not None else ""
+        return [a for a in getattr(self, "asks", []) if time.time() - a["at"] < 3600
+                and (not a["project"] or vault._same(a["project"]) == here)]
+
+    def drop_ask(self, ask_id: str) -> None:
+        with self.lock:
+            self.asks = [a for a in getattr(self, "asks", []) if a["id"] != ask_id]
+
     def default_for(self, root: Path) -> Dict[str, Any]:
         """The choices a new session of this project starts with: the all-projects ones ("*"), its own over them."""
         every = self.defaults.get("*") if isinstance(self.defaults.get("*"), dict) else {}
@@ -421,10 +444,14 @@ def handler(studio: Studio):
                     root = self._root(q)
                     m = studio.manager
                     return self._json(200, {"sessions": [s.head() for s in m.of(root)] if m is not None else []})
-                if path == "/api/secrets":   # the keys for this project: names, never values
+                if path == "/api/secrets":   # the keys for this project: names, never a secret's value
                     from . import vault
-                    return self._json(200, {"keys": vault.listing(self._root(q), studio.folder),
-                                            "store": vault.store_name()})
+                    if q.get("all") == "1":   # every project's: scope, project, kind, group (settings' values)
+                        return self._json(200, {"keys": vault.everything(studio.folder), "store": vault.store_name(),
+                                                "all": True})
+                    root = self._root(q)
+                    return self._json(200, {"keys": vault.listing(root, studio.folder), "store": vault.store_name(),
+                                            "asks": studio.asks_for(root)})
                 if path == "/api/past":   # this project's past conversations, the ones left off first
                     from . import sessions
                     root = self._root(q)
@@ -461,6 +488,16 @@ def handler(studio: Studio):
             if not self._host():
                 self._drain()
                 return self._send(403, b"forbidden", "text/plain")
+            if path == "/api/secrets/ask":   # Claude's ask_for_secret (the MCP server): a card asking the person for a
+                from .live import token_ok        # value; the token from app.json, never from a page; no value in it
+                if not token_ok(self.headers.get("X-Token"), studio.token) or self.headers.get("Origin") is not None:
+                    self._drain()
+                    return self._json(403, {"error": "forbidden"})
+                try:
+                    b = self._body()
+                    return self._json(200, studio.ask_secret(b if isinstance(b, dict) else {}))
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
             if path == "/api/quit":   # `system-diff app --stop`: the token from app.json, never from a page
                 from .live import token_ok
                 self._drain()
@@ -563,14 +600,25 @@ def handler(studio: Studio):
                                         f"{opts['settings_profile']}")
                     studio.remember(s.project, opts)
                     return self._json(200, t.head())
-            if path in ("/api/secrets/save", "/api/secrets/forget"):   # a key: kept by the OS, never said back
+            if path == "/api/secrets/dismiss":   # a card Claude put up, put away
+                studio.drop_ask(str(b.get("ask") or ""))
+                return self._json(200, {"ok": True})
+            if path in ("/api/secrets/save", "/api/secrets/forget", "/api/secrets/update"):   # never said back
                 from . import vault
                 root = self._root({"project": str(b.get("project") or "")})
-                everywhere = str(b.get("scope") or "project") in ("all", "*", "everywhere")
+                everywhere = str(b.get("scope") or "project") in ("all", "*", "everywhere", "all projects")
                 if path.endswith("/forget"):
                     return self._json(200, vault.forget(str(b.get("name") or ""), root, everywhere, studio.folder))
-                got = vault.save(str(b.get("name") or ""), str(b.get("value") or ""), root, everywhere,
-                                 str(b.get("description") or ""), studio.folder)
+                if path.endswith("/update"):
+                    got = vault.update(str(b.get("name") or ""), root, everywhere, studio.folder,
+                                       value=b.get("value") if b.get("value") not in (None, "") else None,
+                                       description=b.get("description"), group=b.get("group"))
+                else:
+                    got = vault.save(str(b.get("name") or ""), str(b.get("value") or ""), root, everywhere,
+                                     str(b.get("description") or ""), studio.folder,
+                                     kind=str(b.get("kind") or "secret"), group=str(b.get("group") or ""))
+                if b.get("ask"):
+                    studio.drop_ask(str(b["ask"]))
                 m = studio.manager
                 same = vault._same(root)
                 open_ = [x.id for x in (list(m.sessions.values()) if m is not None else [])

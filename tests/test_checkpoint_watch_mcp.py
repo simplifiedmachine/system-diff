@@ -92,7 +92,7 @@ def test_the_mcp_tools_answer_with_the_plan_and_the_picture(repo, files, monkeyp
                      "subscribe", "inbox", "team", "objectives", "check_objective", "point_to", "note",
                      "ui_view", "ui_graph", "ui_source", "ui_show", "ui_config_preview", "ui_check", "report_diagram_issue", "saved_agents", "save_agent", "install_agents",
                      "add_agent", "agent_kinds", "workflow", "agent_log", "workflow_action", "save_workflow", "workflows",
-                     "run_workflow",
+                     "run_workflow", "project_settings", "save_setting", "forget_setting", "ask_for_secret",
                      "save_skill"}
     d = mcp_server.tool_diff(repo)
     assert "GET /health" in d["plan"] and Path(d["picture"]).is_file() and ".git" in Path(d["picture"]).parts

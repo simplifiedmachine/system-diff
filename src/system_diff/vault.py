@@ -12,6 +12,11 @@ state folder (readable by this user only). The value is kept by the OS:
 - otherwise: vault-values.json itself, a file only this user can read ("no keyring here", said where keys are listed).
 
 Values are read when a session starts (env_for), not per request.
+
+Beside secrets, a project's **settings**: plain values a session needs that are not secret (a server's host or IP,
+a user name, a port, a URL). Kept in vault.json itself, shown on the page and named with their value in Claude's
+prompt; never masked. Every entry can carry a group ("staging server": STAGING_HOST, STAGING_USER,
+STAGING_PASSWORD). A value that looks secret is never taken as a setting (looks_secret).
 """
 from __future__ import annotations
 
@@ -194,11 +199,51 @@ def _drop(folder: Path, kind: str, account: str) -> None:
 
 
 # ── what the Studio, the sessions and the command line use ─────────────────────────────────────────────────────
+KINDS = ("secret", "setting")
+SECRET_NAME = re.compile(r"PASS|PWD|SECRET|TOKEN|(^|_)KEY($|_)|APIKEY|(^|_)PAT($|_)|CREDENTIAL|PRIVATE|CERT|AUTH")
+SECRET_VALUE = re.compile(r"^(gh[pousr]_|github_pat_|AKIA|ASIA|xox[abposr]-|sk-|eyJ[\w-]+\.|-----BEGIN)")
+
+
+def looks_secret(name: str, value: str) -> bool:
+    """Whether a name or a value says it is secret: a setting must not be (its value is shown and told to Claude)."""
+    n, v = str(name or "").upper(), str(value or "").strip()
+    if SECRET_NAME.search(n) or SECRET_VALUE.search(v):
+        return True
+    if re.fullmatch(r"[a-z2-7]{52}", v):   # an Azure DevOps PAT
+        return True
+    if len(v) >= 20 and " " not in v and not re.match(r"^[a-z][a-z0-9+.-]*://", v):
+        classes = sum(bool(re.search(c, v)) for c in (r"[a-z]", r"[A-Z]", r"\d", r"[^\w.-]"))
+        if classes >= 3:
+            return True
+    return False
+
+
+def kind_of(k: Dict[str, Any]) -> str:
+    return "setting" if k.get("kind") == "setting" else "secret"
+
+
 def _public(k: Dict[str, Any], project: Optional[Path] = None) -> Dict[str, Any]:
+    setting = kind_of(k) == "setting"
     return {"name": k["name"], "scope": "all projects" if k["scope"] == "*" else
             ("this project" if project is not None and k["scope"] == _same(project) else k["scope"]),
+            "kind": kind_of(k), "group": str(k.get("group") or ""),
             "description": str(k.get("description") or ""), "saved": k.get("saved"),
-            "kept_in": WHERE.get(str(k.get("kept_in")), str(k.get("kept_in") or ""))}
+            "kept_in": "system-diff's settings (not secret)" if setting else
+            WHERE.get(str(k.get("kept_in")), str(k.get("kept_in") or "")),
+            **({"value": str(k.get("value") or "")} if setting else {})}
+
+
+def everything(folder: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Every entry of every project: scope, project, kind, group, description; a setting's value, never a secret's."""
+    where = _folder(folder)
+    if where is None:
+        return []
+    out = []
+    for k in _meta(where):
+        got = _public(k)
+        got["project"] = "" if k["scope"] == "*" else k["scope"]
+        out.append(got)
+    return sorted(out, key=lambda x: (x["project"], x["group"], x["name"]))
 
 
 def listing(project: Optional[Path] = None, folder: Optional[Path] = None) -> List[Dict[str, Any]]:
@@ -211,8 +256,11 @@ def listing(project: Optional[Path] = None, folder: Optional[Path] = None) -> Li
 
 
 def save(name: str, value: str, project: Optional[Path] = None, everywhere: bool = False, description: str = "",
-         folder: Optional[Path] = None) -> Dict[str, Any]:
+         folder: Optional[Path] = None, kind: str = "secret", group: str = "") -> Dict[str, Any]:
+    """Store a secret (kept by the OS) or a setting (`kind="setting"`: a plain value, refused when it looks secret)."""
     name = check_name(name)
+    if kind not in KINDS:
+        raise ValueError("kind: secret or setting")
     value = str(value if value is not None else "")
     if not value.strip():
         raise ValueError("the key's value is empty")
@@ -223,6 +271,21 @@ def save(name: str, value: str, project: Optional[Path] = None, everywhere: bool
         raise ValueError("there is no state folder to keep keys in here")
     scope = scope_of(project, everywhere)
     account = f"{scope}:{name}"
+    if kind == "setting":
+        if looks_secret(name, value):
+            raise ValueError(f"{name} looks like a secret (a password, a token, a key): store it as a secret, in the "
+                             f"Studio's Keys or with `system-diff secrets set {name}`, never as a setting")
+        with _LOCK:
+            keys = _meta(where)
+            old = next((k for k in keys if k["name"] == name and k["scope"] == scope), None)
+            if old is not None and kind_of(old) == "secret":
+                _drop(where, str(old.get("kept_in")), account)
+            entry = {"name": name, "scope": scope, "kind": "setting", "group": str(group or "")[:80],
+                     "description": str(description or "")[:300], "saved": round(time.time(), 3),
+                     "kept_in": "plain", "value": value}
+            keys = [k for k in keys if not (k["name"] == name and k["scope"] == scope)] + [entry]
+            _write(where / META, {"keys": keys})
+        return _public(entry, project)
     with _LOCK:
         keys = _meta(where)
         old = next((k for k in keys if k["name"] == name and k["scope"] == scope), None)
@@ -239,11 +302,40 @@ def save(name: str, value: str, project: Optional[Path] = None, everywhere: bool
                 _drop_os(str(old.get("kept_in")), account)
             elif kind in ("keychain", "secret-service"):
                 _drop(where, "file", account)
-        entry = {"name": name, "scope": scope, "description": str(description or "")[:300],
-                 "saved": round(time.time(), 3), "kept_in": kind}
+        entry = {"name": name, "scope": scope, "kind": "secret", "group": str(group or "")[:80],
+                 "description": str(description or "")[:300], "saved": round(time.time(), 3), "kept_in": kind}
         keys = [k for k in keys if not (k["name"] == name and k["scope"] == scope)] + [entry]
         _write(where / META, {"keys": keys})
     return _public(entry, project)
+
+
+def update(name: str, project: Optional[Path] = None, everywhere: bool = False, folder: Optional[Path] = None,
+           value: Optional[str] = None, description: Optional[str] = None, group: Optional[str] = None) -> Dict[str, Any]:
+    """Change an entry: a setting's value, a secret's value (replaced, never read back), its description or group."""
+    where = _folder(folder)
+    if where is None:
+        raise ValueError("there is no state folder here")
+    scope = scope_of(project, everywhere)
+    with _LOCK:
+        hit = next((k for k in _meta(where) if k["name"] == str(name or "").strip() and k["scope"] == scope), None)
+    if hit is None:
+        raise ValueError(f"no entry {name} stored for {'all projects' if scope == '*' else 'this project'}")
+    if value is not None and str(value) != "":
+        return save(hit["name"], str(value), project, everywhere,
+                    hit.get("description", "") if description is None else description, folder, kind_of(hit),
+                    hit.get("group", "") if group is None else group)
+    with _LOCK:
+        keys = _meta(where)
+        for k in keys:
+            if k["name"] == hit["name"] and k["scope"] == scope:
+                if description is not None:
+                    k["description"] = str(description)[:300]
+                if group is not None:
+                    k["group"] = str(group)[:80]
+                k["saved"] = round(time.time(), 3)
+                hit = k
+        _write(where / META, {"keys": keys})
+    return _public(hit, project)
 
 
 def forget(name: str, project: Optional[Path] = None, everywhere: bool = False,
@@ -258,7 +350,8 @@ def forget(name: str, project: Optional[Path] = None, everywhere: bool = False,
         hit = next((k for k in keys if k["name"] == name and k["scope"] == scope), None)
         if hit is None:
             raise ValueError(f"no key {name} stored for {'all projects' if scope == '*' else 'this project'}")
-        _drop(where, str(hit.get("kept_in")), f"{scope}:{name}")
+        if kind_of(hit) == "secret":
+            _drop(where, str(hit.get("kept_in")), f"{scope}:{name}")
         _write(where / META, {"keys": [k for k in keys if k is not hit]})
     return {"forgot": name, "scope": "all projects" if scope == "*" else "this project"}
 
@@ -273,6 +366,9 @@ def env_for(project: Path, folder: Optional[Path] = None, problems: Optional[Lis
     keys = [k for k in _meta(where) if k["scope"] == "*"] + [k for k in _meta(where) if k["scope"] == mine]
     out: Dict[str, str] = {}
     for k in keys:
+        if kind_of(k) == "setting":
+            out[k["name"]] = str(k.get("value") or "")
+            continue
         try:
             out[k["name"]] = _get(where, str(k.get("kept_in")), f"{k['scope']}:{k['name']}")
         except (OSError, subprocess.SubprocessError, ValueError, UnicodeDecodeError) as exc:
@@ -282,16 +378,31 @@ def env_for(project: Path, folder: Optional[Path] = None, problems: Optional[Lis
 
 
 def prompt_note(keys: List[Dict[str, Any]]) -> str:
-    """What the session's prompt says of its keys: names and descriptions, never values."""
+    """What the session's prompt says of its keys: names and descriptions, never a secret's value; a setting's value
+    (not secret: a host, a user) is said, with the tools to change them."""
     if not keys:
         return ""
-    names = ", ".join(k["name"] + (f" ({k['description']})" if k.get("description") else "") for k in keys)
+
+    def label(k: Dict[str, Any]) -> str:
+        about = ", ".join(x for x in (k.get("group"), k.get("description")) if x)
+        return k["name"] + (f" ({about})" if about else "")
+    sets = [k for k in keys if k.get("kind") == "setting"]
+    keys = [k for k in keys if k.get("kind") != "setting"]
+    said = ""
+    if sets:
+        said = (" Project settings the person stored for you (in your environment too): "
+                + "; ".join(f"{label(k)} = {k.get('value', '')}" for k in sets) + ". Change them with save_setting "
+                "(project_settings lists them); a secret's value is never yours to take: ask_for_secret asks the "
+                "person for it in a password field.")
+    if not keys:
+        return said
+    names = ", ".join(label(k) for k in keys)
     hint = (" az devops and az repos read AZURE_DEVOPS_EXT_PAT themselves."
             if any(k["name"] == "AZURE_DEVOPS_EXT_PAT" for k in keys) else "")
     return (f" Keys the person stored for you (system-diff's key store) are in your environment: {names}. Use them by "
             "name ($NAME in bash, $env:NAME in PowerShell); never print, echo or write their values into files, "
             "commits, logs or messages; when a command needs one (a header, a URL), build it inside the command from "
-            "the variable." + hint)
+            "the variable." + hint + said)
 
 
 def mask(obj: Any, masks: List[tuple]) -> Any:
@@ -310,5 +421,7 @@ def mask(obj: Any, masks: List[tuple]) -> Any:
     return obj
 
 
-def masks_of(env: Dict[str, str]) -> List[tuple]:
-    return sorted(((v, n) for n, v in env.items() if len(v) >= 6), key=lambda x: -len(x[0]))
+def masks_of(env: Dict[str, str], keys: Optional[List[Dict[str, Any]]] = None) -> List[tuple]:
+    """[(value, name)] to mask: the secrets' (a setting is shown as it is), longest first."""
+    plain = {k["name"] for k in keys or [] if k.get("kind") == "setting"}
+    return sorted(((v, n) for n, v in env.items() if len(v) >= 6 and n not in plain), key=lambda x: -len(x[0]))

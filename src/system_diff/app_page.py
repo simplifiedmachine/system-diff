@@ -886,46 +886,125 @@ function findKeys(text) {   // [{value, start, name, what}]: what in this text l
     const known = out.find(k => k.start === at);
     if (known) { if (known.name !== "AZURE_DEVOPS_EXT_PAT") known.name = keyName(m[2]); continue; }   // its own name
     const ado = /azure|ado|devops/i.test(m[2]) && /pat|token/i.test(m[2]);
-    add(at, m[3], ado ? "AZURE_DEVOPS_EXT_PAT" : keyName(m[2]), ado ? "an Azure DevOps personal access token" : "a key");
+    const pw = /^(passwords?|passwd|pwd|pass(?:phrase)?)$/i.test(m[2]);   // a bare "password": the server's
+    add(at, m[3], ado ? "AZURE_DEVOPS_EXT_PAT" : pw ? serverPrefix(text) + "_PASSWORD" : keyName(m[2]),
+        ado ? "an Azure DevOps personal access token" : pw ? "a password" : "a key");
+  }
+  for (const m of text.matchAll(/\b(passwords?|passwd|pwd|pass(?:phrase)?)(?:\s+is)?\s*[:=]?\s+(\S{4,})/gi)) {   // "password Xyz!23"
+    const v = m[2].replace(/[,.;:)\]]+$/, "");
+    if (/^\$/.test(v) || v.length < 4 || (!/[:=]/.test(m[0]) && /^[A-Za-z]+$/.test(v))) continue;   // a word, not a password
+    add(m.index + m[0].lastIndexOf(m[2]), v, serverPrefix(text) + "_PASSWORD", "a password");
   }
   for (const m of text.matchAll(/[A-Za-z0-9+\/=_-]{32,}/g)) if (looksRandom(m[0])) add(m.index, m[0], "SECRET", "a long random string");
   return out.sort((a, b) => a.start - b.start);
 }
+function serverPrefix(text) {   // "staging server 10.1.2.3" → STAGING; else SERVER
+  const m = /\b([A-Za-z][A-Za-z0-9-]{1,20})\s+(?:server|host|box|machine|vm)\b/i.exec(text);
+  const w = m && !/^(the|a|an|my|our|this|that|to|on|of|in|for|with|and|test)$/i.test(m[1]) ? m[1] : "server";
+  return keyName(w);
+}
+function findSettings(text) {   // [{value, start, name, what}]: the host, user and port beside a password (not secret)
+  const out = [], pre = serverPrefix(text), seen = new Set();
+  const pats = [[/\b(?:server|host|ip|address)(?:\s+is)?\s*[:=]?\s*((?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/gi, "_HOST", "its host"],
+                [/\b(?:user(?:name)?|login)(?:\s+is)?\s*[:=]?\s*([A-Za-z0-9._-]{2,64})/gi, "_USER", "its user"],
+                [/\bport(?:\s+is)?\s*[:=]?\s*(\d{2,5})\b/gi, "_PORT", "its port"]];
+  for (const [re, suffix, what] of pats) for (const m of text.matchAll(re)) {
+    if (seen.has(suffix) || /^(is|the|name)$/i.test(m[1])) continue;
+    seen.add(suffix); out.push({ value:m[1], start:m.index + m[0].lastIndexOf(m[1]), name:pre + suffix, what, setting:true });
+  }
+  if (!out.some(x => x.name.endsWith("_HOST"))) {   // a bare IP address
+    const ip = /\b((?:\d{1,3}\.){3}\d{1,3})\b/.exec(text); if (ip) out.push({ value:ip[1], start:ip.index, name:pre + "_HOST", what:"its host", setting:true });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
 /*keys-detect:end*/
 S.keysSent = "";   // the text the person chose to send as it is
+S.keysAll = false;   // the Keys list: this project's, or every project's
 async function loadKeys() {
   const box = $("keys"); if (!box) return;
-  if (!S.project) { box.replaceChildren(el("span", "Pick a project first.", "ev meta")); return; }
-  let d; try { d = await api("api/secrets?project=" + S.project); } catch (e) { box.replaceChildren(el("span", e.message, "ev meta")); return; }
+  if (!S.project && !S.keysAll) { box.replaceChildren(el("span", "Pick a project first.", "ev meta")); return; }
+  let d; try { d = await api(S.keysAll ? "api/secrets?all=1" : "api/secrets?project=" + S.project); } catch (e) { box.replaceChildren(el("span", e.message, "ev meta")); return; }
   box.replaceChildren();
-  for (const k of d.keys || []) {
-    const r = el("div", null, "k"); r.append(el("code", k.name), el("span", [k.scope, k.description].filter(Boolean).join(" · "), "s"));
-    const f = el("button", "Forget", "danger"); f.type = "button"; f.title = "Remove it from " + k.kept_in;
-    f.addEventListener("click", async () => {
-      if (!confirm("Forget the key " + k.name + " (" + k.scope + ")? Sessions started from now on go without it.")) return;
-      try { await api("api/secrets/forget", { project:S.project, name:k.name, scope:k.scope === "all projects" ? "all" : "project" }); loadKeys(); } catch (e) { alert(e.message); }
-    });
-    r.append(f); box.append(r);
+  const sw = el("button", S.keysAll ? "This project only" : "All projects", "switch"); sw.type = "button"; sw.style.justifySelf = "end";
+  sw.title = S.keysAll ? "Back to this project's settings and secrets" : "Every project's settings and secrets (a secret's value is never shown)";
+  sw.addEventListener("click", () => { S.keysAll = !S.keysAll; loadKeys(); }); box.append(sw);
+  let lastGroup = null;
+  const keys = (d.keys || []).slice().sort((a, b) => ((a.project || "") + a.group + a.name).localeCompare((b.project || "") + b.group + b.name));
+  for (const k of keys) {
+    const head = (S.keysAll ? (k.project ? k.project.split(/[\\/]/).pop() : "all projects") + " · " : "") + (k.group || "");
+    if (head !== lastGroup) { if (head) box.append(el("div", head, "ev meta")); lastGroup = head; }
+    const r = el("div", null, "k");
+    r.append(el("code", k.name), el("span", (k.kind === "setting" ? "= " + k.value + " · " : "secret · ") + [S.keysAll ? "" : k.scope, k.description].filter(Boolean).join(" · "), "s"));
+    const scopeOf = k.scope === "all projects" ? "all" : "project", proj = S.keysAll ? (k.project || S.project || "") : S.project;
+    if (!S.keysAll || k.project === "" || proj) {
+      const ed = el("button", "Edit"); ed.type = "button"; ed.title = k.kind === "setting" ? "Change its value or what it is for" : "Replace its value (the old one is never shown) or change what it is for";
+      ed.addEventListener("click", () => r.replaceWith(editForm(k, proj, scopeOf)));
+      const f = el("button", "Forget", "danger"); f.type = "button"; f.title = "Remove it" + (k.kind === "setting" ? "" : " from " + k.kept_in);
+      f.addEventListener("click", async () => {
+        if (!confirm("Forget " + k.name + " (" + (k.scope || "") + ")? Sessions started from now on go without it.")) return;
+        try { await api("api/secrets/forget", { project:proj, name:k.name, scope:scopeOf }); loadKeys(); } catch (e) { alert(e.message); }
+      });
+      r.append(ed, f);
+    }
+    box.append(r);
   }
-  if (!(d.keys || []).length) box.append(el("span", "None: a token your agents need (an Azure DevOps PAT to open a pull request) is kept here, not in the chat.", "ev meta"));
-  const add = el("button", "Add a key…"); add.type = "button"; add.style.justifySelf = "start";
+  if (!keys.length) box.append(el("span", "None: a token your agents need (an Azure DevOps PAT), a server's password, or a setting such as its host is kept here, not in the chat.", "ev meta"));
+  paintAsks(d.asks || []);
+  if (S.keysAll) { box.append(el("span", "Secrets kept in " + d.store + ". A secret's value is never shown.", "ev meta")); return; }
+  const add = el("button", "Add…"); add.type = "button"; add.style.justifySelf = "start"; add.title = "A secret (kept by your system) or a setting (a host, a user: shown)";
   add.addEventListener("click", () => { add.replaceWith(keyForm({}, async got => { await loadKeys(); offerRestart(got); })); });
-  box.append(add, el("span", "Kept in " + d.store + ". Sessions get them as environment variables; Claude sees their names only.", "ev meta"));
+  box.append(add, el("span", "Kept in " + d.store + ". Sessions get them as environment variables; Claude sees a secret's name only, a setting's value too.", "ev meta"));
 }
-function keyForm(k, done, cancel) {   // name, value (hidden), for this project or all, what it is for
-  const f = el("form"), name = el("input"), value = el("input"), scope = el("select"), desc = el("input");
+function editForm(k, proj, scopeOf) {   // change a setting's value, replace a secret's, or what it is for
+  const f = el("form", null, "k"), value = el("input"), desc = el("input"), group = el("input");
+  value.type = k.kind === "setting" ? "text" : "password"; value.value = k.kind === "setting" ? k.value : "";
+  value.placeholder = k.kind === "setting" ? "its value" : "a new value (empty: keep the old one)"; value.autocomplete = "off"; value.setAttribute("aria-label", "Value of " + k.name);
+  desc.type = "text"; desc.value = k.description || ""; desc.placeholder = "what it is for"; desc.setAttribute("aria-label", "Description");
+  group.type = "text"; group.value = k.group || ""; group.placeholder = "group (staging server)"; group.setAttribute("aria-label", "Group");
+  const ok = el("button", "Save", "primary"), no = el("button", "Cancel"); no.type = "button";
+  f.append(el("code", k.name), value, group, desc, ok, no);
+  no.addEventListener("click", loadKeys);
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    try { const got = await api("api/secrets/update", { project:proj, name:k.name, scope:scopeOf, value:value.value, description:desc.value.trim(), group:group.value.trim() });
+          value.value = ""; await loadKeys(); if (got.open_sessions) offerRestart(got); }
+    catch (err) { alert(err.message); }
+  });
+  return f;
+}
+function paintAsks(asks) {   // Claude asked for a secret's value (ask_for_secret): a password field above the message box
+  const box = $("keyask"); if (!box || (box.childNodes.length && !box.dataset.asks)) return;   // a paste card is open
+  box.replaceChildren(); box.dataset.asks = asks.length ? "1" : ""; box.hidden = !asks.length;
+  for (const a of asks) {
+    const c = el("div", null, "card");
+    c.append(el("div", "Claude asks for " + a.name + (a.description ? ": " + a.description : "") + (a.group ? " (" + a.group + ")" : ""), "q"),
+             el("div", "Type it here, not in the chat: it is kept by your system and given to sessions as $" + a.name + "; Claude never sees it.", "ev meta"));
+    c.append(keyForm({ name:a.name, what:a.description, group:a.group, scope:a.scope, ask:a.id }, async got => { box.dataset.asks = ""; await loadKeys(); offerRestart(got); },
+                     async () => { await api("api/secrets/dismiss", { ask:a.id }).catch(() => {}); box.dataset.asks = ""; loadKeys(); }));
+    box.append(c);
+  }
+}
+setInterval(() => { if (S.project && !document.hidden && $("keyask") && !($("keyask").childNodes.length && !$("keyask").dataset.asks))
+  api("api/secrets?project=" + S.project).then(d => paintAsks(d.asks || [])).catch(() => {}); }, 5000);
+function keyForm(k, done, cancel) {   // name, kind, value (hidden for a secret), group, for this project or all, what for
+  const f = el("form"), name = el("input"), value = el("input"), scope = el("select"), desc = el("input"), kind = el("select"), group = el("input");
   name.type = "text"; name.placeholder = "its name, such as AZURE_DEVOPS_EXT_PAT"; name.value = k.name || ""; name.setAttribute("aria-label", "Key name");
   name.addEventListener("input", () => { name.value = keyName(name.value) === "SECRET" && !name.value ? "" : name.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"); });
   value.type = "password"; value.placeholder = "its value (never shown again)"; value.autocomplete = "off"; value.setAttribute("aria-label", "Key value");
   if (k.value) { value.value = k.value; value.hidden = true; }
+  option(kind, "secret", "a secret (a password, a token: never shown)"); option(kind, "setting", "a setting (a host, a user, a port: shown)"); kind.setAttribute("aria-label", "Kind");
+  if (k.ask) kind.hidden = true;
+  kind.addEventListener("change", () => { value.type = kind.value === "setting" ? "text" : "password"; });
+  group.type = "text"; group.placeholder = "group, such as staging server (optional)"; group.value = k.group || ""; group.setAttribute("aria-label", "Group");
   option(scope, "project", "for this project"); option(scope, "all", "for all projects"); scope.setAttribute("aria-label", "For which projects");
+  if (k.scope === "all") scope.value = "all";
   desc.type = "text"; desc.placeholder = "what it is for (the agents read this)"; desc.value = k.what || ""; desc.setAttribute("aria-label", "Description");
   const acts = el("div", null, "acts"), ok = el("button", "Store", "primary"), no = el("button", "Cancel"); no.type = "button";
-  acts.append(ok, no); f.append(name, value, scope, desc, acts);
+  acts.append(ok, no); f.append(name, kind, value, group, scope, desc, acts);
   no.addEventListener("click", () => cancel ? cancel() : loadKeys());
   f.addEventListener("submit", async e => {
     e.preventDefault();
-    try { const got = await api("api/secrets/save", { project:S.project, name:name.value.trim(), value:value.value, scope:scope.value, description:desc.value.trim() });
+    try { const got = await api("api/secrets/save", { project:S.project, name:name.value.trim(), value:value.value, scope:scope.value, description:desc.value.trim(), kind:kind.value, group:group.value.trim(), ask:k.ask || "" });
           value.value = ""; done(got); }
     catch (err) { alert(err.message); }
   });
@@ -946,14 +1025,20 @@ function offerRestart(got) {
 }
 function keysFirst(text) {   // true: the message waits for the person's answer on the card above the box
   if (S.keysSent && S.keysSent === text) { S.keysSent = ""; return false; }
-  const found = findKeys(text); if (!found.length) return false;
-  const box = $("keyask"), c = el("div", null, "card"); box.replaceChildren(c); box.hidden = false;
+  const keys = findKeys(text); if (!keys.length) return false;
+  const sets = keys.some(k => /_PASSWORD$/.test(k.name)) ? findSettings(text).filter(x => !keys.some(k => x.start < k.start + k.value.length && k.start < x.start + x.value.length)) : [];
+  const found = keys.concat(sets).sort((a, b) => a.start - b.start);
+  const group = sets.length ? serverPrefix(text).toLowerCase().replace(/_/g, " ") + (/server/i.test(serverPrefix(text)) ? "" : " server") : "";
+  const box = $("keyask"), c = el("div", null, "card"); box.replaceChildren(c); box.hidden = false; box.dataset.asks = "";
   c.append(el("div", "This looks like a key. Store it safely instead of sending it?", "q"),
            el("div", "Stored, it is kept by your system and given to this project's sessions as an environment variable: Claude uses it by name and never sees it.", "ev meta"));
   const rows = found.map(k => {
     const name = el("input"); name.type = "text"; name.value = k.name; name.setAttribute("aria-label", "Name for " + k.what);
-    const r = el("div", null, "acts"); r.append(el("span", k.what + ", named", "s"), name); c.append(r); return { k, name };
+    const r = el("div", null, "acts"), use = el("input"); use.type = "checkbox"; use.checked = true; use.setAttribute("aria-label", "Store " + k.what);
+    r.append(use, el("span", k.setting ? k.what + " " + k.value + " (a setting: shown, not secret), named" : k.what + " (a secret), named", "s"), name);
+    c.append(r); return { k, name, use };
   });
+  if (group) c.append(el("div", "Kept together as \u201c" + group + "\u201d.", "ev meta"));
   const scope = el("select"); option(scope, "project", "for this project"); option(scope, "all", "for all projects"); scope.setAttribute("aria-label", "For which projects");
   const acts = el("div", null, "acts"), store = el("button", "Store and send without it", "primary"), as = el("button", "Send as it is"), no = el("button", "Cancel");
   for (const b of [store, as, no]) b.type = "button";
@@ -964,8 +1049,9 @@ function keysFirst(text) {   // true: the message waits for the person's answer 
   store.addEventListener("click", async () => {
     let out = text, names = [], restart = false;
     try {
-      for (const { k, name } of rows.slice().reverse()) {   // from the end: the earlier positions stay right
-        const got = await api("api/secrets/save", { project:S.project, name:name.value.trim(), value:k.value, scope:scope.value, description:k.what + " (from your message)" });
+      for (const { k, name, use } of rows.slice().reverse()) {   // from the end: the earlier positions stay right
+        if (!use.checked) continue;
+        const got = await api("api/secrets/save", { project:S.project, name:name.value.trim(), value:k.value, scope:scope.value, description:k.what + " (from your message)", kind:k.setting ? "setting" : "secret", group });
         out = out.slice(0, k.start) + "$" + got.name + out.slice(k.start + k.value.length); names.unshift(got.name);
         if ((got.open_sessions || []).length) restart = true;
       }
