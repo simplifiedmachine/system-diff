@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import os
 import sys
 import threading
@@ -986,7 +987,7 @@ def _parse(f: Path) -> Dict[str, Any]:
     entries: List[Dict[str, Any]] = []
     total = prompts = replies = 0
     first = title = summary = branch = ""
-    last = ""
+    last = asked = last_prompt = ""
     with open(f, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             try:
@@ -1015,6 +1016,9 @@ def _parse(f: Path) -> Dict[str, Any]:
                     got.append({"type": "user", "text": _cut(said, 6000)})
                     prompts += 1
                     first = first or said[:200]
+                    if not said.lstrip().startswith("<"):   # Claude Code's own (<task-notification>…): not the person's
+                        asked = asked or (said[:200] if not trivial_prompt(said) else "")
+                        last_prompt = said[:200]
                 for b in content if isinstance(content, list) else []:
                     if isinstance(b, dict) and b.get("type") == "tool_result":
                         c = b.get("content")
@@ -1041,7 +1045,8 @@ def _parse(f: Path) -> Dict[str, Any]:
             if len(entries) > KEEP_PARSED * 2:
                 del entries[:len(entries) - KEEP_PARSED]
     return {"entries": entries[-KEEP_PARSED:], "total": total, "prompts": prompts, "replies": replies,
-            "first": first, "title": title, "summary": summary, "branch": branch, "last": last}
+            "first": first, "title": title, "summary": summary, "branch": branch, "last": last,
+            "asked": asked, "last_prompt": last_prompt}
 
 
 def _quick(f: Path) -> Dict[str, Any]:
@@ -1168,6 +1173,15 @@ def left_off(project: Path, live: Optional[List[str]] = None) -> Dict[str, Dict[
     return out
 
 
+TRIVIAL = re.compile(r"^\s*(continue|go( on| ahead)?|yes|y|ok(ay)?|sure|proceed|next|resume|carry on|keep going|"
+                     r"are you (working|there|stuck)\??|status\??|done\??|thanks?( you)?|hi|hello)[\s.!?]*$", re.I)
+
+
+def trivial_prompt(text: str) -> bool:
+    """A prompt that says nothing about the work ("continue", "are you working?"): never a conversation's label."""
+    return bool(TRIVIAL.match(str(text or ""))) or len(str(text or "").split()) < 2
+
+
 def past(project: Path, live: Optional[List[str]] = None, most: int = 50) -> List[Dict[str, Any]]:
     """Claude Code's past conversations of this project (its transcripts), newest first, to resume one, each
     {"id", "first_prompt", "title", "summary", "branch", "modified" (ms), "size", "messages", "left_off" (the
@@ -1184,7 +1198,9 @@ def past(project: Path, live: Optional[List[str]] = None, most: int = 50) -> Lis
             continue
         if not got["first"] and not got["replies"] and f.stem not in stopped:
             continue   # nothing said in it (a session opened and left)
+        label = got["title"] or got["summary"] or got.get("asked") or got["first"]
         out.append({"id": f.stem, "first_prompt": got["first"], "summary": got["summary"][:200],
+                    "label": label[:200], "last_prompt": (got.get("last_prompt") or "")[:200],
                     "title": got["title"] or (stopped.get(f.stem) or {}).get("title", ""), "branch": got["branch"],
                     "modified": int(st.st_mtime * 1000), "size": st.st_size,
                     "messages": got["prompts"] + got["replies"], "rough": bool(got.get("rough")),

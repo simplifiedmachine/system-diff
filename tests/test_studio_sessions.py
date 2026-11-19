@@ -170,3 +170,21 @@ console.log(JSON.stringify([clock(75), toolName("mcp__system-diff__ui_view"),
   doingText({what:"tool"}, "waiting")]));"""], capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert json.loads(out.stdout) == ["1 min 15 s", "system-diff › ui_view", "Running Bash: git status",
                                       "Writing a reply", "Waiting for your answer (above)"]
+
+
+def test_past_conversations_are_labelled_by_what_was_asked(tmp_path):
+    """"continue" says nothing: a conversation is labelled by its summary, else its first real request, with its last
+    prompt beside it; the column has a Sessions button."""
+    import json as _j
+    from system_diff import app_page, sessions
+    f = tmp_path / "abc.jsonl"
+    rows = [{"type": "user", "message": {"role": "user", "content": "continue"}},
+            {"type": "user", "message": {"role": "user", "content": "Add PII guard rails and team access control"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "On it."}]}},
+            {"type": "user", "message": {"role": "user", "content": "are you working?"}}]
+    f.write_text("".join(_j.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    got = sessions.scan(f)
+    assert got["asked"].startswith("Add PII") and got["last_prompt"] == "are you working?"
+    assert sessions.trivial_prompt("continue") and sessions.trivial_prompt("Are you working?")
+    assert not sessions.trivial_prompt("deploy the api")
+    assert 'id="sessionsbtn"' in app_page.PAGE and "Last: " in app_page.PAGE

@@ -91,6 +91,10 @@ iframe#view { width:100%; height:100%; border:0; background:transparent; border-
 #grip { cursor:col-resize; border-radius:999px; background:transparent; margin:30vh 0; transition:background .16s ease; }
 #grip:hover, #grip.drag, #grip:focus-visible { background:color-mix(in srgb, var(--accent) 60%, transparent); }
 #chat { display:grid; grid-template-rows:auto auto 1fr auto; grid-template-columns:minmax(0,1fr); min-width:0; overflow:hidden; }
+.chathead { display:flex; align-items:center; gap:6px; margin:10px 10px 4px; }
+.chathead .tabs { flex:1; margin:0; }
+#sessionsbtn { white-space:nowrap; padding:5px 12px; border-radius:999px; }
+.pitem .pl { color:var(--muted); font-size:12px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tabs { display:flex; gap:2px; margin:10px 10px 4px; padding:3px; background:var(--code); border-radius:999px; }
 .tabs button { flex:1; border:0; box-shadow:none; background:transparent; border-radius:999px; padding:5px 10px; color:var(--muted); font-weight:500; }
 .tabs button[aria-selected="true"] { background:var(--glass-strong); color:var(--ink); box-shadow:0 1px 4px rgba(0,0,0,.12), inset 0 1px 0 var(--hair); }
@@ -215,10 +219,10 @@ input[type=password] { background:var(--glass-soft); border:1px solid var(--line
   </div>
   <div id="grip" role="separator" aria-orientation="vertical" aria-label="Resize the session" tabindex="0"></div>
   <aside id="chat" aria-label="Claude Code session">
-    <div class="tabs" role="tablist">
+    <div class="chathead"><div class="tabs" role="tablist">
       <button role="tab" id="tabsession" aria-selected="true">Session</button>
       <button role="tab" id="tabagents" aria-selected="false">Agents</button>
-    </div>
+    </div><button type="button" id="sessionsbtn" title="This project's conversations: new, open, past (like /resume)">☰ Sessions</button></div>
     <div id="sessionhead"><details id="optsbox" open><summary id="optsum"><b>Session options</b><span id="optline"></span></summary>
       <div class="opts" id="opts">
         <label for="sesspick">Session</label>
@@ -469,9 +473,13 @@ function paintPast() {
   box.append(top);
   const item = (p, left) => {
     const row = el("div", null, "pitem" + (left ? " left" : ""));
-    row.append(el("div", (p.title || p.summary || p.first_prompt || "(no prompt)").replace(/\s+/g, " ").slice(0, 120), "pt"));
+    const label = (p.label || p.title || p.summary || p.first_prompt || "(no prompt)").replace(/\s+/g, " ");
+    row.append(el("div", label.slice(0, 120), "pt"));
+    if (p.last_prompt && p.last_prompt.replace(/\s+/g, " ") !== label)
+      row.append(el("div", "Last: " + p.last_prompt.replace(/\s+/g, " ").slice(0, 140), "pl"));
+    const size = p.size ? (p.size > 1048576 ? (p.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(p.size / 1024)) + " KB") : "";
     const meta = [p.modified ? agoText(p.modified) : "", p.messages ? (p.rough ? "~" : "") + p.messages + " messages" : "",
-                  p.branch || "", left ? "open when the Studio stopped" : ""].filter(Boolean).join(" · ");
+                  size, p.branch || "", String(p.id || "").slice(0, 8), left ? "open when the Studio stopped" : ""].filter(Boolean).join(" · ");
     row.append(el("div", meta, "pm"));
     const b = el("button", left ? "Continue" : "Resume", left ? "primary" : ""); b.type = "button";
     b.title = (p.first_prompt || "") + "\n" + p.id;
@@ -488,12 +496,13 @@ function paintPast() {
     const q = el("input"); q.type = "search"; q.placeholder = "Search " + rest.length + " conversations"; q.setAttribute("aria-label", "Search past conversations");
     const ul = el("div", null, "past");
     const fill = () => { const t = q.value.trim().toLowerCase(); ul.replaceChildren();
-      for (const p of rest) if (!t || [p.title, p.summary, p.first_prompt, p.branch, p.id].join(" ").toLowerCase().includes(t)) ul.append(item(p, false)); };
+      for (const p of rest) if (!t || [p.label, p.title, p.summary, p.first_prompt, p.last_prompt, p.branch, p.id].join(" ").toLowerCase().includes(t)) ul.append(item(p, false)); };
     q.addEventListener("input", fill); fill(); box.append(q, ul);
   }
   f.append(box);
 }
 $("pastbtn").addEventListener("click", () => { S.showingPast = true; S.polling++; paintPast(); loadPast(); });
+$("sessionsbtn").addEventListener("click", () => { tab("session"); $("optsbox").open = false; $("pastbtn").click(); });   // one click from anywhere
 async function start(extra) {
   if (!S.project) { $("sstatus").textContent = "Pick a project first."; return null; }
   try { const s = await api("api/sessions", { ...choice(), ...(extra || {}) }); await loadSessions(); $("sesspick").value = s.id; follow(s.id); return s; }
