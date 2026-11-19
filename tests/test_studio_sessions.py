@@ -202,3 +202,9 @@ def test_a_conversation_open_in_a_session_is_not_resumed_twice():
     assert m.open_with("3ad4863d") is m.sessions["a"]
     assert m.open_with("94189708") is None and m.open_with("") is None
     assert "Open now (" in app_page.PAGE
+
+
+def test_each_running_call_shows_for_how_long():
+    from system_diff import app_page
+    p = app_page.PAGE
+    assert 'sp.dataset.at = String(ev.at ? ev.at * 1000 : Date.now())' in p and '"running · " + clock(' in p

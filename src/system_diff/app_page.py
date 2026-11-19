@@ -833,6 +833,11 @@ function paintHistory(ev, before) {   // a resumed conversation's past entries, 
 // A subagent is one line in the feed: its task, what it does now, its counts, its time; a click shows its own calls
 const SUB_TOOLS = ["Task", "Agent"], SUB_READS = ["Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch", "WebSearch"],
       SUB_EDITS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+// every call still running says for how long ("running · 23 s"), each on its own row: two at once are both visible
+setInterval(() => {
+  for (const sp of document.querySelectorAll("#feed .spin.run[data-at]"))
+    if (sp.isConnected && sp.textContent.startsWith("running")) sp.textContent = "running · " + clock(Math.max(0, Math.floor((Date.now() - +sp.dataset.at) / 1000)));
+}, 1000);
 function subOf(f, id) { return id ? f.querySelector('details.subline[data-sub="' + CSS.escape(id) + '"]') : null; }
 function subLine(ev) {
   const v = ev.view || {}, d = el("details", null, "ev tool subline"), s = el("summary");
@@ -912,7 +917,7 @@ function paint(ev, into) {
       const d = el("details", null, "ev tool"); const s = el("summary");
       s.append(el("span", toolName(ev.name), "nm"), " " + (ev.label || ev.view.file || ev.view.command || "").slice(0, 90));
       if (ev.agent) s.title = "by the subagent " + ev.agent;
-      if (!ev.past) s.append(el("span", "running", "spin run"));
+      if (!ev.past) { const sp = el("span", "running", "spin run"); sp.dataset.at = String(ev.at ? ev.at * 1000 : Date.now()); s.append(sp); }
       d.append(s, toolView(ev.view)); d.dataset.tid = ev.id;
       const ln = ev.parent ? subOf(f, ev.parent) : null;   // a subagent's own call: inside its one line
       if (ln) { ln.querySelector(".subcalls").append(d); subCount(ln, ev.name, ev.label || ev.view.file || ev.view.command || ""); }
