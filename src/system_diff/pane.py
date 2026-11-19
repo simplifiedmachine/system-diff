@@ -796,10 +796,16 @@ def team(root: Path, events: List[dict], code: Code) -> Dict[str, Dict[str, Any]
     st = agents.state(root)
     out: Dict[str, Dict[str, Any]] = {}
     for g in (st["plan"].get("agents") or []):
-        out[g["name"]] = {"area": g.get("area", ""), "blocks": g.get("blocks", []), "edits": [], "reads": [], "at": 0.0}
-    for aid, seen in agents.who_worked(events, code).items():
+        out[g["name"]] = {"area": g.get("area", ""), "blocks": g.get("blocks", []), "edits": [], "reads": [], "at": 0.0,
+                          "title": g["name"], "type": ""}
+    worked = agents.who_worked(events, code)
+    known = agents.titles(root) if any(aid not in st["ids"] and aid != agents.MAIN for aid in worked) else {}
+    kinds = {g["id"]: g["type"] for g in agents.adhoc(root, time.time() - 7 * 86400, 200)} if known else {}
+    for aid, seen in worked.items():
         name = st["ids"].get(aid) or (agents.MAIN if aid == agents.MAIN else "agent-" + aid[:6])
-        a = out.setdefault(name, {"area": "", "blocks": [], "edits": [], "reads": [], "at": 0.0})
+        title = (agents.title_of(root, aid, known) if name.startswith("agent-") or name == agents.MAIN else name)
+        a = out.setdefault(name, {"area": "", "blocks": [], "edits": [], "reads": [], "at": 0.0, "title": title,
+                                  "type": kinds.get(aid, "")})
         a["edits"] = sorted(set(a["edits"]) | set(seen["edits"]))
         a["reads"] = sorted(set(a["reads"]) | set(seen["reads"]))
         a["at"] = max(a["at"], seen["at"])
@@ -890,7 +896,7 @@ def _workflow_rows(page: canvas.Page, root: Path, width: int) -> None:
             st = x.get("status", "queued")
             extra = (f" {int(now - x['started']) // 60}m" if st == "running" and x.get("started") else
                      " waits for " + ", ".join(x.get("waiting_on") or []) if st == "waiting" else "")
-            runs.append(f"{WF_SIGN.get(st, '·')} {x.get('title') if x.get('kind') == 'step' else n}{extra}")
+            runs.append(f"{WF_SIGN.get(st, '·')} {x.get('title') or n}{extra}")
         page.para(" · ".join(runs), "", first=[f" {i}  ", "accent"])
 
 
@@ -1048,6 +1054,21 @@ def view_agents(root: Path, width: int) -> Dict[str, Any]:
 
 
 LANE = {"change": ("▲", 4), "message": ("✉", 3), "edit": ("✎", 2), "read": ("◎", 1)}
+SLOTS = 40   # marks on a web lane: one per slot of time, the strongest, with how many it stands for
+
+
+def bucketed(marks: List[tuple], start: float, span: float, slots: int = SLOTS) -> List[Dict[str, Any]]:
+    """A lane's marks for the page: never a row of identical marks, one per slot of time (the strongest kind
+    there), with how many it stands for."""
+    got: Dict[int, Dict[str, Any]] = {}
+    for at, kind in sorted(marks):
+        i = max(0, min(slots - 1, int((at - start) / max(span, 1e-6) * slots)))
+        b = got.setdefault(i, {"pos": (i + 0.5) / slots, "kind": kind, "n": 0, "of": {}})
+        b["n"] += 1
+        b["of"][kind] = b["of"].get(kind, 0) + 1
+        if LANE.get(kind, ("", 0))[1] > LANE.get(b["kind"], ("", 0))[1]:
+            b["kind"] = kind
+    return [got[i] for i in sorted(got)]
 
 
 def _lanes(root: Path, events: List[dict], who: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
@@ -1073,6 +1094,11 @@ def _lanes(root: Path, events: List[dict], who: Dict[str, Dict[str, Any]]) -> Di
         if m["at"] >= start and m["from"] in who:
             marks[m["from"]].append((m["at"], "change" if m.get("kind") == "change" else "message"))
     changes = {n: sum(1 for _at, k in ms if k == "change") for n, ms in marks.items()}
+    recent: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for e in events:
+        kind = {activity.EDIT: "edit", activity.READ: "read"}.get(e.get("event"))
+        if kind and e["at"] >= start:
+            recent[name_of(e.get("agent") or "")].append({"at": e["at"], "kind": kind, "path": e.get("path") or ""})
     lanes: Dict[str, Dict[str, Any]] = {}
     for name, a in who.items():
         e = last.get(name)
@@ -1083,8 +1109,13 @@ def _lanes(root: Path, events: List[dict], who: Dict[str, Dict[str, Any]]) -> Di
         touched = len(owned & set(a["edits"])) if owned else len(a["edits"])
         progress = (f" · {touched}/{len(owned)} blocks" if owned else f" · {touched} blocks") + (
             f" · {changes.get(name, 0)} changes" if changes.get(name) else "")
-        lanes[name] = {"marks": marks.get(name, []), "doing": doing, "last": e["at"] if e else 0.0,
-                       "progress": progress}
+        ms = marks.get(name, [])
+        counts = {k: sum(1 for _at, kk in ms if kk == k) for k in ("read", "edit", "change", "message")}
+        words = [f"{n} {w}{'' if n == 1 else 's'}" for n, w in ((counts["read"], "read"), (counts["edit"], "edit"),
+                                                               (counts["change"], "change"), (counts["message"], "message"))
+                 if n]
+        lanes[name] = {"marks": ms, "doing": doing, "last": e["at"] if e else 0.0, "progress": progress,
+                       "counts": " · ".join(words), "recent": recent.get(name, [])[-60:]}
     return {"start": start, "now": now, "span": max(120.0, now - start), "lanes": lanes}
 
 
@@ -1096,7 +1127,8 @@ def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who
     doing now and how far it has got."""
     L = _lanes(root, events, who)
     start, span = L["start"], L["span"]
-    label_w = min(14, max(len(n) for n in who) + 2)
+    label = {n: str(a.get("title") or n) for n, a in who.items()}
+    label_w = min(18, max(len(t) for t in label.values()) + 2)
     cells = max(10, min(60, width - label_w - 34))
     page.heading("Live", "since the turn began · ◎ read  ✎ edit  ▲ changed the system  ✉ told the others")
     for name in sorted(who, key=lambda n: colour[n]):
@@ -1109,7 +1141,7 @@ def swimlanes(page: canvas.Page, root: Path, events: List[dict], code: Code, who
             if r > rank[i]:
                 lane[i], rank[i] = glyph, r
         style = f"agent{colour[name]}"
-        runs = [[canvas.cut(name, label_w - 1).ljust(label_w), style + " bold"]]
+        runs = [[canvas.cut(label[name], label_w - 1).ljust(label_w), style + " bold"]]
         for ch in lane:
             runs.append([ch, "muted" if ch == "·" else style + (" bold" if ch == "▲" else "")])
         if me["doing"]:
@@ -1667,12 +1699,12 @@ def _web_agents(root: Path, zoom: int) -> Dict[str, Any]:
         blocks = sorted({"b:" + p for p in parts if p in drawn} | {"b:" + holder[p] for p in parts if p in holder})
         lit["ag:" + name] = blocks
         me = L["lanes"].get(name, {"marks": [], "doing": "", "progress": ""})
-        lanes.append({"name": name, "colour": colour[name], "area": a["area"],
+        lanes.append({"name": name, "title": a.get("title") or name, "type": a.get("type") or "",
+                      "colour": colour[name], "area": a["area"],
                       "live": bool(a["at"] and time.time() - a["at"] < 120), "doing": me["doing"],
                       "progress": me["progress"].lstrip(" ·"), "unread": unread_count(root, name),
-                      "marks": [{"pos": max(0.0, min(1.0, (at - L["start"]) / L["span"])), "kind": kind}
-                                for at, kind in sorted(me["marks"])],
-                      "blocks": blocks})
+                      "counts": me.get("counts", ""), "recent": me.get("recent", []),
+                      "marks": bucketed(me["marks"], L["start"], L["span"]), "blocks": blocks})
     objs = objectives.current(root)
     checks = objectives.checks(root) if objs else {}
     checked = _by_agent(checks)

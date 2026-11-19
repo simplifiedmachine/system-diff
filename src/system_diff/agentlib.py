@@ -62,7 +62,9 @@ def usage(root: Path) -> Dict[str, Dict[str, Any]]:
         for name, r in roles.items() if isinstance(roles, dict) else []:
             if not isinstance(r, dict):
                 continue
-            e = out.setdefault(name, {"planned": 0, "finished": 0, "last": 0, "area": "", "brief": "", "by": []})
+            e = out.setdefault(name, {"planned": 0, "finished": 0, "last": 0, "area": "", "brief": "", "by": [],
+                                      "title": ""})
+            e["title"] = e["title"] or str(r.get("title") or "")
             e["planned"] += int(r.get("planned") or 0)
             e["finished"] += int(r.get("finished") or 0)
             e["last"] = max(e["last"], float(r.get("last") or 0))
@@ -100,7 +102,65 @@ def finished(root: Path, agent_type: str) -> None:
         _note_global(root, agent_type, "finished")
 
 
-def _note_global(root: Path, role: str, field: str, prompt: str = "") -> None:
+GENERIC = ("general-purpose", "Explore", "Plan", "fork", "claude", "statusline-setup", "claude-code-guide")
+_SMALL = {"the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "with", "from", "into", "by", "at", "this",
+          "that", "these", "those", "all", "each", "any", "its", "it", "my", "our", "some", "new", "run"}
+
+
+def role_of(description: str, agent_type: str = "") -> str:
+    """The role a subagent plays, the same each time it comes back: its own type when it has one (a saved agent),
+    else its Task description's first two words that are not file names, numbers or small words ("Survey the files
+    in api" and "Survey files" are both survey-file)."""
+    if agent_type and agent_type not in GENERIC:
+        return _name(agent_type)
+    text = re.sub(r"\S*[./\\:]\S*|`[^`]*`", " ", str(description or "").lower())   # paths, files, code
+    words = [w for w in re.findall(r"[a-z][a-z-]*", text) if w not in _SMALL and len(w) > 1]
+    words = [w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w for w in words]
+    return _name("-".join(words[:2]))
+
+
+def _print_of(prompt: str) -> str:
+    import hashlib
+    core = re.sub(r"[^a-z]+", " ", str(prompt or "").lower()).strip()[:300]
+    return hashlib.sha1(core.encode("utf-8")).hexdigest()[:10] if len(core) >= 40 else ""
+
+
+def ran(root: Path, description: str, agent_type: str = "", prompt: str = "") -> str:
+    """A subagent finished: its role counted here and across the person's projects (generic subagents too, by what
+    they did, so a role Claude keeps launching on its own comes up as worth keeping). The same prompt under another
+    description counts as the same role. Returns the role."""
+    name = role_of(description, agent_type)
+    if not name:
+        return ""
+    f = _usage_file(root)
+    data = _load(f)
+    prints = data.setdefault("prints", {})
+    fp = _print_of(prompt)
+    if fp and prints.get(fp) and prints[fp] != name:
+        name = prints[fp]   # the same instructions under another description: one role
+    if fp:
+        prints[fp] = name
+        while len(prints) > 500:
+            prints.pop(next(iter(prints)))
+    roles = data.setdefault("roles", {})
+    r = roles.setdefault(name, {"planned": 0, "finished": 0})
+    r["finished"] = int(r.get("finished") or 0) + 1
+    r["last"] = round(time.time(), 3)
+    title = str(description or "").strip() or name.replace("-", " ")
+    title = title[:1].upper() + title[1:80]
+    if r.get("title") and r["title"] != title:   # seen under several descriptions: the role's own words
+        title = name.replace("-", " ").capitalize()
+    r["title"] = title
+    if prompt:
+        r["brief"] = str(prompt)[:4000]
+    if agent_type:
+        r["type"] = agent_type
+    _save(f, data)
+    _note_global(root, name, "finished", prompt=prompt, title=r["title"])
+    return name
+
+
+def _note_global(root: Path, role: str, field: str, prompt: str = "", title: str = "") -> None:
     """The across-projects count only (the repository's is counted by the caller)."""
     f = _global_file()
     if f is None or not _name(role):
@@ -111,6 +171,9 @@ def _note_global(root: Path, role: str, field: str, prompt: str = "") -> None:
         r = data.setdefault("roles", {}).setdefault(_name(role), {"kinds": {}})
         if prompt:
             r["prompt"] = str(prompt)[:4000]
+        if title and not r.get("description"):
+            r["description"] = f"Use to {title[:1].lower() + title[1:200]}."
+            r["title"] = title[:120]
         r["last"] = round(time.time(), 3)
         for kind in sorted(kind_of(root)):
             c = r["kinds"].setdefault(kind, {"planned": 0, "finished": 0, "projects": []})
@@ -164,10 +227,13 @@ def worth_keeping(root: Path) -> List[Dict[str, Any]]:
             continue
         standing = any(w in name.split("-") for w in STANDING)
         if c["planned"] >= 2 or c["finished"] >= 2 or (standing and c["finished"] >= 1):
+            title = c.get("title") or ""
+            why = ("a standing role" if standing and c["planned"] < 2 and c["finished"] < 2
+                   else f"{title} ran {c['finished']} times: keep it as an agent?" if title and not c["planned"]
+                   else f"planned {c['planned']}× and finished {c['finished']}×")
             out.append({"name": name, "planned": c["planned"], "finished": c["finished"], "area": c["area"],
-                        "why": ("a standing role" if standing and c["planned"] < 2 and c["finished"] < 2
-                                else f"planned {c['planned']}× and finished {c['finished']}×"),
-                        "brief": c["brief"][:600], "by": c["by"]})
+                        "why": why, "title": title, "brief": c["brief"][:4000], "by": c["by"],
+                        **({"description": f"Use to {title[:1].lower() + title[1:200]}."} if title else {})})
     out.sort(key=lambda r: -(r["planned"] + r["finished"]))
     return out
 

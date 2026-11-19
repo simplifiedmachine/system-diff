@@ -220,6 +220,13 @@ pre.lines .s-attention { color:var(--attn); font-weight:600; } pre.lines .s-acce
 .swim .who { display:grid; gap:1px; min-width:0; }
 .swim .name { font-weight:650; color:var(--lane); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .swim .area, .swim .doing { color:var(--muted); font-size:12.5px; overflow:hidden; text-overflow:ellipsis; }
+.swim .kind { color:var(--muted); font-size:11px; font-weight:500; margin-left:6px; }
+.swim .counts { color:var(--muted); font-size:12px; }
+.swim { cursor:pointer; }
+.swim-recent { margin:0 10px 8px; padding:6px 10px; max-height:220px; overflow:auto; list-style:none; font-size:12.5px;
+  background:var(--bg); border-radius:6px; }
+.swim-recent li { display:flex; gap:8px; color:var(--muted); }
+.swim-recent li b { color:var(--fg); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .swim .track { position:relative; height:34px; background:var(--bg); border-radius:6px; overflow:hidden; }
 .swim .done { position:absolute; left:0; top:0; bottom:0; background:var(--lane); opacity:.14; }
 .swim .mark { position:absolute; top:50%; transform:translate(-50%, -50%); font-size:15px; line-height:1; color:var(--lane); }
@@ -579,22 +586,26 @@ function steps(s) {
 }
 const MARKS = { read:"◎", look:"◎", edit:"✎", write:"✎", change:"▲", warn:"▲", collision:"▲", clash:"▲", message:"✉", msg:"✉",
                 publish:"✉", mail:"✉" };
+const openLanes = new Set();   // the lanes whose actions are shown, kept as the page redraws
 function lanes(s) {
   const c = card(s.title, s.aside), box = el("div", null, "lanes");
   for (const l of s.items || []) {
     const row = el("div", null, "swim lc" + ((l.colour | 0) % 5)), who = el("div", null, "who");
     row.dataset.blocks = JSON.stringify(l.blocks || []); row.dataset.pid = "ag:" + l.name;
     row.tabIndex = 0;
-    who.append(el("span", l.name, "name"));
-    if (l.area) who.append(el("span", l.area, "area"));
-    if (l.doing) who.append(el("span", l.doing, "doing"));
+    const nm = el("span", l.title || l.name, "name"); nm.title = l.title || l.name;
+    if (l.type && l.type !== l.title) nm.append(el("span", l.type, "kind"));
+    who.append(nm);
+    if (l.area && l.area !== l.type) who.append(el("span", l.area, "area"));
+    if (l.counts) who.append(el("span", l.counts, "counts"));
+    if (l.doing) who.append(el("span", l.doing.replace(/^[◎✎] /, ""), "doing"));
     const track = el("div", null, "track"), p = l.progress;
     if (typeof p === "number" && p >= 0 && p <= 1) { const d = el("div", null, "done"); d.style.width = (p * 100) + "%"; track.append(d); }
     for (const m of l.marks || []) {
       const k = String(m.kind || ""), icon = MARKS[k.toLowerCase()] || (k.length <= 2 ? k : "•");
       const mk = el("span", icon, "mark");
       mk.style.left = (Math.max(0.01, Math.min(0.99, +m.pos || 0)) * 100) + "%";
-      mk.title = k;
+      mk.title = m.of ? Object.entries(m.of).map(([kk, n]) => n + " " + kk + (n > 1 ? "s" : "")).join(", ") : k;
       track.append(mk);
     }
     const badges = el("div", null, "badges");
@@ -609,11 +620,21 @@ function lanes(s) {
     row.addEventListener("mouseenter", on); row.addEventListener("focus", on);
     row.addEventListener("mouseleave", off); row.addEventListener("blur", off);
     box.append(row);
+    if ((l.recent || []).length) {   // every action, on click (newest first)
+      const list = el("ul", null, "swim-recent"); list.hidden = !openLanes.has(l.name);
+      for (const r of l.recent.slice().reverse()) {
+        const li = el("li"); li.append(el("span", new Date(r.at * 1000).toLocaleTimeString()), el("span", r.kind === "edit" ? "edited" : "read"), el("b", r.path));
+        list.append(li);
+      }
+      row.addEventListener("click", () => { list.hidden = !list.hidden; if (list.hidden) openLanes.delete(l.name); else openLanes.add(l.name); });
+      row.addEventListener("keydown", e => { if (e.key === "Enter") row.click(); });
+      box.append(list);
+    }
   }
   if (!(s.items || []).length) c.append(el("div", "No agents in this team.", "empty-note"));
   else {
     c.append(box);
-    c.append(el("div", "◎ read · ✎ edit · ▲ changed the system · ✉ message", "legend"));
+    c.append(el("div", "◎ read · ✎ edit · ▲ changed the system · ✉ message · click a row for everything it did", "legend"));
   }
   return c;
 }
@@ -825,23 +846,25 @@ function dur(sec) { sec = Math.max(0, Math.round(sec)); return sec < 60 ? sec + 
 function wfStatusText(x) {
   if (x.status === "running") return "running";
   if (x.status === "done") return "done" + (x.started && x.finished ? " in " + dur(x.finished - x.started) : "");
+  if (x.status === "failed") return "failed" + (x.started && x.finished ? " after " + dur(x.finished - x.started) : "");
   if (x.status === "waiting") return "waits for " + (x.waiting_on || x.waits_for || []).join(", ");
   if (x.status === "queued") return x.kind === "step" ? "next" : "ready to launch";
   return x.status || "";
 }
 function wfNode(x) {
   const b = el("button", null, "wfnode st-" + (x.status || "queued")); b.type = "button"; b.dataset.wf = x.name || x.id;
-  const nm = el("span", null, "nm"); nm.append(x.kind === "step" ? (x.title || x.id) : x.name);
+  const nm = el("span", null, "nm"); nm.append(x.kind === "step" ? (x.title || x.id) : (x.title || x.name));
+  if (x.adhoc && x.type) nm.append(el("span", x.type, "by"));
   if (x.by && x.kind === "step") nm.append(el("span", x.by, "by"));
   if (x.added) nm.append(el("span", "added", "by"));
   const st = el("span", wfStatusText(x), "st");
   if (x.status === "running" && x.started) { const t = el("span", " · " + dur(Date.now() / 1000 - x.started), "ticker"); t.dataset.since = x.started; st.append(t); }
   b.append(nm, st);
   const meta = x.kind === "step" ? (x.detail || (x.kind_of_step || "")) :
-    [x.area !== x.name ? x.area : "", x.edits ? x.edits + " edit" + (x.edits > 1 ? "s" : "") : "", x.reads ? x.reads + " read" + (x.reads > 1 ? "s" : "") : ""].filter(Boolean).join(" · ");
+    [x.area !== x.name && x.area !== x.type ? x.area : "", x.edits ? x.edits + " edit" + (x.edits > 1 ? "s" : "") : "", x.reads ? x.reads + " read" + (x.reads > 1 ? "s" : "") : ""].filter(Boolean).join(" · ");
   if (meta) b.append(el("span", meta, "meta"));
   if (x.last) b.append(el("span", x.last, "meta"));
-  b.title = (x.kind === "step" ? "A step of " + x.by : "Agent " + x.name) + ": click for its session";
+  b.title = (x.kind === "step" ? "A step of " + x.by : x.adhoc ? "A subagent Claude launched: " + (x.title || x.name) : "Agent " + x.name) + ": click for its session";
   b.addEventListener("click", () => openAgentLog(x.name || x.id));
   return b;
 }
@@ -878,6 +901,7 @@ function workflowCard(s) {
     (wf.stages || []).forEach((names, i) => {
       const col = el("div", null, "wfcol"), head = el("div", null, "wfhead");
       head.append(el("b", "Stage " + (i + 1)), el("span", names.length > 1 ? "in parallel" : i ? "after stage " + i : "first"));
+      names = names.slice().sort((p, q) => ((by[p] || {}).started || 0) - ((by[q] || {}).started || 0));
       col.append(head);
       for (const n of names) if (by[n]) col.append(wfNode(by[n]));
       board.append(col);
@@ -926,7 +950,7 @@ async function loadAgentLog() {
 }
 function paintAgentLog() {
   const d = alog.data, me = d.agent || d.step || {};
-  $("alogname").textContent = me.kind === "step" || d.step ? (me.title || me.id) : me.name;
+  $("alogname").textContent = me.kind === "step" || d.step ? (me.title || me.id) : (me.title || me.name);
   $("alogmeta").textContent = [d.step ? "a step of " + me.by : me.area !== me.name ? me.area : "", wfStatusText(me),
     me.started ? "started " + new Date(me.started * 1000).toLocaleTimeString() : "", me.stage ? "stage " + me.stage : "",
     (me.blocks || []).length ? "blocks: " + me.blocks.join(", ") : ""].filter(Boolean).join(" · ");

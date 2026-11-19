@@ -9,7 +9,7 @@
    "container": "",
    "declared": true,
    "files": 3,
-   "lines": 669,
+   "lines": 683,
    "hub": false,
    "quiet": false
   },
@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 902,
+   "lines": 929,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 14,
-   "lines": 6337,
+   "lines": 6650,
    "hub": false,
    "quiet": false
   },
@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 963,
+   "lines": 1131,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 577,
+   "lines": 660,
    "hub": false,
    "quiet": false
   },
@@ -333,7 +333,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2755,
+   "lines": 2787,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 3339,
+   "lines": 3363,
    "hub": false,
    "quiet": false
   }
@@ -597,7 +597,7 @@
   "mcp>objectives": 2,
   "mcp>pictures": 1,
   "mcp>sources": 1,
-  "mcp>src/system_diff": 15,
+  "mcp>src/system_diff": 20,
   "mcp>textmap": 1,
   "names>graph": 1,
   "narrate>live": 1,
@@ -653,7 +653,7 @@
   "src/system_diff>fileview": 2,
   "src/system_diff>gitfs": 2,
   "src/system_diff>hub": 4,
-  "src/system_diff>live": 3,
+  "src/system_diff>live": 4,
   "src/system_diff>mcp": 1,
   "src/system_diff>narrate": 1,
   "src/system_diff>panel": 3,
@@ -718,7 +718,7 @@
    "ORCHESTRATE",
    "after_edit",
    "deliver",
-   "tie"
+   "state"
   ],
   "agent>chat": [
    "WEB_HINT",
@@ -763,15 +763,16 @@
    "run_hidden"
   ],
   "agent>src/system_diff": [
-   "finished"
+   "finished",
+   "ran"
   ],
   "agent>watch": [
    "py"
   ],
   "agents>activity": [
    "EDIT",
-   "_replace",
    "events",
+   "_replace",
    "PROMPT",
    "is_system",
    "part_of"
@@ -944,10 +945,10 @@
   "cli>src/system_diff": [
    "line",
    "run",
+   "save",
    "stop_everything",
    "OPEN_VIEW",
-   "check_name",
-   "forget"
+   "check_name"
   ],
   "cli>statusline": [
    "statusline"
@@ -1357,12 +1358,12 @@
    "repo_root"
   ],
   "mcp>src/system_diff": [
+   "save",
    "check",
    "config_preview",
    "graph",
    "report_issue",
-   "show",
-   "source"
+   "show"
   ],
   "mcp>textmap": [
    "plain",
@@ -1414,15 +1415,15 @@
    "label",
    "EDIT",
    "PROMPT",
-   "ago"
+   "READ"
   ],
   "panel>agents": [
    "MAIN",
    "state",
    "messages",
    "workflow",
-   "inbox",
-   "who_worked"
+   "adhoc",
+   "inbox"
   ],
   "panel>architecture": [
    "system",
@@ -1907,6 +1908,7 @@
    "mcp": 1,
    "os": 1,
    "pathlib": 1,
+   "re": 1,
    "shutil": 1,
    "socket": 1,
    "subprocess": 1,
@@ -2121,6 +2123,8 @@
    "urllib": 1
   },
   "mcp": {
+   "http": 1,
+   "json": 1,
    "mcp": 1,
    "os": 1,
    "pathlib": 1,
@@ -2224,11 +2228,11 @@
    "time": 9,
    "sys": 5,
    "threading": 5,
+   "hashlib": 3,
    "importlib": 3,
    "shutil": 3,
    "subprocess": 3,
    "claude_agent_sdk": 2,
-   "hashlib": 2,
    "http": 2,
    "urllib": 2,
    "asyncio": 1,
@@ -2314,6 +2318,7 @@
    "mcp": 1,
    "os": 1,
    "pathlib": 1,
+   "re": 1,
    "shutil": 1,
    "socket": 1,
    "subprocess": 1,
@@ -2529,6 +2534,8 @@
    "urllib.parse": 1
   },
   "mcp": {
+   "http.client": 1,
+   "json": 1,
    "mcp.server.fastmcp": 1,
    "mcp.server.mcpserver": 1,
    "mcp.types": 1,
@@ -2636,10 +2643,10 @@
    "time": 9,
    "sys": 5,
    "threading": 5,
+   "hashlib": 3,
    "shutil": 3,
    "subprocess": 3,
    "claude_agent_sdk": 2,
-   "hashlib": 2,
    "http.client": 2,
    "importlib.util": 2,
    "urllib.parse": 2,
@@ -2745,6 +2752,7 @@
   "tests/test_objectives_ui.py": 1,
   "tests/test_old_python.py": 1,
   "tests/test_page_tools.py": 1,
+  "tests/test_project_settings.py": 1,
   "tests/test_projects.py": 1,
   "tests/test_projects_content.py": 1,
   "tests/test_regroup.py": 1,
@@ -2756,6 +2764,7 @@
   "tests/test_studio_sessions.py": 1,
   "tests/test_svg.py": 1,
   "tests/test_system_diff.py": 1,
+  "tests/test_team_view.py": 1,
   "tests/test_terminal_and_learning.py": 1,
   "tests/test_topics_and_link.py": 1,
   "tests/test_tui.py": 1,

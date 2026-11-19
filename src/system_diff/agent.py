@@ -520,6 +520,26 @@ def touch(root: Path, paths: List[str]) -> None:
 TOUCH_WAIT = 0.5
 
 
+def note_launch(root: Path, payload: Dict[str, Any]) -> None:
+    """A Task (Agent) call came back: which subagent it launched (its id), with what description, type and prompt,
+    so the page names it by what it does and the workflow draws it."""
+    got = payload.get("tool_response")
+    inp = payload.get("tool_input") or {}
+    aid = ""
+    status = ""
+    if isinstance(got, dict):
+        aid = str(got.get("agentId") or got.get("agent_id") or "")
+        status = str(got.get("status") or "")
+    if not aid:
+        import re as _re
+        m = _re.search(r"agentId:?\s*\"?([A-Za-z0-9_-]{6,})", json.dumps(got, default=str) if got else "")
+        aid = m.group(1) if m else ""
+    if aid and isinstance(inp, dict):
+        agents.record_run(root, "launch", aid, str(inp.get("subagent_type") or ""), "",
+                          description=str(inp.get("description") or ""), prompt=str(inp.get("prompt") or ""),
+                          status=status, parent=str(payload.get("agent_id") or ""))
+
+
 def on_tool(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dict[str, str]]:
     """After every tool: hand the agent what other agents published since its last tool, and what the engine found
     after an earlier hook stopped waiting. For a read or an edit of a file, note it; hand the engine the edit (it
@@ -530,6 +550,8 @@ def on_tool(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dic
     named = (payload.get("tool_input") or {}).get("agent")
     if tool.startswith("mcp__system-diff__") and isinstance(named, str) and agent_id:
         agents.tie(root, agent_id, named)   # a subagent says who it is the first time it claims, publishes or reads
+    if tool in ("Task", "Agent"):
+        note_launch(root, payload)
     messages: List[str] = []
     context: List[str] = [agents.deliver(root, agent_id)]
     for late in take_said(root, agent_id):
@@ -673,10 +695,15 @@ def run_hook(stdin_text: str, emit: Callable[[str], None] = print, env=None) -> 
         elif event == "SubagentStop":   # a role finished: counted (agents worth keeping), and done in the workflow
             from . import agentlib
             aid = str(payload.get("agent_id") or "")
-            agents.record_run(root, "stop", aid, str(payload.get("agent_type") or ""),
-                              str(payload.get("agent_transcript_path") or "")
-                              or agents.subagent_transcript(str(payload.get("transcript_path") or ""), aid))
-            agentlib.finished(root, str(payload.get("agent_type") or ""))
+            where = (str(payload.get("agent_transcript_path") or "")
+                     or agents.subagent_transcript(str(payload.get("transcript_path") or ""), aid))
+            agents.record_run(root, "stop", aid, str(payload.get("agent_type") or ""), where)
+            if aid in agents.state(root)["ids"]:   # a planned agent: its plan counts it, and its own type here
+                agentlib.finished(root, str(payload.get("agent_type") or ""))
+            else:
+                info = agents.subagent_info(where)
+                agentlib.ran(root, info.get("description") or "", str(payload.get("agent_type") or info.get("type") or ""),
+                             info.get("prompt") or "")
         if message:
             emit(json.dumps({"systemMessage": message}))
     except Exception:  # noqa: BLE001 - a hook never fails a turn

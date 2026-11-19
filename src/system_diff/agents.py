@@ -60,6 +60,20 @@ def name_of(root: Path, agent_id: str) -> str:
     return _load(root)["ids"].get(agent_id) or "agent-" + agent_id[:6]
 
 
+def titles(root: Path) -> Dict[str, str]:
+    """How the page shows each agent id: its plan name once tied, else what it does (readable)."""
+    out = {g["id"]: g["title"] for g in adhoc(root, time.time() - 7 * 86400, 200)}
+    out.update(_load(root)["ids"])
+    return out
+
+
+def title_of(root: Path, agent_id: str, known: Optional[Dict[str, str]] = None) -> str:
+    """"You (the main session)", an agent's plan name, else what it does; never agent-<id> when anything says more."""
+    if not agent_id or agent_id == MAIN:
+        return "You (the main session)"
+    return (known if known is not None else titles(root)).get(agent_id) or "agent " + agent_id[:6]
+
+
 def tie(root: Path, agent_id: str, name: str) -> None:
     if agent_id and agent_id != MAIN and name:
         data = _load(root)
@@ -527,12 +541,15 @@ RUNS = "agent-runs.jsonl"   # each subagent's start and stop, from Claude Code's
 RUNS_KEEP = 2000
 
 
-def record_run(root: Path, event: str, agent_id: str, agent_type: str = "", transcript: str = "") -> None:
-    """A subagent started or stopped (the SubagentStart and SubagentStop hooks)."""
-    if not agent_id or event not in ("start", "stop"):
+def record_run(root: Path, event: str, agent_id: str, agent_type: str = "", transcript: str = "", **more: Any) -> None:
+    """A subagent started or stopped (the SubagentStart and SubagentStop hooks), or was launched (its Task call's
+    result: "description", "prompt", "status")."""
+    if not agent_id or event not in ("start", "stop", "launch"):
         return
-    line = json.dumps({"at": round(time.time(), 3), "event": event, "agent_id": agent_id,
-                       "agent_type": agent_type or "", "transcript": transcript or ""}, ensure_ascii=False)
+    rec: Dict[str, Any] = {"at": round(time.time(), 3), "event": event, "agent_id": agent_id,
+                           "agent_type": agent_type or "", "transcript": transcript or ""}
+    rec.update({k: (str(v)[:4000] if isinstance(v, str) else v) for k, v in more.items() if v})
+    line = json.dumps(rec, ensure_ascii=False)
     f = git_dir(root) / RUNS
     try:
         with open(f, "a", encoding="utf-8") as out:
@@ -558,6 +575,128 @@ def runs(root: Path, since: float = 0.0) -> List[Dict[str, Any]]:
         if isinstance(r, dict) and float(r.get("at") or 0) >= since:
             out.append(r)
     return out
+
+
+BUILT_IN = ("general-purpose", "Explore", "Plan", "fork", "claude", "statusline-setup", "claude-code-guide")
+_INFO: Dict[str, tuple] = {}
+
+
+def subagent_info(transcript: str) -> Dict[str, Any]:
+    """What Claude Code says about a subagent beside its transcript (agent-<id>.meta.json: the Task call's
+    description and the agent's type) and the prompt it was given (its transcript's first entry). Cached while the
+    files stay the same; {} when there is nothing to read."""
+    if not transcript:
+        return {}
+    t = Path(transcript)
+    meta = t.with_name(t.stem + ".meta.json")
+    try:
+        stamp = (meta.stat().st_mtime_ns if meta.exists() else 0, t.stat().st_size if t.exists() else 0)
+    except OSError:
+        return {}
+    hit = _INFO.get(transcript)
+    if hit is not None and hit[0] == stamp:
+        return hit[1]
+    out: Dict[str, Any] = {}
+    try:
+        m = json.loads(meta.read_text(encoding="utf-8")) if meta.exists() else {}
+        if isinstance(m, dict):
+            out.update({"description": str(m.get("description") or "")[:200], "type": str(m.get("agentType") or ""),
+                        "finished": bool(m.get("finished"))})
+    except (OSError, ValueError):
+        pass
+    try:
+        if t.exists():
+            with open(t, encoding="utf-8", errors="replace") as f:
+                for _n, line in zip(range(5), f):   # the prompt is the first user entry
+                    e = json.loads(line)
+                    msg = e.get("message") if isinstance(e, dict) else None
+                    if isinstance(msg, dict) and msg.get("role") == "user":
+                        c = msg.get("content")
+                        if isinstance(c, list):
+                            c = " ".join(str(x.get("text") or "") for x in c if isinstance(x, dict))
+                        out["prompt"] = str(c or "")[:4000]
+                        break
+    except (OSError, ValueError):
+        pass
+    if len(_INFO) > 500:
+        _INFO.clear()
+    _INFO[transcript] = (stamp, out)
+    return out
+
+
+def readable(info: Dict[str, Any], agent_type: str = "", agent_id: str = "") -> str:
+    """A subagent by what it does: the Task call's description, else its type (when not a generic one), else the
+    first words of its prompt, else a short id."""
+    d = str(info.get("description") or "").strip()
+    if d:
+        return d[:1].upper() + d[1:80]
+    kind = str(info.get("type") or agent_type or "")
+    if kind and kind not in BUILT_IN:
+        return kind
+    words = re.sub(r"\s+", " ", str(info.get("prompt") or "")).strip().split(" ")
+    if words and words[0]:
+        text = " ".join(words[:7])
+        return (text if len(words) <= 7 else text + "…")[:80]
+    return kind or ("agent " + agent_id[:6] if agent_id else "an agent")
+
+
+def adhoc(root: Path, since: float = 0.0, most: int = 30) -> List[Dict[str, Any]]:
+    """The subagents Claude launched on its own (no plan named them): each {"id", "title", "type", "started",
+    "finished", "transcript", "prompt", "description", "status"}, oldest first, the last `most`."""
+    ids = _load(root)["ids"]
+    by: Dict[str, Dict[str, Any]] = {}
+    for r in runs(root, since):
+        aid = str(r.get("agent_id") or "")
+        if not aid or aid in ids:
+            continue
+        g = by.setdefault(aid, {"id": aid, "type": "", "started": 0.0, "finished": 0.0, "transcript": "",
+                                "description": "", "prompt": "", "status": ""})
+        at = float(r.get("at") or 0)
+        g["type"] = g["type"] or str(r.get("agent_type") or "")
+        if r.get("transcript"):
+            g["transcript"] = str(r["transcript"])
+        if r.get("event") == "start":
+            g["started"] = g["started"] or at
+        elif r.get("event") == "stop":
+            g["finished"] = at
+        elif r.get("event") == "launch":
+            g["description"] = g["description"] or str(r.get("description") or "")
+            g["prompt"] = g["prompt"] or str(r.get("prompt") or "")
+            g["type"] = g["type"] or str(r.get("agent_type") or "")
+            g["started"] = g["started"] or at
+            if r.get("status") in ("failed", "error"):
+                g["status"] = "failed"
+    out = []
+    for g in by.values():
+        info = subagent_info(g["transcript"])
+        g["description"] = g["description"] or info.get("description", "")
+        g["prompt"] = g["prompt"] or info.get("prompt", "")
+        g["type"] = g["type"] or info.get("type", "")
+        if not g["finished"] and info.get("finished"):   # Claude Code says it finished; its stop was not heard
+            try:
+                g["finished"] = max(g["started"], Path(g["transcript"]).stat().st_mtime)
+            except OSError:
+                g["finished"] = g["started"]
+        g["title"] = readable({**info, "description": g["description"], "prompt": g["prompt"]}, g["type"], g["id"])
+        g["session"] = Path(g["transcript"]).parent.parent.name if g["transcript"] else ""
+        if g["started"] or g["finished"]:
+            out.append(g)
+    out.sort(key=lambda g: g["started"] or g["finished"])
+    return out[-most:]
+
+
+AFTER_GAP = 600.0   # seconds between one subagent's end and another's start that still read as "after it"
+
+
+def adhoc_waits(team: List[Dict[str, Any]]) -> Dict[str, set]:
+    """Who ran after whom among ad-hoc subagents: B after A when, in the same session, B started once A had finished
+    (and not long after); only the nearest (A is dropped when B also waited for someone who came after A)."""
+    waits: Dict[str, set] = {}
+    for b in team:
+        waits[b["id"]] = {a["id"] for a in team if a is not b and a["finished"] and b["started"]
+                          and a.get("session", "") == b.get("session", "")
+                          and a["finished"] <= b["started"] + 0.5 and b["started"] - a["finished"] < AFTER_GAP}
+    return {k: {a for a in v if not any(a in waits.get(c, set()) for c in v if c != a)} for k, v in waits.items()}
 
 
 def subagent_transcript(main_transcript: str, agent_id: str) -> str:
@@ -813,9 +952,37 @@ def workflow(root: Path) -> Dict[str, Any]:
             a["waits_for"] = a["waits_for"] + extra
             if a["status"] == "queued":
                 a["status"] = "waiting"
-    done = {a["name"] for a in out if a["status"] == "done"} | {k for k, v in steps.items() if v["status"] == "done"}
+    # the subagents Claude launched on its own (no plan named them): drawn too, ordered by their times
     for a in out:
-        a["waiting_on"] = [w for w in a["waits_for"] if w not in done]
+        a["title"] = a["name"]
+    loose = adhoc(root, since if agents_ else time.time() - 12 * 3600)
+    loose_waits = adhoc_waits(loose)
+    acts: Dict[str, Dict[str, Any]] = {}
+    if loose:
+        for e in activity.events(root, 2000):
+            aid = str(e.get("agent") or "")
+            if aid:
+                c = acts.setdefault(aid, {"reads": 0, "edits": 0, "last": "", "last_at": 0.0})
+                if e.get("event") == activity.EDIT:
+                    c["edits"] += 1
+                else:
+                    c["reads"] += 1
+                c["last"] = ("edited " if e.get("event") == activity.EDIT else "read ") + str(e.get("path") or "")
+                c["last_at"] = float(e.get("at") or 0)
+    for g in loose:
+        c = acts.get(g["id"], {"reads": 0, "edits": 0, "last": "", "last_at": 0.0})
+        status = "failed" if g["status"] == "failed" else "done" if g["finished"] else "running"
+        end = g["finished"] or now
+        out.append({"name": "sub:" + g["id"], "title": g["title"], "type": g["type"], "adhoc": True,
+                    "area": g["type"] if g["type"] and g["type"] not in BUILT_IN else "", "blocks": [],
+                    "waits_for": ["sub:" + w for w in sorted(loose_waits.get(g["id"], set()))], "stage": 1,
+                    "status": status, "waiting_on": [], "started": g["started"], "finished": g["finished"],
+                    "seconds": round(end - g["started"], 1) if g["started"] else 0.0,
+                    "edits": c["edits"], "reads": c["reads"], "last": c["last"], "last_at": c["last_at"],
+                    "added": False, "has_log": bool(g["transcript"])})
+    done = {a["name"] for a in out if a["status"] in ("done", "failed")} | {k for k, v in steps.items() if v["status"] == "done"}
+    for a in out:
+        a["waiting_on"] = [] if a.get("adhoc") else [w for w in a["waits_for"] if w not in done]
         if a["status"] == "waiting" and not a["waiting_on"]:
             a["status"] = "queued"
     for v in steps.values():
@@ -836,7 +1003,8 @@ def workflow(root: Path) -> Dict[str, Any]:
     top = max([a["stage"] for a in out] + [v["stage"] for v in steps.values()] or [1])
     stages = [[a["name"] for a in out if a["stage"] == n] + [k for k, v in steps.items() if v["stage"] == n]
               for n in range(1, top + 1)]
-    return {"task": pl.get("task") or "", "at": since, "order": pl.get("order") or "parallel", "agents": out,
+    return {"task": pl.get("task") or ("" if agents_ or not loose else "Subagents Claude launched on its own"),
+            "at": since, "order": pl.get("order") or "parallel", "agents": out,
             "steps": list(steps.values()), "stages": [s for s in stages if s]}
 
 
@@ -947,8 +1115,8 @@ def agent_log(root: Path, name: str) -> Dict[str, Any]:
     if me is None:
         raise KeyError(name)
     data = _load(root)
-    ids = [i for i, n in data["ids"].items() if n == name]
-    since = float(wf.get("at") or 0)
+    ids = [name[4:]] if name.startswith("sub:") else [i for i, n in data["ids"].items() if n == name]
+    since = 0.0 if name.startswith("sub:") else float(wf.get("at") or 0)
     transcript = ""
     for r in runs(root, since):
         if r["agent_id"] in ids or r.get("agent_type") == name:
