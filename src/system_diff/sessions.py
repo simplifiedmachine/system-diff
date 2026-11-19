@@ -178,6 +178,9 @@ def _redact(text: str) -> str:
         return text
 
 
+ASKS_THE_PERSON = {"AskUserQuestion", "ExitPlanMode"}   # questions for the person, not permissions: always shown
+
+
 def managed_settings_files() -> List[Path]:
     """Where an organization's managed Claude Code settings live (they win over everything the person sets)."""
     if os.name == "nt":
@@ -482,6 +485,14 @@ class Session:
     # ── what the SDK calls ────────────────────────────────────────────────────────────────────────────────────
     async def can_use_tool(self, tool_name: str, tool_input: Dict[str, Any], context: Any) -> Any:
         from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+        chosen = getattr(self, "mode", "") or self.options.get("permission_mode") or ""
+        if (self.options.get("permission_mode") == "bypassPermissions" or chosen == "bypassPermissions") \
+                and tool_name not in ASKS_THE_PERSON:
+            # the person chose "never ask": Claude Code asked anyway (an ask rule, a policy, a check it keeps in every
+            # mode); the Studio answers for them, and says so in the conversation
+            why = str(getattr(context, "decision_reason", "") or "") or asked_why(self.project, tool_name, self.options)
+            self.emit("note", text=self._mask(f"Allowed {tool_name} without asking (bypassPermissions): {why}")[:500])
+            return PermissionResultAllow(updated_input=tool_input)
         decision = await self.ask(tool_name, tool_input, context)
         if decision["allow"]:
             updates = decision.get("suggestions") if decision.get("always") else None

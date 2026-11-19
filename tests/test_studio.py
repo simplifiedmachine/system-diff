@@ -685,3 +685,18 @@ def test_a_card_says_why_claude_code_asked_in_bypass(monkeypatch, tmp_path):
     said = sessions.asked_why(tmp_path, "Bash", {"setting_sources": ["user"]})
     assert "Bash(cd:*)" in said and "Edit" not in said and "disableBypassPermissionsMode" in said
     assert "without saying why" in sessions.asked_why(tmp_path, "Bash", {"setting_sources": []})
+
+
+def test_bypass_is_honoured_when_claude_code_asks_anyway(tmp_path):
+    """The person chose never to be asked: a permission request is allowed by the Studio, and said in the feed."""
+    import asyncio
+    from types import SimpleNamespace
+    from system_diff import sessions
+    s = sessions.Session.__new__(sessions.Session)
+    s.options, s.mode, s.project, s.masks, s.events = {"permission_mode": "bypassPermissions", "setting_sources": []}, \
+        "bypassPermissions", tmp_path, [], []
+    s.emit = lambda kind, **kw: s.events.append((kind, kw))
+    got = asyncio.run(s.can_use_tool("Bash", {"command": "ls"}, SimpleNamespace(decision_reason="an ask rule")))
+    assert type(got).__name__ == "PermissionResultAllow"
+    assert s.events and "an ask rule" in s.events[0][1]["text"]
+    assert "AskUserQuestion" in sessions.ASKS_THE_PERSON

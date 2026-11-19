@@ -278,8 +278,8 @@ beside it, run by the app with your own Claude Code login and gateway:
 
 - Streaming answers, rendered as Markdown (lists, tables, code with a Copy button, links; raw HTML and script links
   stay text), tool calls as they happen, and a question card when a tool call needs your say (**Allow**,
-  **Allow always**, **Deny** with a reason). When Claude Code asks in a mode that should not ask (`bypassPermissions`),
-  the card says why: its own reason, a subagent asking, an `ask` rule in your settings, or your organization's policy.
+  **Allow always**, **Deny** with a reason). When Claude Code asks anyway in `bypassPermissions` (an `ask` rule, a
+  policy), the Studio allows it for you and notes why in the conversation; in other modes the card says why: its own reason, a subagent asking, an `ask` rule in your settings, or your organization's policy.
   In the message box, ↑ on the first line brings back what you sent in this project and ↓ goes forward to your draft. **Interrupt** stops a turn; a reload or a second tab replays the
   conversation; **Past conversations…** lists the project's earlier Claude Code conversations, like /resume, the ones open when the Studio stopped first ("Continue where you left off"); a resumed one shows what was said before. While Claude works, the line under the message box says what it is doing: the tool and its command or file, which subagent, how long, and when nothing has come from Claude Code for a minute.
 - Dropdowns for the **settings** (Claude Code's own, or one settings file such as `~/.claude/settings.bedrock.json`;
