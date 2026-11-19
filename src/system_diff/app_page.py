@@ -174,6 +174,12 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
 .compose textarea { width:100%; min-height:64px; max-height:40vh; resize:vertical; border-radius:14px; padding:9px 12px; }
 .compose .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
 .compose .row .st { flex-basis:100% !important; }   /* what Claude is doing: a line of its own, above the buttons */
+#teamstrip { margin:0 10px 6px; padding:8px 10px; border:1px solid var(--line); border-radius:12px; background:var(--glass-strong, var(--card, transparent)); font-size:12.5px; display:grid; gap:6px; }
+#teamstrip[hidden] { display:none; } #teamstrip .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+#teamstrip .stages { display:flex; flex-wrap:wrap; gap:5px; align-items:center; } #teamstrip .arrow { color:var(--muted); }
+#teamstrip .agent { padding:1px 8px; border-radius:999px; border:1px solid var(--line); white-space:nowrap; }
+#teamstrip .agent.st-running { border-color:var(--accent); color:var(--accent); }
+#teamstrip .agent.st-done { opacity:.65; } #teamstrip .agent.st-failed, #teamstrip .agent.st-interrupted { border-color:#d14; color:#d14; }
 .aboutchip { justify-self:start; display:flex; gap:6px; align-items:center; max-width:100%; font-size:12px; padding:3px 4px 3px 10px;
   border-radius:999px; background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--ink); }
 .aboutchip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -255,6 +261,7 @@ input[type=password] { background:var(--glass-soft); border:1px solid var(--line
     <div class="compose" id="compose">
       <div class="aboutchip" id="aboutchip" hidden title="Sent with your message, so Claude knows what you are looking at on the page"><span id="abouttext"></span><button type="button" id="aboutx" aria-label="Do not send this">×</button></div>
       <div id="resumeplan" hidden></div>
+      <div id="teamstrip" hidden></div>
       <div id="keyask" hidden></div>
       <textarea id="msg" placeholder="Ask Claude… (Enter sends, Shift+Enter a new line, ↑ ↓ past messages)" aria-label="Message to Claude"></textarea>
       <div class="row"><span class="st" id="sstatus"></span><button type="button" id="stop" class="danger" disabled>Interrupt</button><button type="button" id="closesess">Close</button><button type="button" id="isend" hidden title="Stop what Claude is doing and send this as the next request">Stop &amp; send</button><button type="button" id="send" class="primary">Send</button></div>
@@ -545,6 +552,25 @@ async function start(extra) {
 $("newsess").addEventListener("click", () => start());
 // a continued or resumed conversation in a project whose team plan has unfinished agents: offer to resume them, each
 // relaunched from what it did (resume_plan gives Claude their resume briefs)
+// While a team works: its stages and each agent's state, above the message box (the work is in the agents; this is
+// where it shows from the chat), with the board one click away in the page beside it.
+function paintTeam(t) {
+  const box = $("teamstrip"); if (!box) return;
+  if (!t || !t.agents || !t.unfinished) { box.hidden = true; return; }
+  box.replaceChildren(); box.hidden = false;
+  const head = el("div", null, "row");
+  head.append(el("b", "◆ Team · " + t.running + " running · " + (t.agents - t.unfinished) + " of " + t.agents + " done"));
+  const open = el("button", "Open the board"); open.type = "button";
+  open.addEventListener("click", () => { const f = $("view"); if (f && f.contentWindow) f.contentWindow.postMessage({ studio:"view", view:"agents" }, location.origin); });
+  head.append(open); box.append(head);
+  const line = el("div", null, "stages");
+  (t.stages || []).forEach((st, i) => {
+    if (i) line.append(el("span", "→", "arrow"));
+    for (const a of st) line.append(el("span", a.name + " · " + (a.status || "?"), "agent st-" + String(a.status || "").replace(/[^a-z]/g, "")));
+  });
+  box.append(line);
+}
+setInterval(() => { if (S.project && !document.hidden) api("api/plan?project=" + S.project).then(d => paintTeam(d.team)).catch(() => {}); }, 4000);
 async function checkPlan() {
   const box = $("resumeplan"); if (!box || !S.project) return;
   let d; try { d = await api("api/plan?project=" + S.project); } catch (e) { return; }

@@ -550,6 +550,7 @@ def handler(studio: Studio):
                     from . import agents
                     got = agents.resume_plan(self._root(q))
                     return self._json(200, {"task": got["task"], "unfinished": got["unfinished"],
+                                            "team": agents.team_brief(self._root(q)),
                                             "agents": [{k: a.get(k) for k in ("name", "status", "attempts", "stage")}
                                                        for a in got["agents"]]})
                 if path == "/api/past":   # this project's past conversations, the ones left off first

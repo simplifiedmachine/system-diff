@@ -133,3 +133,34 @@ def test_claude_is_told_each_turn_to_hand_work_to_the_projects_saved_agents(repo
     assert "pr-creation: Use when a branch is ready" in said and "subagent_type" in said
     out = agent.on_prompt(repo, {"prompt": "sure", "session_id": "s"}, {})
     assert "pr-creation" in (out or {}).get("context", "")
+
+
+def test_a_subagent_started_in_the_background_is_running_not_done(repo, monkeypatch):
+    """The Task call of a background subagent comes back at once ("async_launched"): the board said "done in 0s"
+    while it worked. Only its stop (or a launch that ran to the end) finishes it."""
+    from system_diff import agents
+    plan = {"at": 0, "task": "t", "agents": [{"name": "web", "blocks": [], "waits_for": []},
+                                              {"name": "api", "blocks": [], "waits_for": []}]}
+    monkeypatch.setattr(agents, "_load", lambda root: {"plan": plan, "ids": {"a1": "web", "a2": "api"}, "agents": {}, "claims": {}})
+    monkeypatch.setattr(agents, "runs", lambda root, since=0: [
+        {"at": 10.0, "event": "start", "agent_id": "a1"}, {"at": 10.1, "event": "launch", "agent_id": "a1", "status": "async_launched"},
+        {"at": 11.0, "event": "start", "agent_id": "a2"}, {"at": 30.0, "event": "launch", "agent_id": "a2", "status": "completed"}])
+    st = {a["name"]: a["status"] for a in agents.workflow(repo)["agents"]}
+    assert st == {"web": "running", "api": "done"}
+    t = agents.team_brief(repo)
+    assert t["agents"] == 2 and t["running"] == 1 and t["unfinished"] == 1
+
+
+def test_claude_is_told_the_running_plan_and_its_part(repo, monkeypatch):
+    from system_diff import agent, agents
+    monkeypatch.setattr(agents, "team_brief", lambda root: {"task": "fix the control center", "agents": 2, "running": 1,
+                                                             "unfinished": 2, "stages": [[{"name": "web", "status": "running"}],
+                                                                                        [{"name": "pr-creation", "status": "waiting"}]]})
+    said = agent.team_context(repo)
+    assert "stage 1: web running; stage 2: pr-creation waiting" in said and "You orchestrate it" in said
+
+
+def test_the_page_and_the_studio_lead_to_the_board_while_a_team_works():
+    from system_diff import app_page, watch
+    assert '"agents" : "now"' in watch.PAGE and 'id="teamchip"' in watch.PAGE and 'e.data.studio !== "view"' in watch.PAGE
+    assert "function paintTeam(" in app_page.PAGE and 'studio:"view", view:"agents"' in app_page.PAGE

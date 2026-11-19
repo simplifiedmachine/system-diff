@@ -283,9 +283,14 @@ def after_edit(root: Path, agent_id: str, part: Optional[str], notes: List[Dict[
         topic = (n.get("parts") or [part or "all"])[0] or "all"
         publish(root, topic, n["text"], sender=name, why=n.get("why", ""), kind="change")
     warn = ""
-    if part and claimed and claimed != name:
+    planned = {str(g.get("name")) for g in ((data.get("plan") or {}).get("agents") or []) if isinstance(g, dict)}
+    if part and claimed and claimed != name and claimed in planned:   # a claim of an earlier plan's agent: none
         warn = f"{part} is claimed by agent {claimed}; {name} just edited it"
-        publish(root, f"agent:{claimed}", f"{name} edited your block {part}", sender=name, kind="warning")
+        said = f"{name} edited your block {part}"
+        recent = [m for m in messages(root)[-50:] if m.get("topic") == f"agent:{claimed}" and m.get("text") == said
+                  and time.time() - float(m.get("at") or 0) < 600]
+        if not recent:   # once per block and editor, not at every edit
+            publish(root, f"agent:{claimed}", said, sender=name, kind="warning")
     from . import config
     wide = spread(root, name, agent_id, bp, config.lenient(root))
     unread = _for_context(inbox(root, name))
@@ -622,6 +627,23 @@ def record_run(root: Path, event: str, agent_id: str, agent_type: str = "", tran
         pass
 
 
+def team_brief(root: Path) -> Dict[str, Any]:
+    """The plan as it runs, in brief: {"task", "agents", "running", "unfinished", "stages": [[{"name", "status"}]]};
+    "agents": 0 with no plan. For the page's Follow Claude, the Studio's strip and Claude's prompt."""
+    try:
+        wf = workflow(root)
+    except Exception:  # noqa: BLE001 - a summary, never a failure
+        return {"task": "", "agents": 0, "running": 0, "unfinished": 0, "stages": []}
+    planned = [a for a in wf.get("agents") or [] if not str(a.get("name", "")).startswith("sub:")]
+    stages: Dict[int, List[Dict[str, str]]] = {}
+    for a in planned:
+        stages.setdefault(int(a.get("stage") or 1), []).append({"name": str(a.get("name")), "status": str(a.get("status") or "")})
+    return {"task": str(wf.get("task") or "")[:300], "agents": len(planned),
+            "running": sum(1 for a in planned if a.get("status") == "running"),
+            "unfinished": sum(1 for a in planned if a.get("status") not in ("done",)),
+            "stages": [stages[k] for k in sorted(stages)]}
+
+
 def runs(root: Path, since: float = 0.0) -> List[Dict[str, Any]]:
     from . import jsonl
     return [r for r in jsonl.read(git_dir(root) / RUNS) if isinstance(r, dict) and float(r.get("at") or 0) >= since]
@@ -939,6 +961,12 @@ def workflow(root: Path) -> Dict[str, Any]:
             i["interrupted"] = float(r["at"])
         elif i["interrupted"] and float(r["at"]) - i["interrupted"] < TEARDOWN:
             continue   # the stop Claude Code reports for the subagent it killed while closing
+        elif r["event"] == "launch":
+            # the Task call came back: it ran to the end ("completed"), or it was started in the background
+            # ("async_launched") and is still working: only its stop says it finished then
+            i["started"] = i["started"] or float(r["at"])
+            if str(r.get("status") or "") in ("completed", "done", "failed", "error"):
+                i["finished"] = float(r["at"])
         else:
             i["finished"] = float(r["at"])
         if r.get("transcript"):

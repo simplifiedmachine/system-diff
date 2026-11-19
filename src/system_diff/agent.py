@@ -445,6 +445,24 @@ def _drop_vscode_task(root: Path, out: Callable[[str], None]) -> None:
     out(f"removed the VS Code task from {path}")
 
 
+def team_context(root: Path) -> str:
+    """While the team plan has agents not done: where each stands, and Claude's part, the orchestrator's. "" else."""
+    try:
+        t = agents.team_brief(root)
+    except Exception:  # noqa: BLE001
+        return ""
+    if not t.get("agents") or not t.get("unfinished"):
+        return ""
+    stages = "; ".join(f"stage {i + 1}: " + ", ".join(f"{a['name']} {a['status']}" for a in st)
+                       for i, st in enumerate(t["stages"]))
+    return ("system-diff: a team plan is under way" + (f" ({t['task'][:160]})" if t["task"] else "") + ". " + stages +
+            ". You orchestrate it: keep the work in the agents. Launch the agents of the next stage together (with "
+            "their briefs: resume_plan or workflow) once the stage before has finished; pass the person's questions "
+            "and changes to the agent concerned (SendMessage), or add one (add_agent); answer how it is going from "
+            "the workflow tool, never from memory; do an agent's work yourself only if the person asks. The person "
+            "follows it on the Agents board.")
+
+
 SAVED_MOST = 8
 
 
@@ -481,6 +499,9 @@ def on_prompt(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[D
     hand_off(root, {"event": "prompt", "at": at, "agent": payload.get("agent_id") or ""}, PROMPT_WAIT, env)
     aims = objectives_context(root)
     kept = saved_agents_context(root)
+    running = team_context(root)
+    if running:   # a team at work: Claude orchestrates it, and answers from its board
+        kept = running + ("\n\n" + kept if kept else "")
     if kept:   # the project's own agents, named every turn: Claude hands their kind of work to them
         aims = kept + ("\n\n" + aims if aims else "")
     if asked and asked.get("web"):   # sent from the web page: Claude may point at the diagram as it answers

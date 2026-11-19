@@ -127,6 +127,7 @@ pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
              display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
 .card > h2 .aside { text-transform:none; letter-spacing:0; font-weight:400; }
 .headline { font-size:18px; font-weight:600; margin:0; }
+.teamchip { margin-top:4px; border-radius:999px; padding:2px 10px; font-size:12.5px; border:1px solid var(--work); color:var(--work); background:var(--work-bg); cursor:pointer; }
 .extprog { display:flex; align-items:center; gap:10px; margin-top:4px; color:var(--muted); font-size:13px; }
 .extprog i { display:block; width:160px; height:6px; border-radius:3px; background:var(--line); overflow:hidden; }
 .extprog i[hidden] { display:none; } .extprog b { display:block; height:100%; width:0; background:var(--accent, #3b6fd8); transition:width .4s; }
@@ -475,7 +476,7 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
 <div class="withnav">
 <nav id="leftnav" aria-label="Repositories and lists" hidden></nav>
 <main>
-  <div><p class="headline" id="headline">Reading the code…</p><div class="extprog" id="extprog" hidden><span></span><i><b></b></i></div><div class="filters" id="filters" hidden></div><div class="error" id="error"></div></div>
+  <div><p class="headline" id="headline">Reading the code…</p><button type="button" class="teamchip" id="teamchip" hidden></button><div class="extprog" id="extprog" hidden><span></span><i><b></b></i></div><div class="filters" id="filters" hidden></div><div class="error" id="error"></div></div>
   <section class="card" id="status" hidden></section>
   <div id="before" style="display:grid;gap:16px"></div>
   <section class="card dia" id="diacard" hidden><h2 id="diatitle"></h2>
@@ -1730,6 +1731,12 @@ function changed(key, value) {
 }
 function render(d) {
   ui.data = d;
+  {   // a team at work: said on every other view, one click to its board
+    const t = d.team || {}, chip = $("teamchip");
+    chip.hidden = !(t.running > 0 && ui.view !== "agents");
+    if (!chip.hidden) chip.textContent = "◆ A team of " + t.agents + " is working: " + t.running + " running" +
+      (t.unfinished > t.running ? " · " + (t.unfinished - t.running) + " to go" : "") + " · open the board";
+  }
   {   // a view's own filters (an extension's "All · Needs attention · Changed"): chips; the part carries the choice
     const fb = $("filters"), fs = Array.isArray(d.filters) ? d.filters : [];
     fb.replaceChildren(); fb.hidden = !fs.length;
@@ -1894,6 +1901,12 @@ async function load(wait) {
     throw e;
   } finally { if (polling === ctl) polling = null; }
 }
+$("teamchip").onclick = () => go("agents", "");
+// the Studio asks for a view (its strip's "Open the board")
+addEventListener("message", e => {
+  if (e.origin !== location.origin || !e.data || e.data.studio !== "view" || !VIEWS.includes(e.data.view)) return;
+  go(e.data.view, "");
+});
 // While an extension's view is still drawing ("Drawing …", "· updating…"), its own word on what it is doing, once a
 // second ("reading files 40% · 160 of 400 files"), with a bar when it says how far.
 setInterval(async () => {
@@ -1945,7 +1958,7 @@ function zoomBy(d) {
 }
 for (const b of document.querySelectorAll("#tabs button[data-view]")) b.onclick = () => go(b.dataset.view, "");
 $("back").onclick = back;
-$("follow").onclick = () => go("now", "");
+$("follow").onclick = () => go(ui.data && ui.data.team && ui.data.team.running ? "agents" : "now", "");   // a team at work: its board
 $("out").onclick = () => zoomBy(1);
 $("in").onclick = () => zoomBy(-1);
 let noted = 0;
@@ -2427,6 +2440,7 @@ def handler(w: Watcher):
             return self._json(200, {**page, "version": version, "engine_error": w.last_error(),
                                     "chat": chat_view(w, page),
                                     "repos": soon(("repos", str(w.root)), lambda: repos_view(w)) or [],
+                                    "team": soon(("team", str(w.root)), lambda: agents_mod().team_brief(w.root)) or {},
                                     "projects": soon(("mode", str(w.root)), lambda: projects_mode(w))
                                     or {"one": False, "found": 0}})
 
