@@ -541,6 +541,9 @@ def note_launch(root: Path, payload: Dict[str, Any]) -> None:
         agents.record_run(root, "launch", aid, str(inp.get("subagent_type") or ""), "",
                           description=str(inp.get("description") or ""), prompt=str(inp.get("prompt") or ""),
                           status=status, parent=str(payload.get("agent_id") or ""))
+        name = agents.state(root)["ids"].get(aid)
+        if name:   # its answer (a Task that ran to the end), kept for a relaunch after a stop
+            agents.remember(root, name, agents.response_text(got) if status in ("completed", "done") else "")
 
 
 def on_tool(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dict[str, str]]:
@@ -551,7 +554,8 @@ def on_tool(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dic
     tool = payload.get("tool_name", "")
     agent_id = payload.get("agent_id") or ""
     named = (payload.get("tool_input") or {}).get("agent")
-    if tool.startswith("mcp__system-diff__") and isinstance(named, str) and agent_id:
+    if (tool.startswith("mcp__system-diff__") or tool.startswith("mcp__plugin_system-diff_system-diff__")) \
+            and isinstance(named, str) and agent_id:
         agents.tie(root, agent_id, named)   # a subagent says who it is the first time it claims, publishes or reads
     if tool in ("Task", "Agent"):
         note_launch(root, payload)
@@ -706,8 +710,11 @@ def run_hook(stdin_text: str, emit: Callable[[str], None] = print, env=None) -> 
             where = (str(payload.get("agent_transcript_path") or "")
                      or agents.subagent_transcript(str(payload.get("transcript_path") or ""), aid))
             agents.record_run(root, "stop", aid, str(payload.get("agent_type") or ""), where)
-            if aid in agents.state(root)["ids"]:   # a planned agent: its plan counts it, and its own type here
+            named = agents.state(root)["ids"].get(aid)
+            if named:   # a planned agent: its plan counts it, and its own type here; what it did is kept for a relaunch
                 agentlib.finished(root, str(payload.get("agent_type") or ""))
+                agents.remember(root, named, str(payload.get("last_assistant_message") or "")
+                                or agents.last_answer(where))
             else:
                 info = agents.subagent_info(where)
                 agentlib.ran(root, info.get("description") or "", str(payload.get("agent_type") or info.get("type") or ""),

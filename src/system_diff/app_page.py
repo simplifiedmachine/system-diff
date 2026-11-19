@@ -254,6 +254,7 @@ input[type=password] { background:var(--glass-soft); border:1px solid var(--line
     <div id="agentsbox" hidden></div>
     <div class="compose" id="compose">
       <div class="aboutchip" id="aboutchip" hidden title="Sent with your message, so Claude knows what you are looking at on the page"><span id="abouttext"></span><button type="button" id="aboutx" aria-label="Do not send this">×</button></div>
+      <div id="resumeplan" hidden></div>
       <div id="keyask" hidden></div>
       <textarea id="msg" placeholder="Ask Claude… (Enter sends, Shift+Enter a new line, ↑ ↓ past messages)" aria-label="Message to Claude"></textarea>
       <div class="row"><span class="st" id="sstatus"></span><button type="button" id="stop" class="danger" disabled>Interrupt</button><button type="button" id="closesess">Close</button><button type="button" id="isend" hidden title="Stop what Claude is doing and send this as the next request">Stop &amp; send</button><button type="button" id="send" class="primary">Send</button></div>
@@ -516,10 +517,29 @@ $("pastbtn").addEventListener("click", () => { S.showingPast = true; S.polling++
 $("sessionsbtn").addEventListener("click", () => { tab("session"); $("optsbox").open = false; $("pastbtn").click(); });   // one click from anywhere
 async function start(extra) {
   if (!S.project) { $("sstatus").textContent = "Pick a project first."; return null; }
-  try { const s = await api("api/sessions", { ...choice(), ...(extra || {}) }); await loadSessions(); $("sesspick").value = s.id; follow(s.id); return s; }
+  try { const s = await api("api/sessions", { ...choice(), ...(extra || {}) }); await loadSessions(); $("sesspick").value = s.id; follow(s.id);
+        if (extra && extra.resume) checkPlan();   // a continued conversation: its plan may have agents to resume
+        return s; }
   catch (e) { $("sstatus").textContent = e.message; return null; }
 }
 $("newsess").addEventListener("click", () => start());
+// a continued or resumed conversation in a project whose team plan has unfinished agents: offer to resume them, each
+// relaunched from what it did (resume_plan gives Claude their resume briefs)
+async function checkPlan() {
+  const box = $("resumeplan"); if (!box || !S.project) return;
+  let d; try { d = await api("api/plan?project=" + S.project); } catch (e) { return; }
+  const todo = (d.agents || []).filter(a => a.status !== "done" && a.status !== "running");
+  if (!todo.length) { box.hidden = true; return; }
+  const c = el("div", null, "card"); box.replaceChildren(c); box.hidden = false;
+  c.append(el("div", "The plan has " + todo.length + " unfinished agent" + (todo.length > 1 ? "s" : "") + ": " +
+    todo.map(a => a.name + " (" + a.status + (a.attempts > 1 ? ", " + a.attempts + " attempts" : "") + ")").join(", ")));
+  const row = el("div", null, "row"), go = el("button", "Resume them", "primary"), no = el("button", "Dismiss");
+  go.type = "button"; no.type = "button";
+  go.addEventListener("click", () => { box.hidden = true;
+    $("msg").value = "Resume the plan: call resume_plan and relaunch the unfinished agents with their resume briefs."; send(); });
+  no.addEventListener("click", () => { box.hidden = true; });
+  row.append(go, no); c.append(row);
+}
 $("apply").addEventListener("click", async () => {
   if (!S.session) return;
   try { const s = await api("api/sessions/" + S.session.id + "/switch", choice()); await loadSessions(); $("sesspick").value = s.id; follow(s.id); $("apply").hidden = true; }

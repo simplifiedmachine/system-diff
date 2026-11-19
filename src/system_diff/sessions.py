@@ -599,6 +599,12 @@ class Session:
             return
         for req in list(self.pending):
             self.answer(req, False, message="the session was closed")
+        if any(s.get("status") == "running" for s in self.subs.values()):
+            try:   # a plan's agents still at work in it: interrupted, so resuming the plan relaunches them
+                from . import agents
+                agents.interrupted(self.project, str(self.claude_id or ""))
+            except Exception:  # noqa: BLE001
+                pass
         self.manager.call(self._stop())
 
     async def _stop(self) -> None:

@@ -50,7 +50,10 @@ INSTRUCTIONS = (
     "asks to keep or save an agent that ran, keep_agent saves it from its run. A project's "
     "settings (hosts, users, ports) and secrets (passwords, tokens) are in your environment by name: project_settings "
     "lists them, save_setting stores a setting the person gives you, and a secret's value is asked for with "
-    "ask_for_secret (a password field), never taken from the chat."
+    "ask_for_secret (a password field), never taken from the chat. An agent of a plan calls agent_note (done, next, "
+    "blockers) after each step and before it finishes. When a conversation with a plan is continued or resumed (after "
+    "a stop), call resume_plan before relaunching anyone: it says which agents are done, which were interrupted or "
+    "never launched, and gives each unfinished one a resume brief built from what it did; relaunch those with it."
 )
 WIDTH = 100  # the columns a diagram is drawn for
 
@@ -352,6 +355,22 @@ def build() -> Server:
         """The kinds of agent add_agent can add here: extensions' (research-diff's experiment runner, section writer,
         contradiction reviewer...) and the person's saved agents."""
         return {"kinds": list(agents.agent_kinds(_root()).values())}
+
+    @server.tool()
+    def agent_note(agent: str, done: str = "", next: str = "", notes: str = "",  # noqa: A002 - the word agents use
+                   blockers: str = "") -> Dict[str, Any]:
+        """An agent of the plan says where it is, after each meaningful step and before it finishes: what is done,
+        what is next, blockers, notes. Kept as its memory: if the session stops, whoever relaunches it (resume_plan)
+        starts from here instead of from scratch. `agent`: your name in the plan."""
+        return _safe(lambda: agents.agent_note(_root(), agent, done, next, notes, blockers))
+
+    @_read_only(server)
+    def resume_plan() -> Dict[str, Any]:
+        """Resuming a plan after a stop (a continued or resumed conversation): each planned agent's status (done,
+        running, interrupted, failed, not launched), its attempts and latest note, and for each one not done a
+        resume_brief (its brief, what it did so far: notes, files edited, unread messages, last answer). `how` says
+        which to relaunch together now: launch them with their resume briefs as their prompts."""
+        return agents.resume_plan(_root())
 
     @_read_only(server)
     def workflow() -> Dict[str, Any]:

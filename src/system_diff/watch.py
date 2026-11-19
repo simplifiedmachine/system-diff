@@ -319,6 +319,9 @@ dialog#agentlog::backdrop { background:rgba(10,14,20,.35); backdrop-filter:blur(
 dialog#agentlog header { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; padding:14px 18px 8px; border-bottom:1px solid var(--line); }
 dialog#agentlog h2 { margin:0; font-size:17px; } .alogmeta { color:var(--muted); font-size:12.5px; margin-top:3px; }
 .alogacts { display:flex; gap:8px; flex-wrap:wrap; padding:8px 18px 0; } .alogacts:empty { display:none; }
+.wfnode .meta.note { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.wfnode .meta.resumed { color:var(--work); }
+.alog.note div { margin:2px 0; }
 .alogtabs { display:flex; gap:4px; padding:8px 18px 0; border-bottom:1px solid var(--line); }
 .alogtabs button { border:0; background:transparent; padding:6px 10px; border-bottom:2px solid transparent; color:var(--muted); font:inherit; cursor:pointer; }
 .alogtabs button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--work); font-weight:600; }
@@ -856,6 +859,7 @@ function dur(sec) { sec = Math.max(0, Math.round(sec)); return sec < 60 ? sec + 
 function wfStatusText(x) {
   if (x.status === "running") return x.early ? "running · started early" : "running";
   if (x.status === "done") return "done" + (x.started && x.finished ? " in " + dur(x.finished - x.started) : "");
+  if (x.status === "interrupted") return "interrupted: its session stopped" + (x.attempts > 1 ? " (attempt " + x.attempts + ")" : "");
   if (x.status === "failed") return "failed" + (x.started && x.finished ? " after " + dur(x.finished - x.started) : "");
   if (x.status === "waiting") return "waits for " + (x.waiting_on || x.waits_for || []).join(", ");
   if (x.status === "queued") return x.kind === "step" ? "next" : x.skipped ? "not launched (Claude skipped it?)" : "ready to launch";
@@ -874,6 +878,8 @@ function wfNode(x) {
     [x.area !== x.name && x.area !== x.type ? x.area : "", x.edits ? x.edits + " edit" + (x.edits > 1 ? "s" : "") : "", x.reads ? x.reads + " read" + (x.reads > 1 ? "s" : "") : ""].filter(Boolean).join(" · ");
   if (meta) b.append(el("span", meta, "meta"));
   if (x.last) b.append(el("span", x.last, "meta"));
+  if (x.attempts > 1) b.append(el("span", "attempt " + x.attempts + " (resumed)", "meta resumed"));
+  if (x.note) { const n = el("span", "✎ " + x.note, "meta note"); n.title = x.note; b.append(n); }
   b.title = (x.kind === "step" ? "A step of " + x.by : x.adhoc ? "A subagent Claude launched: " + (x.title || x.name) : "Agent " + x.name) + ": click for its session";
   b.addEventListener("click", () => openAgentLog(x.name || x.id, x.title));
   return b;
@@ -961,7 +967,7 @@ RENDER.workflow = workflowCard;
 setInterval(() => { for (const t of document.querySelectorAll(".ticker[data-since]")) t.textContent = " · " + dur(Date.now() / 1000 - +t.dataset.since); }, 1000);
 const alog = { name:"", tab:"session", timer:0, data:null };
 async function openAgentLog(name, title) {   // title: the readable name the caller shows
-  alog.name = name; alog.tab = "session"; alog.data = null;
+  alog.name = name; alog.title = title || ""; alog.tab = "session"; alog.data = null;
   $("alogname").textContent = title || name; $("alogmeta").textContent = "Loading…"; $("alogbody").replaceChildren(); $("alogacts").replaceChildren();
   const d = $("agentlog"); if (!d.open) d.showModal();
   await loadAgentLog();
@@ -980,10 +986,12 @@ async function loadAgentLog() {
 }
 function paintAgentLog() {
   const d = alog.data, me = d.agent || d.step || {};
-  $("alogname").textContent = me.kind === "step" || d.step ? (me.title || me.id) : (me.title || title || me.name);
+  $("alogname").textContent = me.kind === "step" || d.step ? (me.title || me.id) : (me.title || alog.title || me.name);
   $("alogmeta").textContent = [d.step ? "a step of " + me.by : me.area !== me.name ? me.area : "", wfStatusText(me),
     me.started ? "started " + new Date(me.started * 1000).toLocaleTimeString() : "", me.stage ? "stage " + me.stage : "",
-    (me.blocks || []).length ? "blocks: " + me.blocks.join(", ") : ""].filter(Boolean).join(" · ");
+    (me.blocks || []).length ? "blocks: " + me.blocks.join(", ") : "",
+    ((d.memory || {}).attempts || []).length > 1 ? "attempt " + d.memory.attempts.length + " of " + d.memory.attempts.length + ", resumed" : ""
+  ].filter(Boolean).join(" · ");
   const acts = $("alogacts"); acts.replaceChildren();
   for (const a of STUDIO ? me.actions || [] : []) {   // acting on a step: in the Studio; this page only shows
     const b = el("button", a.charAt(0).toUpperCase() + a.slice(1)); b.type = "button";
@@ -999,6 +1007,8 @@ function paintAgentLog() {
   if (d.session && STUDIO) { const b = el("button", "Open its session"); b.type = "button"; b.addEventListener("click", () => parent.postMessage({ studio:"session", id:d.session }, location.origin)); acts.append(b); }
   const tabs = $("alogtabs"); tabs.replaceChildren();
   const have = [["session", "Session (" + (d.transcript || []).length + ")"], ["messages", "Messages (" + (d.messages || []).length + ")"], ["files", "Files (" + (d.files || []).length + ")"], ["brief", "Brief"]];
+  if (d.memory && ((d.memory.notes || []).length || d.memory.answer || (d.memory.attempts || []).length > 1))
+    have.splice(1, 0, ["memory", "Memory (" + (d.memory.notes || []).length + ")"]);
   for (const [k, label] of have) {
     const b = el("button", label); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(alog.tab === k));
     b.addEventListener("click", () => { alog.tab = k; paintAgentLog(); }); tabs.append(b);
@@ -1006,7 +1016,19 @@ function paintAgentLog() {
   const body = $("alogbody"), keep = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
   body.replaceChildren();
   const when = at => at ? new Date(at * 1000).toLocaleTimeString() : "";
-  if (alog.tab === "session") {
+  if (alog.tab === "memory") {   // what it kept for a relaunch: its notes, its attempts, its last answer
+    const m = d.memory || {};
+    const tries = m.attempts || [];
+    if (tries.length) body.append(el("div", tries.map((a, i) => "attempt " + (i + 1) + ": " + (a.finished ? "finished" : a.status || "stopped before it finished") + (a.started ? " · " + when(a.started) : "")).join("\n"), "alog meta"));
+    if (!(m.notes || []).length) body.append(el("div", "No notes yet: an agent of a plan keeps them with agent_note at each step.", "empty-note"));
+    for (const n of (m.notes || []).slice().reverse()) {
+      const row = el("div", null, "alog note");
+      row.append(el("div", when(n.at), "t"));
+      for (const k of ["done", "next", "blockers", "notes"]) if (n[k]) row.append(el("div", k + ": " + n[k]));
+      body.append(row);
+    }
+    if (m.answer) { body.append(el("div", "Its last answer", "t")); body.append(el("pre", m.answer, "alog text")); }
+  } else if (alog.tab === "session") {
     if (!(d.transcript || []).length) body.append(el("div", d.step ? "Nothing logged for this step yet." : "No session yet: it shows as soon as the agent starts (Claude Code writes it as the agent works).", "empty-note"));
     for (const e of d.transcript || []) {
       const row = el("div", null, "alog " + e.kind + (e.error ? " err" : ""));

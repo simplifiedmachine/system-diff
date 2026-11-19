@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 937,
+   "lines": 944,
    "hub": false,
    "quiet": false
   },
@@ -45,7 +45,7 @@
    "container": "",
    "declared": false,
    "files": 14,
-   "lines": 7185,
+   "lines": 7217,
    "hub": false,
    "quiet": false
   },
@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1228,
+   "lines": 1586,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 682,
+   "lines": 701,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 3429,
+   "lines": 3451,
    "hub": false,
    "quiet": false
   }
@@ -469,7 +469,7 @@
   "agents>architecture": 2,
   "agents>config": 1,
   "agents>design": 1,
-  "agents>extract": 2,
+  "agents>extract": 3,
   "agents>objectives": 1,
   "agents>sources": 1,
   "agents>src/system_diff": 6,
@@ -643,7 +643,7 @@
   "regroup>sources": 1,
   "sources>gitfs": 3,
   "src/system_diff>agent": 2,
-  "src/system_diff>agents": 5,
+  "src/system_diff>agents": 7,
   "src/system_diff>chat": 2,
   "src/system_diff>cli": 4,
   "src/system_diff>compare": 4,
@@ -715,10 +715,10 @@
   "agent>agents": [
    "match_planned",
    "record_run",
+   "state",
    "subagent_info",
    "subagent_transcript",
-   "state",
-   "ORCHESTRATE"
+   "remember"
   ],
   "agent>chat": [
    "WEB_HINT",
@@ -791,8 +791,8 @@
    "summarize"
   ],
   "agents>extract": [
-   "Code",
-   "redact"
+   "redact",
+   "Code"
   ],
   "agents>objectives": [
    "for_brief"
@@ -1309,8 +1309,8 @@
    "add_agent",
    "agent_kinds",
    "agent_log",
-   "claim",
-   "inbox"
+   "agent_note",
+   "claim"
   ],
   "mcp>chat": [
    "add_note",
@@ -1596,8 +1596,8 @@
    "set_steps",
    "state",
    "agent_kinds",
-   "runs",
-   "stages_of"
+   "interrupted",
+   "resume_plan"
   ],
   "src/system_diff>chat": [
    "delivered",
@@ -1923,6 +1923,7 @@
    "json": 1,
    "pathlib": 1,
    "re": 1,
+   "threading": 1,
    "time": 1,
    "typing": 1
   },
@@ -2337,6 +2338,7 @@
    "json": 1,
    "pathlib": 1,
    "re": 1,
+   "threading": 1,
    "time": 1,
    "typing": 1
   },
@@ -2737,6 +2739,7 @@
  "migrations": [],
  "tests": {
   "tests/conftest.py": 1,
+  "tests/test_agent_memory.py": 1,
   "tests/test_board_fixes.py": 1,
   "tests/test_branch_checkpoints.py": 1,
   "tests/test_capture.py": 1,

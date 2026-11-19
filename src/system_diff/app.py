@@ -499,6 +499,12 @@ def handler(studio: Studio):
                     root = self._root(q)
                     return self._json(200, {"keys": vault.listing(root, studio.folder), "store": vault.store_name(),
                                             "asks": studio.asks_for(root)})
+                if path == "/api/plan":   # the team plan's unfinished agents (the resume card): names, no briefs
+                    from . import agents
+                    got = agents.resume_plan(self._root(q))
+                    return self._json(200, {"task": got["task"], "unfinished": got["unfinished"],
+                                            "agents": [{k: a.get(k) for k in ("name", "status", "attempts", "stage")}
+                                                       for a in got["agents"]]})
                 if path == "/api/past":   # this project's past conversations, the ones left off first
                     from . import sessions
                     root = self._root(q)

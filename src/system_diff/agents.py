@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -501,6 +502,8 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
                  + (f"{label(needed_by)} use your blocks: keep their interfaces stable, and when you must change one, "
                     f"say so with the `publish` tool (topic: the block's id) before you do.\n" if needed_by else "")
                  + (f"Coordinate with: {', '.join(talks_to)}.\n" if talks_to else "")
+                 + f"After each meaningful step, and before you finish, call the system-diff `agent_note` tool with agent "
+                 f"\"{name}\" (done, next, blockers): if this session stops, whoever resumes your work starts from it.\n"
                  + "Finish with a short summary of what you changed in the system's structure.")
         if keep:
             brief += "\n" + keep
@@ -613,7 +616,7 @@ RUNS_KEEP = 2000
 def record_run(root: Path, event: str, agent_id: str, agent_type: str = "", transcript: str = "", **more: Any) -> None:
     """A subagent started or stopped (the SubagentStart and SubagentStop hooks), or was launched (its Task call's
     result: "description", "prompt", "status")."""
-    if not agent_id or event not in ("start", "stop", "launch"):
+    if not agent_id or event not in ("start", "stop", "launch", "interrupted"):
         return
     rec: Dict[str, Any] = {"at": round(time.time(), 3), "event": event, "agent_id": agent_id,
                            "agent_type": agent_type or "", "transcript": transcript or ""}
@@ -843,7 +846,9 @@ def add_agent(root: Path, name: str, brief: str = "", blocks: Iterable[str] = ()
          if blocks else f"Call system-diff tools with agent \"{name}\".\n") + \
         (f"You start after {design.and_list(waits, 6)} {'has' if len(waits) == 1 else 'have'} finished: first read "
          f"the system-diff `inbox` tool as \"{name}\" for what they changed.\n" if waits else "") + \
-        "Finish with a short summary of what you changed in the system's structure."
+        (f"After each meaningful step, and before you finish, call the system-diff `agent_note` tool with agent "
+         f"\"{name}\" (done, next, blockers): if this session stops, whoever resumes your work starts from it.\n"
+         "Finish with a short summary of what you changed in the system's structure.")
     pl["agents"].append({"name": name, "area": area or name, "blocks": blocks, "subscribes": [], "talks_to": [],
                          "waits_for": waits, "stage": stage, "added": round(time.time(), 3),
                          **({"kind": k["kind"], "by": k["by"]} if k else {})})
@@ -938,7 +943,8 @@ def workflow(root: Path) -> Dict[str, Any]:
     ids = dict(data["ids"])
     names = {g["name"] for g in agents_}
     info: Dict[str, Dict[str, Any]] = {g["name"]: {"started": 0.0, "finished": 0.0, "transcript": "", "ids": [],
-                                                   "edits": 0, "reads": 0, "last": "", "last_at": 0.0}
+                                                   "edits": 0, "reads": 0, "last": "", "last_at": 0.0,
+                                                   "interrupted": 0.0}
                                        for g in agents_}
     for r in runs(root, since):
         who = ids.get(r["agent_id"]) or (r.get("agent_type") if r.get("agent_type") in names else "")
@@ -950,6 +956,11 @@ def workflow(root: Path) -> Dict[str, Any]:
         if r["event"] == "start":
             i["started"] = i["started"] or float(r["at"])
             i["finished"] = 0.0 if float(r["at"]) > i["finished"] else i["finished"]
+            i["interrupted"] = 0.0
+        elif r["event"] == "interrupted":
+            i["interrupted"] = float(r["at"])
+        elif i["interrupted"] and float(r["at"]) - i["interrupted"] < TEARDOWN:
+            continue   # the stop Claude Code reports for the subagent it killed while closing
         else:
             i["finished"] = float(r["at"])
         if r.get("transcript"):
@@ -970,6 +981,10 @@ def workflow(root: Path) -> Dict[str, Any]:
         i["last_at"] = float(e["at"])
     now = time.time()
     out = []
+    try:
+        mem = memory(root)
+    except Exception:  # noqa: BLE001 - the board stands without the agents' memory
+        mem = {}
     for g in agents_:
         i = info[g["name"]]
         waits = list(g.get("waits_for") or [])
@@ -978,6 +993,8 @@ def workflow(root: Path) -> Dict[str, Any]:
                                             for w in waits if w in info)
         if i["finished"]:
             status = "done"
+        elif i["started"] and i["interrupted"]:
+            status = "interrupted"   # its session ended mid-task: resume_plan relaunches it from its memory
         elif i["started"]:
             status = "running"
         elif any(not info.get(w, {}).get("finished") for w in waits):
@@ -992,7 +1009,8 @@ def workflow(root: Path) -> Dict[str, Any]:
                     "seconds": round(end - i["started"], 1) if i["started"] else 0.0,
                     "edits": i["edits"], "reads": i["reads"], "last": i["last"], "last_at": i["last_at"],
                     "added": bool(g.get("added")), "has_log": bool(i["transcript"] or i["ids"]),
-                    "early": early, "launched": bool(i["started"])})
+                    "early": early, "launched": bool(i["started"]), "attempts": len(i["ids"]),
+                    "note": _note_text(((mem.get(g["name"]) or {}).get("notes") or [None])[-1])})
     # the steps extensions add (a saved workflow's, kept with the plan; and those extensions report live)
     steps: Dict[str, Dict[str, Any]] = {}
     for x in pl.get("steps") or []:
@@ -1086,6 +1104,337 @@ def workflow(root: Path) -> Dict[str, Any]:
             "planned": len(planned), "launched": sum(1 for a in planned if a.get("launched")),
             "skipped": [a["name"] for a in planned if a.get("skipped")]}
 
+
+# ── each planned agent's memory: what it did, so an agent relaunched after a stop resumes instead of starting over ──
+
+MEMORY = "agent-memory.json"
+NOTES_KEEP, FILES_KEEP, MSGS_KEEP, ANSWER_MOST = 20, 50, 30, 4000
+FAILED = ("failed", "error", "killed", "cancelled")
+TEARDOWN = 60.0   # seconds after the Studio marks an agent interrupted in which Claude Code's closing events don't count
+_MEM_LOCK = threading.Lock()
+
+
+def _mem_load(root: Path) -> Dict[str, Any]:
+    """{"plan_at", "agents": {name: {"notes", "files", "messages", "answer", "answer_at"}}}: a new plan, a new memory."""
+    f = git_dir(root) / MEMORY
+    at = float((_load(root).get("plan") or {}).get("at") or 0)
+    for attempt in range(4):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and float(data.get("plan_at") or 0) == at and isinstance(data.get("agents"), dict):
+                return data
+            break
+        except FileNotFoundError:
+            break
+        except (OSError, ValueError):
+            time.sleep(0.02 * (attempt + 1))
+    return {"plan_at": at, "agents": {}}
+
+
+def _mem_save(root: Path, data: Dict[str, Any]) -> None:
+    f = git_dir(root) / MEMORY
+    text = json.dumps(data, ensure_ascii=False, indent=1) + "\n"
+    for attempt in range(4):
+        try:
+            activity._replace(f, text)
+            return
+        except PermissionError:
+            if attempt == 3:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
+_TOKEN = re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}"
+                    r"|sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,})")
+_LONG = re.compile(r"\b[A-Za-z0-9+/_=-]{32,}\b")
+_PAIR = re.compile(r"(?i)(\b[\w.-]*(?:key|token|secret|password|passwd|pwd|pat)[\w.-]*\s*[=:]\s*['\"]?)(?!\$)[^\s'\",;]{4,}")
+
+
+def _masked(text: str) -> str:
+    """Free text with what looks like a key or token masked (an agent's note or answer: kept on disk and shown)."""
+    from .extract import redact
+    out = []
+    for line in str(text or "").split("\n"):
+        line = redact(line) if ("=" in line or "@" in line) else line
+        line = _PAIR.sub(lambda m: m.group(1) + "***", line)
+        line = _TOKEN.sub("***", line)
+        line = _LONG.sub(lambda m: "***" if (re.search(r"\d", m.group(0)) and re.search(r"[A-Za-z]", m.group(0))
+                                             and not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", m.group(0))
+                                             and "/" not in m.group(0)) else m.group(0), line)
+        out.append(line)
+    return "\n".join(out)
+
+
+def _mem_of(data: Dict[str, Any], name: str) -> Dict[str, Any]:
+    return data["agents"].setdefault(name, {"notes": [], "files": [], "messages": [], "answer": "", "answer_at": 0.0})
+
+
+def memory(root: Path) -> Dict[str, Dict[str, Any]]:
+    """Every planned agent's memory, by name."""
+    return _mem_load(root)["agents"]
+
+
+def planned_names(root: Path) -> List[str]:
+    return [str(g["name"]) for g in (_load(root).get("plan") or {}).get("agents") or [] if isinstance(g, dict)
+            and g.get("name")]
+
+
+def agent_note(root: Path, agent: str, done: str = "", next_: str = "", notes: str = "",
+               blockers: str = "") -> Dict[str, Any]:
+    """An agent of the plan says where it is (at each milestone, and before it finishes): kept, the newest
+    NOTES_KEEP, so an agent relaunched after a stop starts from it."""
+    agent = str(agent or "").strip()
+    if not agent:
+        raise ValueError("agent: your name in the plan")
+    names = planned_names(root)
+    if names and agent not in names:
+        raise ValueError(f"no agent {agent!r} in the plan: one of {', '.join(names)}")
+    said = {k: _masked(str(v))[:1500] for k, v in (("done", done), ("next", next_), ("notes", notes),
+                                                  ("blockers", blockers)) if str(v or "").strip()}
+    if not said:
+        raise ValueError("say at least one of done, next, notes, blockers")
+    with _MEM_LOCK:
+        data = _mem_load(root)
+        m = _mem_of(data, agent)
+        m["notes"] = (m["notes"] + [{"at": round(time.time(), 3), **said}])[-NOTES_KEEP:]
+        _snapshot(root, data, agent)
+        _mem_save(root, data)
+    return {"kept": agent, "notes": len(m["notes"]),
+            "next": "keep going; call agent_note again at your next milestone and before you finish"}
+
+
+def response_text(got: Any) -> str:
+    """A Task call's answer as text (its result), whatever shape the hook gives it in."""
+    if isinstance(got, str):
+        return got
+    if isinstance(got, dict):
+        for k in ("result", "text", "output"):
+            if isinstance(got.get(k), str) and got[k].strip():
+                return got[k]
+        content = got.get("content")
+        if isinstance(content, list):
+            return "\n".join(str(b.get("text") or "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+        if isinstance(content, str):
+            return content
+    if isinstance(got, list):
+        return "\n".join(response_text(x) for x in got)
+    return ""
+
+
+def last_answer(transcript: str) -> str:
+    """The last thing a subagent said (the last assistant text of its transcript), "" when there is none."""
+    if not transcript:
+        return ""
+    last = ""
+    try:
+        with open(transcript, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if '"assistant"' not in line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                content = ((d.get("message") or {}).get("content")) if isinstance(d, dict) else None
+                text = "\n".join(str(b.get("text") or "") for b in content if isinstance(b, dict)
+                                 and b.get("type") == "text").strip() if isinstance(content, list) else ""
+                if text:
+                    last = text
+    except OSError:
+        return ""
+    return last
+
+
+def _snapshot(root: Path, data: Dict[str, Any], name: str) -> None:
+    """What `name` read and edited and what it said and heard on the bus, merged into its memory (kept when the
+    activity log or the bus rolls past them)."""
+    m = _mem_of(data, name)
+    team = _load(root)
+    ids = {i for i, n in team["ids"].items() if n == name}
+    since = float(data.get("plan_at") or 0)
+    files = {f["path"]: f for f in m.get("files") or [] if isinstance(f, dict) and f.get("path")}
+    for e in activity.events(root, 2000):
+        if str(e.get("agent") or "") not in ids or float(e.get("at") or 0) < since or not e.get("path"):
+            continue
+        path = str(e["path"])
+        was = files.pop(path, None) or {"path": path, "edited": False}
+        files[path] = {"path": path, "edited": bool(was.get("edited") or e.get("event") == activity.EDIT),
+                       "at": float(e["at"])}
+    m["files"] = list(files.values())[-FILES_KEEP:]
+    a = team["agents"].get(name) or {}
+    topics = set(a.get("topics") or []) | {f"agent:{name}", "all"}
+    after = int((team.get("plan") or {}).get("after") or 0)
+    got = [{"n": x["n"], "at": x.get("at"), "from": x.get("from"), "topic": x.get("topic"),
+            "text": _masked(str(x.get("text") or ""))[:500]}
+           for x in messages(root, after) if x.get("from") == name or x.get("topic") in topics]
+    seen = {x["n"]: x for x in m.get("messages") or [] if isinstance(x, dict) and "n" in x}
+    seen.update({x["n"]: x for x in got})
+    m["messages"] = [seen[k] for k in sorted(seen)][-MSGS_KEEP:]
+
+
+def remember(root: Path, name: str, answer: str = "") -> None:
+    """Keep what `name` did (a subagent of it stopped, or its Task call came back): its files and messages, and its
+    last answer. Never raises: the hooks call it."""
+    try:
+        if not name or name == MAIN or name not in planned_names(root):
+            return
+        with _MEM_LOCK:
+            data = _mem_load(root)
+            m = _mem_of(data, name)
+            if answer and answer.strip():
+                m["answer"], m["answer_at"] = _masked(answer.strip())[-ANSWER_MOST:], round(time.time(), 3)
+            _snapshot(root, data, name)
+            _mem_save(root, data)
+    except Exception:  # noqa: BLE001 - memory is a help: a failure never stops a hook
+        pass
+
+
+def attempts(root: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """Each planned agent's launches since the plan, oldest first: {"id", "started", "finished", "status" (the Task
+    call's), "transcript", "last_at"}. A relaunch after a stop is a second attempt under the same name."""
+    data = _load(root)
+    since = float((data.get("plan") or {}).get("at") or 0)
+    names = set(planned_names(root))
+    out: Dict[str, Dict[str, Dict[str, Any]]] = {n: {} for n in names}
+    for r in runs(root, since):
+        who = data["ids"].get(r["agent_id"]) or (r.get("agent_type") if r.get("agent_type") in names else "")
+        if who not in out:
+            continue
+        a = out[who].setdefault(r["agent_id"], {"id": r["agent_id"], "started": 0.0, "finished": 0.0, "status": "",
+                                                "transcript": "", "last_at": 0.0, "interrupted": 0.0})
+        at = float(r.get("at") or 0)
+        if r["event"] == "start":
+            a["started"] = a["started"] or at
+        elif r["event"] == "interrupted":
+            a["interrupted"] = at
+        elif a["interrupted"] and at - a["interrupted"] < TEARDOWN:
+            pass   # Claude Code, closing, reports the subagent it killed as stopped and completed: it was not
+        elif r["event"] == "stop":
+            a["finished"] = at
+        elif r["event"] == "launch":
+            a["started"] = a["started"] or at
+            a["status"] = str(r.get("status") or a["status"])
+            if a["status"] in ("completed", "done") and not a["finished"]:
+                a["finished"] = at
+        a["transcript"] = r.get("transcript") or a["transcript"]
+        a["last_at"] = max(a["last_at"], at)
+    for e in activity.events(root, 2000):
+        aid = str(e.get("agent") or "")
+        who = data["ids"].get(aid)
+        if who in out and aid in out[who]:
+            out[who][aid]["last_at"] = max(out[who][aid]["last_at"], float(e.get("at") or 0))
+    return {n: sorted(v.values(), key=lambda a: a["started"]) for n, v in out.items()}
+
+
+def _note_text(n: Optional[Dict[str, Any]]) -> str:
+    """An agent's note in one line: "done: …; next: …"."""
+    if not isinstance(n, dict):
+        return ""
+    return "; ".join(f"{k}: {str(n[k])[:160]}" for k in ("done", "next", "blockers", "notes") if n.get(k))
+
+
+def status_of(tries: List[Dict[str, Any]], now: Optional[float] = None) -> str:
+    """"not launched", "running" (its last attempt acted within two minutes), "interrupted" (launched, never
+    finished: its session stopped), "failed" or "done"."""
+    if not tries:
+        return "not launched"
+    last = tries[-1]
+    if last["status"] in FAILED:
+        return "failed"
+    if last["finished"]:
+        return "done"
+    if last.get("interrupted"):
+        return "interrupted"
+    return "running" if (now or time.time()) - (last["last_at"] or last["started"]) < 120 else "interrupted"
+
+
+def interrupted(root: Path, session: str) -> List[str]:
+    """The session `session` (Claude Code's id) ended: its planned agents still running are interrupted (recorded,
+    so resume_plan relaunches them at once instead of taking them for running). Their names."""
+    if not session:
+        return []
+    data = _load(root)
+    since = float((data.get("plan") or {}).get("at") or 0)
+    open_: Dict[str, str] = {}
+    for r in runs(root, since):
+        aid = str(r.get("agent_id") or "")
+        if r["event"] == "start" and session in str(r.get("transcript") or "") and data["ids"].get(aid):
+            open_[aid] = str(r.get("agent_type") or "")
+        elif r["event"] in ("stop", "interrupted") or (r["event"] == "launch" and r.get("status") in ("completed", "done")):
+            open_.pop(aid, None)
+    for aid, kind in open_.items():
+        record_run(root, "interrupted", aid, kind, "")
+    return sorted({data["ids"][a] for a in open_})
+
+
+def resume_brief(root: Path, name: str, mem: Optional[Dict[str, Any]] = None,
+                 tries: Optional[List[Dict[str, Any]]] = None) -> str:
+    """The brief to relaunch `name` with: its first brief, what it did so far, then how to go on."""
+    data = _load(root)
+    brief = str((data["agents"].get(name) or {}).get("brief") or f"You are the {name} agent.")
+    m = mem if mem is not None else _mem_of(_mem_load(root), name)
+    tries = tries if tries is not None else attempts(root).get(name, [])
+    parts = [brief, "", f"You are resuming (attempt {len(tries) + 1}): what you did so far:"]
+    head = len(parts)
+    for n in m.get("notes") or []:
+        line = "; ".join(f"{k}: {n[k]}" for k in ("done", "next", "notes", "blockers") if n.get(k))
+        parts.append(f"- note: {line}")
+    edited = [f["path"] for f in m.get("files") or [] if f.get("edited")]
+    read = [f["path"] for f in m.get("files") or [] if not f.get("edited")]
+    if edited:
+        parts.append("- files you edited: " + ", ".join(edited[-30:]))
+    if read:
+        parts.append("- files you read: " + ", ".join(read[-15:]))
+    unread = inbox(root, name, mark=False)
+    if unread:
+        parts.append("- messages for you, not read yet:")
+        parts += [f"  - from {x.get('from')}: {str(x.get('text') or '')[:300]}" for x in unread[-10:]]
+    if m.get("answer"):
+        parts.append("- your last answer (before the stop):\n" + str(m["answer"])[-1500:])
+    if len(parts) == head:
+        parts.append("- nothing recorded: start from the brief")
+    parts += ["", "First check the current state of your files before changing anything; don't redo finished steps."]
+    return "\n".join(parts)
+
+
+def resume_plan(root: Path) -> Dict[str, Any]:
+    """The plan, to resume after a stop: each planned agent's status ("done", "running", "interrupted", "failed",
+    "not launched"), its attempts and latest note, a ready-to-launch resume brief for every agent not done, and how
+    to launch them (the earliest unfinished stage first)."""
+    pl = _load(root).get("plan") or {}
+    planned = [g for g in pl.get("agents") or [] if isinstance(g, dict) and g.get("name")]
+    if not planned:
+        return {"task": "", "agents": [], "unfinished": [],
+                "how": "There is no team plan here: plan one with plan_agents."}
+    mem = _mem_load(root)
+    tries = attempts(root)
+    stage_of = {a["name"]: a["stage"] for a in workflow(root)["agents"] if not a.get("adhoc")}
+    now = time.time()
+    out = []
+    for g in planned:
+        name = g["name"]
+        m = _mem_of(mem, name)
+        st = status_of(tries.get(name, []), now)
+        row: Dict[str, Any] = {"name": name, "stage": int(stage_of.get(name, g.get("stage") or 1)), "status": st,
+                               "attempts": len(tries.get(name, [])), "waits_for": list(g.get("waits_for") or []),
+                               "last_note": (m.get("notes") or [None])[-1],
+                               "edited": [f["path"] for f in m.get("files") or [] if f.get("edited")][-20:]}
+        if st not in ("done", "running"):
+            row["resume_brief"] = resume_brief(root, name, m, tries.get(name, []))
+        out.append(row)
+    todo = [r for r in out if r["status"] != "done"]
+    if not todo:
+        how = ("Every agent of the plan is done: read the system-diff `inbox` as \"main\", integrate, and check the "
+               "whole with `system_diff`.")
+    else:
+        first = min(r["stage"] for r in todo)
+        go = [r["name"] for r in todo if r["stage"] == first and r["status"] != "running"]
+        running = [r["name"] for r in todo if r["status"] == "running"]
+        how = ((f"Relaunch together, in one message with one Task/Agent call each, with each one's resume_brief as its "
+                f"prompt: {', '.join(go)}. ") if go else "") + \
+            (f"Still running: {', '.join(running)} (do not launch them again). " if running else "") + \
+            "Start a later stage only once these have finished; do not redo what the done agents did."
+    return {"task": pl.get("task") or "", "agents": out, "unfinished": [r["name"] for r in todo], "how": how}
 
 LOG_MOST = 400
 
@@ -1224,5 +1573,14 @@ def agent_log(root: Path, name: str) -> Dict[str, Any]:
         m.get("from") == name or m.get("topic") in ({f"agent:{name}", "all"} | blocks))][-100:]
     files = [{"at": e["at"], "event": e.get("event"), "path": e.get("path")} for e in activity.events(root, 2000)
              if float(e.get("at") or 0) >= since and str(e.get("agent") or "") in ids][-200:]
-    return {"agent": me, "brief": (data["agents"].get(name) or {}).get("brief", "") or me.get("brief", ""), "transcript": entries,
+    try:   # what it kept for a relaunch: its notes, its attempts, its last answer
+        mine = memory(root).get(name) or {}
+        tries = attempts(root).get(name, [])
+        memo = {"notes": mine.get("notes") or [], "answer": mine.get("answer") or "",
+                "attempts": [{k: a[k] for k in ("id", "started", "finished", "status")} for a in tries],
+                "status": status_of(tries) if name in planned_names(root) else ""}
+    except Exception:  # noqa: BLE001
+        memo = {"notes": [], "answer": "", "attempts": [], "status": ""}
+    return {"agent": me, "memory": memo,
+            "brief": (data["agents"].get(name) or {}).get("brief", "") or me.get("brief", ""), "transcript": entries,
             "transcript_path": transcript, "messages": bus, "files": files}
