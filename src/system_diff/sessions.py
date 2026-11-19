@@ -904,6 +904,13 @@ class Manager:
     def call(self, coro) -> Any:
         return asyncio.run_coroutine_threadsafe(coro, self.loop)
 
+    def open_with(self, conversation: str) -> Optional["Session"]:
+        """The open session already on this Claude Code conversation, if any (resuming it again would start a second
+        copy, working on the same files at the same time)."""
+        with self.lock:
+            return next((x for x in self.sessions.values() if conversation and x.claude_id == conversation
+                         and x.status not in ("closed", "failed")), None)
+
     def start(self, project: Path, options: Dict[str, Any], resume: str = "", fork: bool = False) -> Session:
         mode = options.get("permission_mode") or "default"
         if mode not in PERMISSION_MODES:

@@ -188,3 +188,17 @@ def test_past_conversations_are_labelled_by_what_was_asked(tmp_path):
     assert sessions.trivial_prompt("continue") and sessions.trivial_prompt("Are you working?")
     assert not sessions.trivial_prompt("deploy the api")
     assert 'id="sessionsbtn"' in app_page.PAGE and "Last: " in app_page.PAGE
+
+
+def test_a_conversation_open_in_a_session_is_not_resumed_twice():
+    """Continue/Resume on a conversation a session already has: back to that session, not a second copy editing the
+    same files (the person saw two sessions change the same files)."""
+    import threading as _th
+    from types import SimpleNamespace
+    from system_diff import app_page, sessions
+    m = sessions.Manager.__new__(sessions.Manager)
+    m.lock, m.sessions = _th.Lock(), {"a": SimpleNamespace(claude_id="3ad4863d", status="working"),
+                                      "b": SimpleNamespace(claude_id="94189708", status="closed")}
+    assert m.open_with("3ad4863d") is m.sessions["a"]
+    assert m.open_with("94189708") is None and m.open_with("") is None
+    assert "Open now (" in app_page.PAGE

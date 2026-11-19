@@ -637,7 +637,14 @@ def handler(studio: Studio):
             if path == "/api/sessions":
                 root = self._root({"project": str(b.get("project") or "")})
                 opts = profiles.options_for(root, b)
-                s = studio.sessions().start(root, opts, resume=str(b.get("resume") or ""), fork=bool(b.get("fork")))
+                resume = str(b.get("resume") or "")
+                if resume and not b.get("fork"):   # that conversation is open already: go to it, never a second copy
+                    live = studio.sessions().open_with(resume)
+                    if live is not None:
+                        live.emit("note", text="This conversation is open here already: you are back in it "
+                                               "(a second copy would work on the same files at the same time).")
+                        return self._json(200, {**live.head(), "already_open": True})
+                s = studio.sessions().start(root, opts, resume=resume, fork=bool(b.get("fork")))
                 studio.remember(root, opts)
                 if b.get("note"):
                     s.emit("note", text=str(b["note"])[:300])

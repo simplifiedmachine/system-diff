@@ -483,6 +483,23 @@ function paintPast() {
     bk.addEventListener("click", () => { S.showingPast = false; follow(S.session.id); }); top.append(bk);
   }
   box.append(top);
+  const open = (S.sessions || []).filter(x => !["closed", "failed"].includes(x.status));
+  if (open.length) {   // the sessions running now: each one its own Claude Code, possibly on the same files
+    box.append(el("h3", "Open now (" + open.length + ")" + (open.length > 1 ? " · each works on its own: two on one task edit the same files" : "")));
+    for (const x of open) {
+      const row = el("div", null, "pitem");
+      row.append(el("div", (x.title || "(nothing asked yet)").replace(/\s+/g, " ").slice(0, 120), "pt"));
+      const doing = x.now && x.now.what ? doingText(x.now, x.status)
+                  : ({ idle:"Ready", working:"Working", waiting:"Asks you", starting:"Starting" }[x.status] || x.status);
+      row.append(el("div", [doing, String(x.claude_session || "").slice(0, 8)].filter(Boolean).join(" · "), "pm"));
+      const go = el("button", x.id === (S.session || {}).id ? "Here" : "Go to"); go.type = "button";
+      go.addEventListener("click", () => { S.showingPast = false; $("sesspick").value = x.id; follow(x.id); });
+      const cl = el("button", "Close"); cl.type = "button";
+      cl.title = "Stop this Claude Code session (its conversation stays, to resume later)";
+      cl.addEventListener("click", async () => { await api("api/sessions/" + x.id + "/close", {}).catch(() => {}); await loadSessions(); paintPast(); });
+      row.append(go, cl); box.append(row);
+    }
+  }
   const item = (p, left) => {
     const row = el("div", null, "pitem" + (left ? " left" : ""));
     const label = (p.label || p.title || p.summary || p.first_prompt || "(no prompt)").replace(/\s+/g, " ");
@@ -499,7 +516,8 @@ function paintPast() {
       start({ resume:p.id, note:left ? "Continued where you left off" : "Resumed a past conversation" }); });
     row.append(b); return row;
   };
-  const left = list.filter(p => p.left_off), rest = list.filter(p => !p.left_off);
+  const opened = new Set(open.map(x => x.claude_session).filter(Boolean));   // listed above: not offered again
+  const left = list.filter(p => p.left_off && !opened.has(p.id)), rest = list.filter(p => !p.left_off && !opened.has(p.id));
   if (left.length) { box.append(el("h3", "Continue where you left off")); for (const p of left) box.append(item(p, true)); }
   box.append(el("h3", "Past conversations"));
   if (S.pastErr) box.append(el("div", "Could not list them: " + S.pastErr, "ev err"));
@@ -513,7 +531,8 @@ function paintPast() {
   }
   f.append(box);
 }
-$("pastbtn").addEventListener("click", () => { S.showingPast = true; S.polling++; paintPast(); loadPast(); });
+$("pastbtn").addEventListener("click", () => { S.showingPast = true; S.polling++; paintPast(); loadPast();
+  if (S.project) api("api/sessions?project=" + S.project).then(d => { S.sessions = d.sessions || []; if (S.showingPast) paintPast(); }).catch(() => {}); });
 $("sessionsbtn").addEventListener("click", () => { tab("session"); $("optsbox").open = false; $("pastbtn").click(); });   // one click from anywhere
 async function start(extra) {
   if (!S.project) { $("sstatus").textContent = "Pick a project first."; return null; }
