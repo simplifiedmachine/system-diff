@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -38,7 +39,7 @@ def stage(text: str, done: Optional[int] = None, total: Optional[int] = None) ->
     _last, _stage = now, text
     data = {"stage": text, "done": done, "total": total, "started": _started, "pid": os.getpid()}
     try:
-        tmp = _path.with_name(f"{FILE}.{os.getpid()}")
+        tmp = _path.with_name(f"{FILE}.{os.getpid()}.{threading.get_ident()}")
         tmp.write_text(json.dumps(data), encoding="utf-8")
         os.replace(tmp, _path)
     except OSError:

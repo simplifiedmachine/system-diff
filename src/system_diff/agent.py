@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import shutil
 import subprocess
 import sys
@@ -344,7 +345,7 @@ def take_said(root: Path, agent_id: str) -> List[Dict[str, Any]]:
     f = _said_file(root, agent_id)
     if not f.exists():
         return []
-    taking = f.with_name(f"{f.name}.{os.getpid()}.taking")
+    taking = f.with_name(f"{f.name}.{os.getpid()}.{threading.get_ident()}.taking")
     try:
         os.replace(f, taking)
         lines = taking.read_text(encoding="utf-8", errors="replace").splitlines()

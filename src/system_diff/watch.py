@@ -3202,7 +3202,7 @@ def _write_web(root: Path, url: str, port: int, ident: str = "", token: str = ""
     pane and the hooks read it here). Readable by its owner only, where the file system can say so."""
     try:
         f = _web_file(root)
-        tmp = f.with_suffix(f".{os.getpid()}.tmp")
+        tmp = f.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
         from . import __version__
         data = json.dumps({"url": url, "port": port, "pid": os.getpid(), "id": ident, "token": token,
                            "version": __version__})

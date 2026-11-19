@@ -47,7 +47,7 @@ def state_dir(env=os.environ) -> Optional[Path]:
 
 def _write_private(f: Path, data: Any) -> None:
     f.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = f.with_name(f".{f.name}.{os.getpid()}.tmp")
+    tmp = f.with_name(f".{f.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as out:
         out.write(json.dumps(data, ensure_ascii=False, indent=1))

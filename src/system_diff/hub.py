@@ -105,7 +105,7 @@ def register(root: Path, url: str, port: int, ident: str, version: str, folder: 
         entry = {"root": str(root), "name": project_name(root), "branch": branch(root), "url": url, "port": port,
                  "pid": os.getpid(), "id": ident, "version": version, "started": round(time.time(), 3)}
         f = folder / f"{ident}.json"
-        tmp = folder / f".{ident}.{os.getpid()}.tmp"
+        tmp = folder / f".{ident}.{os.getpid()}.{threading.get_ident()}.tmp"
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as out:
             out.write(json.dumps(entry, ensure_ascii=False))

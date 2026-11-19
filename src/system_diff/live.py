@@ -203,7 +203,7 @@ def save_page(root: Path, key: tuple, page: Dict[str, Any]) -> None:
             return
         d = g / "system-diff" / PAGES
         d.mkdir(parents=True, exist_ok=True)
-        tmp = d / f".{name}.{os.getpid()}.tmp"
+        tmp = d / f".{name}.{os.getpid()}.{threading.get_ident()}.tmp"
         page = {k: v for k, v in page.items() if k not in ("send", "version")}   # never what was sent to Claude
         tmp.write_text(json.dumps({"key": [str(k) for k in key], "at": time.time(), "page": page},
                                   ensure_ascii=False), encoding="utf-8")

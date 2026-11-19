@@ -194,7 +194,7 @@ def as_one(root: Path) -> bool:
 
 def set_one(root: Path, one: bool) -> None:
     f = _state_file(root)
-    tmp = f.with_name(f".{f.name}.{os.getpid()}.tmp")
+    tmp = f.with_name(f".{f.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps({"one": bool(one)}), encoding="utf-8")
     os.replace(tmp, f)
 

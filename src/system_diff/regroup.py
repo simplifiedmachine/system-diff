@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import re
 import subprocess
 import sys
@@ -285,7 +286,7 @@ def current(root: Path, key: str) -> Optional[dict]:
 def save(root: Path, key: str, overlay: Dict[str, Any], model: str = "") -> Path:
     d = _dir(root)
     f = d / f"overlay-{key}.json"
-    tmp = d / f".overlay-{key}.{os.getpid()}.tmp"
+    tmp = d / f".overlay-{key}.{os.getpid()}.{threading.get_ident()}.tmp"
     tmp.write_text(json.dumps({**overlay, "key": key, "made": time.time(), "model": model}), encoding="utf-8")
     os.replace(tmp, f)
     for old in sorted(d.glob("overlay-*.json"), key=lambda p: p.stat().st_mtime)[:-KEEP]:

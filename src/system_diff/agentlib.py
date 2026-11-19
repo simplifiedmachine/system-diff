@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import re
 import time
 from pathlib import Path
@@ -43,7 +44,7 @@ def _load(f: Path) -> Dict[str, Any]:
 
 
 def _save(f: Path, data: Dict[str, Any]) -> None:
-    tmp = f.with_name(f".{f.name}.{os.getpid()}.tmp")
+    tmp = f.with_name(f".{f.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, f)
 
@@ -255,7 +256,7 @@ def _write(f: Path, text: str) -> None:
         except OSError as exc:
             raise ValueError(f"cannot read {f}: {exc}") from exc
     f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_name(f".{f.name}.{os.getpid()}.tmp")
+    tmp = f.with_name(f".{f.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, f)
 

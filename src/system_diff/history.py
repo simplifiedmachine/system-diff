@@ -148,7 +148,7 @@ def compact(root: Path, keep: int = KEEP) -> None:
     with _LOCK:
         entries = load(root)[:keep][::-1]
         path = _log(root)
-        tmp = path.with_suffix(f".{os.getpid()}.tmp")
+        tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
         tmp.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries), encoding="utf-8")
         os.replace(tmp, path)
 

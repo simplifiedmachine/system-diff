@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -253,7 +254,18 @@ def read_state(root: Path) -> Dict[str, Any]:
 
 def _replace(path: Path, text: str) -> None:
     """Write `text` to a file beside `path`, then move it over: a reader never sees half a file."""
-    tmp = path.with_name(f".{path.name}.{os.getpid()}")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}")
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
-    os.replace(tmp, path)
+    for attempt in range(20):   # Windows: a reader holding `path` this instant makes the move fail; it lets go
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == 19:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+            time.sleep(0.02)

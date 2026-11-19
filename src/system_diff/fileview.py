@@ -536,7 +536,7 @@ def _job(root: Path, path: str, text: str, blob: str, chunks: List[Dict[str, Any
             parsed = parse_answer(answer, chunks, by)
             if parsed is not None:
                 f = _summary_file(root, blob)
-                tmp = f.with_name(f".{f.name}.{os.getpid()}")
+                tmp = f.with_name(f".{f.name}.{os.getpid()}.{threading.get_ident()}")
                 tmp.write_text(json.dumps({"path": path, **parsed}, ensure_ascii=False), encoding="utf-8")
                 os.replace(tmp, f)
                 ok = True

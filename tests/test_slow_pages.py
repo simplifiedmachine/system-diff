@@ -78,3 +78,25 @@ def test_plan_agents_asks_the_engine_and_never_hangs(monkeypatch, tmp_path):
     assert uitools.within(2, lambda: {"ok": 1}, "plan_agents") == {"ok": 1}
     assert uitools.engine_post(tmp_path, "agents/plan", {"task": "x"}) is None   # no engine: the caller reads itself
     assert '"/agents/plan"' in watch.__loader__.get_source("system_diff.watch")
+
+
+def test_parallel_writers_in_one_process_never_share_a_temporary_file(tmp_path):
+    """Parallel agents' hooks run in one engine: two threads writing one state file at once must not collide
+    (Windows: PermissionError on the shared temporary name)."""
+    from system_diff import activity
+    target = tmp_path / "state.json"
+    errors = []
+
+    def write(i):
+        try:
+            for _ in range(50):
+                activity._replace(target, f'{{"n": {i}}}\n')
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+    ts = [threading.Thread(target=write, args=(i,)) for i in range(8)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert not errors and target.read_text().startswith('{"n"')
+    assert not [p for p in tmp_path.iterdir() if p.name != "state.json"]   # no temporary file left

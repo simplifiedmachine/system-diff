@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import re
 import subprocess
 import sys
@@ -444,7 +445,7 @@ def load(root: Path) -> Dict[str, Any]:
 
 def save(root: Path, data: Dict[str, Any]) -> None:
     f = _dir(root) / FILE
-    tmp = f.with_name(f".{FILE}.{os.getpid()}.tmp")
+    tmp = f.with_name(f".{FILE}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps({**data, "version": VERSION}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     os.replace(tmp, f)
     _READ.pop(str(f), None)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import re
 import time
 from pathlib import Path
@@ -85,7 +86,7 @@ def save(root: Path, name: str, description: str = "", scope: str = "project", b
         if kinds and "everywhere" not in kinds:   # saved again for another kind: for both
             out["kinds"] = sorted(set(kinds) | {k for k in old.get("kinds") or [] if k != "everywhere"})
     f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_name(f".{f.name}.{os.getpid()}.tmp")
+    tmp = f.with_name(f".{f.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     os.replace(tmp, f)
     return {"saved": name, "scope": "project" if scope == "project" else ", ".join(out.get("kinds") or []),
