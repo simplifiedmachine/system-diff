@@ -44,6 +44,46 @@ def engine_get(root: Path, path: str, timeout: float = 20.0) -> Optional[Dict[st
         return None
 
 
+def engine_post(root: Path, path: str, body: Dict[str, Any], timeout: float = 30.0) -> Optional[Dict[str, Any]]:
+    """POST JSON to a route of this repository's running engine (with its token), or None when none answers."""
+    info = _web_json(root)
+    url, token = str(info.get("url") or ""), str(info.get("token") or "")
+    if not url or not token:
+        return None
+    try:
+        req = urllib.request.Request(url.rstrip("/") + "/" + path.lstrip("/"), data=json.dumps(body).encode("utf-8"),
+                                     headers={"X-Token": token, "Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=timeout) as r:   # noqa: S310 - 127.0.0.1, this user's engine
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            return {"error": json.loads(exc.read().decode("utf-8")).get("error") or str(exc)}
+        except (OSError, ValueError):
+            return {"error": str(exc)}
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def within(seconds: float, fn: Any, what: str) -> Dict[str, Any]:
+    """fn() in a thread, given `seconds`: its result, or an answer saying it is still going (never a hung tool)."""
+    import threading
+    box: Dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            box["out"] = fn()
+        except Exception as exc:  # noqa: BLE001
+            box["out"] = {"error": f"{type(exc).__name__}: {exc}"}
+    t = threading.Thread(target=run, name="system-diff " + what, daemon=True)
+    t.start()
+    t.join(seconds)
+    if "out" in box:
+        return box["out"]
+    return {"error": f"{what} is still reading the system after {int(seconds)} s (no engine answered for this "
+                     "repository; `system-diff watch` keeps one ready). Go on without it: launch the agents you "
+                     "planned yourself; add_agent puts each one on the person's board."}
+
+
 def project_root(root: Path, project: str = "") -> Path:
     """The repository a tool is asked about: this one (""), a path, a member of this one's family (a submodule's
     path), or a running engine's project by name."""

@@ -304,6 +304,11 @@ its own, without a plan, appear on the workflow board too: side by side when the
 another when one started once the other had finished, each with its status, duration and session log. A role Claude
 keeps launching (two runs, here or across your projects) is offered to keep as an agent, with its prompt.
 
+You can write while Claude works: the message waits as "queued" (edit or withdraw it until Claude takes it in) and
+Claude takes it into the turn it is on, as a question it answers, a change of plan, or a task it hands to a subagent;
+the message's line shows what became of it and the reply links back to it. **Stop & send** interrupts instead. Ask
+Claude to keep a subagent that ran ("keep the survey agent") and `keep_agent` saves it as an agent from its prompt.
+
 ### Keys for your agents
 
 A token your agents need (an Azure DevOps PAT to open a pull request, a GitHub token) is kept by system-diff, not

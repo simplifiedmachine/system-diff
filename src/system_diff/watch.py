@@ -2572,6 +2572,33 @@ def handler(w: Watcher):
                 return self._post_mark()
             if urlsplit(self.path).path == "/ui/state":
                 return self._post_ui_state()
+            if urlsplit(self.path).path == "/agents/plan":   # Claude's plan_agents, from the system this engine holds
+                if self.headers.get("X-Token") != w.token or not hub.host_ok(self.headers.get("Host"),
+                                                                             self.server.server_address[1]):
+                    self._drain()
+                    return self._json(403, {"error": "forbidden"})
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                    body = json.loads(self.rfile.read(n).decode("utf-8") or "{}") if 0 < n <= 65536 else {}
+                    from . import compare as cmp_mod
+                    c = cmp_mod.compare(w.root, "checkpoint", ".")
+                    if body.get("workflow"):
+                        from . import workflows
+                        got = workflows.run(w.root, c, str(body["workflow"]), str(body.get("task") or ""),
+                                            int(body.get("most") or 8))
+                    else:
+                        after = body.get("after") if isinstance(body.get("after"), dict) else {}
+                        got = agents_mod().plan(w.root, c, str(body.get("task") or ""), int(body.get("most") or 4),
+                                                [str(x) for x in body.get("focus") or []],
+                                                order=body.get("order") if body.get("order") in ("parallel", "staged")
+                                                else "parallel",
+                                                after={str(k): [str(x) for x in v] for k, v in after.items()
+                                                       if isinstance(v, list)})
+                except (ValueError, TypeError, UnicodeDecodeError) as exc:
+                    return self._json(400, {"error": str(exc)})
+                if w.engine is not None:
+                    w.engine._bump()
+                return self._json(200, got)
             if urlsplit(self.path).path == "/agents/action":   # pause, resume, stop, retry an extension's step
                 if self.headers.get("X-Token") != w.token or not self._same_origin() or not hub.host_ok(
                         self.headers.get("Host"), self.server.server_address[1]):

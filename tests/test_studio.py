@@ -689,6 +689,7 @@ def test_a_card_says_why_claude_code_asked_in_bypass(monkeypatch, tmp_path):
 
 def test_bypass_is_honoured_when_claude_code_asks_anyway(tmp_path):
     """The person chose never to be asked: a permission request is allowed by the Studio, and said in the feed."""
+    pytest.importorskip("claude_agent_sdk")
     import asyncio
     from types import SimpleNamespace
     from system_diff import sessions

@@ -68,3 +68,13 @@ def test_the_studio_shows_a_slow_view_as_drawing_not_502():
     from system_diff import app
     src = inspect.getsource(app)
     assert "except (TimeoutError, socket.timeout):" in src and "def _slow(" in src
+
+
+def test_plan_agents_asks_the_engine_and_never_hangs(monkeypatch, tmp_path):
+    """plan_agents is answered by the running engine (it holds the system); with none, a bounded read here."""
+    import time as _t
+    from system_diff import uitools
+    assert uitools.within(0.2, lambda: _t.sleep(2) or {"ok": 1}, "plan_agents")["error"].startswith("plan_agents is still")
+    assert uitools.within(2, lambda: {"ok": 1}, "plan_agents") == {"ok": 1}
+    assert uitools.engine_post(tmp_path, "agents/plan", {"task": "x"}) is None   # no engine: the caller reads itself
+    assert '"/agents/plan"' in watch.__loader__.get_source("system_diff.watch")

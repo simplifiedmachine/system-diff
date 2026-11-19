@@ -315,9 +315,16 @@ def build() -> Server:
         a stage together as subagents, each with its brief as its prompt, as `how` says. The person watches the
         workflow (who runs, who waits, each one's log) on the system-diff page's Agents tab."""
         root = _root()
-        c = cmp.compare(root, "checkpoint", ".")
-        return agents.plan(root, c, task, most, focus, order=order if order in ("parallel", "staged") else "parallel",
-                           after={str(k): [str(x) for x in v] for k, v in (after or {}).items() if isinstance(v, list)})
+        order = order if order in ("parallel", "staged") else "parallel"
+        after = {str(k): [str(x) for x in v] for k, v in (after or {}).items() if isinstance(v, list)}
+        from . import uitools
+        # the running engine holds the system: it plans at once; else read here, for a bounded time
+        got = uitools.engine_post(root, "agents/plan", {"task": task, "most": most, "focus": list(focus or []),
+                                                        "order": order, "after": after}, timeout=45)
+        if got is not None:
+            return got
+        return uitools.within(60, lambda: agents.plan(root, cmp.compare(root, "checkpoint", "."), task, most, focus,
+                                                      order=order, after=after), "plan_agents")
 
     @server.tool()
     def add_agent(name: str, brief: str = "", blocks: List[str] = [], waits_for: List[str] = [],  # noqa: B006
@@ -384,7 +391,12 @@ def build() -> Server:
         says."""
         from . import workflows
         root = _root()
-        return _safe(lambda: workflows.run(root, cmp.compare(root, "checkpoint", "."), name, task, most))
+        from . import uitools
+        got = uitools.engine_post(root, "agents/plan", {"workflow": name, "task": task, "most": most}, timeout=45)
+        if got is not None:
+            return got
+        return uitools.within(60, lambda: _safe(lambda: workflows.run(root, cmp.compare(root, "checkpoint", "."), name,
+                                                                       task, most)), "run_workflow")
 
     @server.tool()
     def claim(agent: str, blocks: List[str]) -> Dict[str, Any]:
