@@ -298,6 +298,11 @@ beside it, run by the app with your own Claude Code login and gateway:
   session. One app per user (`system-diff app` again opens it); it uses each repository's own engine, so a terminal
   session in the same repository shares it. Every route checks the host name, the token and the page's origin.
 
+**What Claude did with the plan.** A subagent is tied to its planned agent as it starts. The board says how many
+planned agents Claude launched, which it skipped and which it started before the ones they wait for had finished; in
+the Studio a button has Claude launch the missing ones. Messages for an agent that never ran say they are waiting.
+The board stays on screen while it updates.
+
 **The team, readable.** On the Agents tab each subagent shows as what it does (its Task description), with its type
 small; its row counts its work ("34 reads · 1 edit") and a click lists everything it did. Subagents Claude launches on
 its own, without a plan, appear on the workflow board too: side by side when they ran at the same time, one after

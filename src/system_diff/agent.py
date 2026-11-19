@@ -536,6 +536,8 @@ def note_launch(root: Path, payload: Dict[str, Any]) -> None:
         m = _re.search(r"agentId:?\s*\"?([A-Za-z0-9_-]{6,})", json.dumps(got, default=str) if got else "")
         aid = m.group(1) if m else ""
     if aid and isinstance(inp, dict):
+        agents.match_planned(root, aid, {"prompt": str(inp.get("prompt") or ""),
+                                         "description": str(inp.get("description") or "")})
         agents.record_run(root, "launch", aid, str(inp.get("subagent_type") or ""), "",
                           description=str(inp.get("description") or ""), prompt=str(inp.get("prompt") or ""),
                           status=status, parent=str(payload.get("agent_id") or ""))
@@ -553,6 +555,10 @@ def on_tool(root: Path, payload: Dict[str, Any], env=os.environ) -> Optional[Dic
         agents.tie(root, agent_id, named)   # a subagent says who it is the first time it claims, publishes or reads
     if tool in ("Task", "Agent"):
         note_launch(root, payload)
+    elif agent_id and agent_id not in agents.state(root)["ids"]:
+        # a subagent's first tools: its prompt is in its transcript by now, so a planned one is tied before it is drawn
+        agents.match_planned(root, agent_id, agents.subagent_info(
+            agents.subagent_transcript(str(payload.get("transcript_path") or ""), agent_id)))
     messages: List[str] = []
     context: List[str] = [agents.deliver(root, agent_id)]
     for late in take_said(root, agent_id):
@@ -691,8 +697,9 @@ def run_hook(stdin_text: str, emit: Callable[[str], None] = print, env=None) -> 
             message = on_stop(root, payload, env)
         elif event == "SubagentStart":   # an agent of the team began: the workflow shows it running
             aid = str(payload.get("agent_id") or "")
-            agents.record_run(root, "start", aid, str(payload.get("agent_type") or ""),
-                              agents.subagent_transcript(str(payload.get("transcript_path") or ""), aid))
+            where = agents.subagent_transcript(str(payload.get("transcript_path") or ""), aid)
+            agents.record_run(root, "start", aid, str(payload.get("agent_type") or ""), where)
+            agents.match_planned(root, aid, agents.subagent_info(where))   # tied as it starts, when it can be
         elif event == "SubagentStop":   # a role finished: counted (agents worth keeping), and done in the workflow
             from . import agentlib
             aid = str(payload.get("agent_id") or "")

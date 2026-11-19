@@ -33,7 +33,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 930,
+   "lines": 937,
    "hub": false,
    "quiet": false
   },
@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1131,
+   "lines": 1210,
    "hub": false,
    "quiet": false
   },
@@ -333,7 +333,7 @@
    "container": "",
    "declared": true,
    "files": 2,
-   "lines": 2787,
+   "lines": 2795,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 3390,
+   "lines": 3426,
    "hub": false,
    "quiet": false
   }
@@ -713,12 +713,12 @@
    "is_system"
   ],
   "agent>agents": [
+   "match_planned",
    "record_run",
+   "subagent_info",
    "subagent_transcript",
-   "ORCHESTRATE",
-   "after_edit",
-   "deliver",
-   "state"
+   "state",
+   "ORCHESTRATE"
   ],
   "agent>chat": [
    "WEB_HINT",
@@ -2735,6 +2735,7 @@
  "migrations": [],
  "tests": {
   "tests/conftest.py": 1,
+  "tests/test_board_fixes.py": 1,
   "tests/test_branch_checkpoints.py": 1,
   "tests/test_capture.py": 1,
   "tests/test_checkpoint_watch_mcp.py": 1,

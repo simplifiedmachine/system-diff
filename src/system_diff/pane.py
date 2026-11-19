@@ -894,10 +894,17 @@ def _workflow_rows(page: canvas.Page, root: Path, width: int) -> None:
         for n in names:
             x = items.get(n) or {}
             st = x.get("status", "queued")
-            extra = (f" {int(now - x['started']) // 60}m" if st == "running" and x.get("started") else
-                     " waits for " + ", ".join(x.get("waiting_on") or []) if st == "waiting" else "")
+            extra = (f" {int(now - x['started']) // 60}m" + (" (started early)" if x.get("early") else "")
+                     if st == "running" and x.get("started") else
+                     " waits for " + ", ".join(x.get("waiting_on") or []) if st == "waiting" else
+                     " not launched" if x.get("skipped") else "")
             runs.append(f"{WF_SIGN.get(st, '·')} {x.get('title') or n}{extra}")
         page.para(" · ".join(runs), "", first=[f" {i}  ", "accent"])
+    if wf.get("planned"):
+        said = f"Claude launched {wf.get('launched', 0)} of {wf['planned']} planned agents"
+        if wf.get("skipped"):
+            said += " · not launched: " + ", ".join(wf["skipped"])
+        page.para(said, "attention" if wf.get("skipped") else "muted")
 
 
 def workflow_section(root: Path) -> Optional[Dict[str, Any]]:
@@ -921,7 +928,8 @@ def _workflow_section(root: Path) -> Optional[Dict[str, Any]]:
         return None
     n = {"running": 0, "waiting": 0, "done": 0, "queued": 0}
     for x in wf["agents"] + wf.get("steps", []):
-        n[x["status"]] = n.get(x["status"], 0) + 1
+        k = "not launched" if x.get("skipped") else x["status"]   # skipped by Claude: not waiting in a queue
+        n[k] = n.get(k, 0) + 1
     aside = (" · ".join(f"{v} {k}" for k, v in n.items() if v) + (" · click one for its session"
                                                                    if wf["agents"] else "")) if (wf["agents"] or wf.get("steps")) \
         else "no team yet: ask Claude to plan one, or to run a saved workflow"

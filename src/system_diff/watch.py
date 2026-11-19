@@ -233,6 +233,8 @@ pre.lines .s-attention { color:var(--attn); font-weight:600; } pre.lines .s-acce
 .swim .badges { position:absolute; right:6px; top:50%; transform:translateY(-50%); display:flex; gap:6px; font-size:12px; }
 .badge { padding:1px 7px; border-radius:999px; background:var(--card); border:1px solid var(--line); color:var(--muted); }
 .badge.unread { color:var(--warn); border-color:var(--warn-line); background:var(--warn-bg); }
+.wfsum.warn { color:var(--warn); }
+button.wfask { margin:6px 0 2px; }
 .badge.live { color:var(--ok); border-color:var(--ok); }
 .lc0 { --lane:var(--c0); } .lc1 { --lane:var(--c1); } .lc2 { --lane:var(--c2); } .lc3 { --lane:var(--c3); } .lc4 { --lane:var(--c4); }
 .legend { color:var(--muted); font-size:12.5px; display:flex; gap:14px; flex-wrap:wrap; }
@@ -612,7 +614,12 @@ function lanes(s) {
     if (l.live) badges.append(el("span", "live", "badge live"));
     if (typeof p === "string" && p) badges.append(el("span", p, "badge"));
     else if (typeof p === "number" && p > 1) badges.append(el("span", String(p), "badge"));
-    if (l.unread) badges.append(el("span", "✉ " + l.unread + " unread", "badge unread"));
+    if (l.unread) {   // messages for an agent that never ran wait for it: they are not unread by a working agent
+      const idle = !l.live && !l.counts;
+      const u = el("span", "✉ " + l.unread + (idle ? " waiting: agent not running" : " unread"), "badge unread");
+      if (idle) u.title = "Messages on the bus for this agent; it was never launched, so nobody has read them";
+      badges.append(u);
+    }
     track.append(badges);
     row.append(who, track);
     const on = () => { ui.hover = { ids:lightsOf("ag:" + l.name, l.blocks), from:row }; applyPick(); };
@@ -844,11 +851,11 @@ RENDER.frame = frame;
 const SVGNS = "http://www.w3.org/2000/svg";
 function dur(sec) { sec = Math.max(0, Math.round(sec)); return sec < 60 ? sec + "s" : sec < 3600 ? Math.floor(sec / 60) + "m " + (sec % 60) + "s" : Math.floor(sec / 3600) + "h " + Math.floor(sec % 3600 / 60) + "m"; }
 function wfStatusText(x) {
-  if (x.status === "running") return "running";
+  if (x.status === "running") return x.early ? "running · started early" : "running";
   if (x.status === "done") return "done" + (x.started && x.finished ? " in " + dur(x.finished - x.started) : "");
   if (x.status === "failed") return "failed" + (x.started && x.finished ? " after " + dur(x.finished - x.started) : "");
   if (x.status === "waiting") return "waits for " + (x.waiting_on || x.waits_for || []).join(", ");
-  if (x.status === "queued") return x.kind === "step" ? "next" : "ready to launch";
+  if (x.status === "queued") return x.kind === "step" ? "next" : x.skipped ? "not launched (Claude skipped it?)" : "ready to launch";
   return x.status || "";
 }
 function wfNode(x) {
@@ -906,6 +913,26 @@ function workflowCard(s) {
       for (const n of names) if (by[n]) col.append(wfNode(by[n]));
       board.append(col);
     });
+    if (wf.planned) {   // what Claude did with the plan: launched how many, skipped which, started which early
+      const early = (wf.agents || []).filter(a => a.early).map(a => a.name);
+      const line = el("div", "Claude launched " + wf.launched + " of " + wf.planned + " planned agents" +
+        ((wf.skipped || []).length ? " · not launched: " + wf.skipped.join(", ") : "") +
+        (early.length ? " · started early: " + early.join(", ") : ""), "sub wfsum" + ((wf.skipped || []).length || early.length ? " warn" : ""));
+      c.append(line);
+      if ((wf.skipped || []).length) {
+        const ask = "Launch the planned agents you have not launched yet (" + wf.skipped.join(", ") +
+          ") as subagents with their briefs from the plan, then continue the stages in order; no stage before the one it waits for has finished.";
+        const b = el("button", STUDIO ? "Have Claude launch the missing ones" : "Copy the request for Claude", "wfask"); b.type = "button";
+        b.addEventListener("click", async () => {
+          if (!STUDIO) { try { await navigator.clipboard.writeText(ask); b.textContent = "Copied: paste it to Claude"; } catch (e) { b.textContent = ask; } return; }
+          try {
+            const r = await fetch("send", { method:"POST", headers:{ "X-Token":TOKEN, "Content-Type":"application/json" }, body:JSON.stringify({ text:ask, about:"" }) });
+            b.textContent = r.ok ? "Sent to Claude" : "Not sent: " + r.status; b.disabled = r.ok;
+          } catch (e) { b.textContent = "Not sent: " + e.message; }
+        });
+        c.append(b);
+      }
+    }
     wrap.append(board); c.append(wrap);
     if (wf.task) c.append(el("div", "Task: " + wf.task, "sub"));
     const redraw = () => drawWfEdges(wrap, items);
@@ -1788,6 +1815,15 @@ async function load(wait) {
     ui.lastError = d.engine_error || "";
     if (typeof d.version === "number") ui.version = d.version;
     if (d.chat && typeof d.chat.stamp === "string") talk.stamp = d.chat.stamp;
+    if (d.drawing && ui.data && !ui.data.drawing && ui.data.view === d.view && (ui.data.scope || "") === (d.scope || "")) {
+      // this view is shown already and is being drawn again: keep it on screen, say it is updating, ask again
+      ui.version = -1;
+      $("error").textContent = "";
+      $("headline").dataset.updating = "1";
+      $("headline").textContent = (ui.data.headline || ui.data.title || "") + "  · updating…";
+      return true;
+    }
+    if ($("headline").dataset.updating) { delete $("headline").dataset.updating; ui.last.head = undefined; }
     render(d);
     return true;
   } catch (e) {

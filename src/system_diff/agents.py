@@ -29,20 +29,49 @@ KEEP = 2000        # messages kept on the bus
 MOST_AGENTS = 4    # a plan's agents at most, unless asked for more
 
 
-def _load(root: Path) -> Dict[str, Any]:
-    try:
-        data = json.loads((git_dir(root) / STATE).read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            return {"plan": data.get("plan") or {}, "claims": data.get("claims") or {},
-                    "agents": data.get("agents") or {}, "ids": data.get("ids") or {},
-                    "warned": data.get("warned") or {}}
-    except (OSError, ValueError):
-        pass
+_GOOD: Dict[str, Dict[str, Any]] = {}   # the team state last read whole, by file: what a failed read falls back to
+
+
+def _empty() -> Dict[str, Any]:
     return {"plan": {}, "claims": {}, "agents": {}, "ids": {}, "warned": {}}
 
 
+def _load(root: Path) -> Dict[str, Any]:
+    """The team's state. A read that fails while another process moves a new copy in (Windows refuses a file being
+    replaced) is tried again, then answered with the copy last read whole: never an empty team, which would draw no
+    plan and, saved back, would lose it."""
+    f = git_dir(root) / STATE
+    for attempt in range(4):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                got = {"plan": data.get("plan") or {}, "claims": data.get("claims") or {},
+                       "agents": data.get("agents") or {}, "ids": data.get("ids") or {},
+                       "warned": data.get("warned") or {}}
+                _GOOD[str(f)] = got
+                return json.loads(json.dumps(got))
+            break
+        except FileNotFoundError:
+            _GOOD.pop(str(f), None)
+            return _empty()
+        except (OSError, ValueError):
+            time.sleep(0.02 * (attempt + 1))
+    last = _GOOD.get(str(f))
+    return json.loads(json.dumps(last)) if last is not None else _empty()
+
+
 def _save(root: Path, data: Dict[str, Any]) -> None:
-    activity._replace(git_dir(root) / STATE, json.dumps(data, ensure_ascii=False, indent=1) + "\n")
+    f = git_dir(root) / STATE
+    text = json.dumps(data, ensure_ascii=False, indent=1) + "\n"
+    for attempt in range(4):   # Windows: the move fails while a reader has the file open; a moment later it works
+        try:
+            activity._replace(f, text)
+            _GOOD[str(f)] = json.loads(text)
+            return
+        except PermissionError:
+            if attempt == 3:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def state(root: Path) -> Dict[str, Any]:
@@ -84,6 +113,44 @@ def tie(root: Path, agent_id: str, name: str) -> None:
                 a = _agent(data, name)
                 a["read"] = max(a["read"], short["read"])
             _save(root, data)
+
+
+_BRIEF_NAME = re.compile(r'with agent \\?"([^"\\]+)\\?"')
+
+
+def match_planned(root: Path, agent_id: str, info: Dict[str, Any]) -> str:
+    """The planned agent a subagent is, from what is known as it starts (its prompt, the plan's brief: "You are the
+    <Area> agent ... with agent "<name>""; the Task call's description naming the agent or its area): tied at once,
+    so the board never draws it as an unknown agent first. "" when it is no planned agent (or one already tied)."""
+    if not agent_id or agent_id == MAIN:
+        return ""
+    data = _load(root)
+    if agent_id in data["ids"]:
+        return data["ids"][agent_id]
+    planned = [g for g in (data.get("plan") or {}).get("agents") or [] if isinstance(g, dict) and g.get("name")]
+    if not planned:
+        return ""
+    taken = set(data["ids"].values())
+    free = [g for g in planned if g["name"] not in taken]
+    prompt, desc = str(info.get("prompt") or ""), str(info.get("description") or "").lower()
+    hit = ""
+    m = _BRIEF_NAME.search(prompt)
+    if m and any(g["name"] == m.group(1) for g in planned):
+        hit = m.group(1)
+    if not hit:
+        for g in free:
+            area = str(g.get("area") or "")
+            if area and re.search(r"\bYou are the " + re.escape(area) + r" agent\b", prompt):
+                hit = g["name"]
+                break
+    if not hit and desc:
+        named = [g["name"] for g in free if g["name"].lower() in desc
+                 or (g.get("area") and str(g["area"]).lower() in desc)]
+        if len(named) == 1:
+            hit = named[0]
+    if hit:
+        tie(root, agent_id, hit)
+    return hit
 
 
 # ── claims ────────────────────────────────────────────────────────────────────
@@ -467,8 +534,9 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
     if len(agents) <= 1:
         how = "One area: do it yourself; no team needed."
     elif not staged:
-        how = ("Launch these agents now, in parallel, each as its own subagent with its brief as the prompt (one "
-               "message with several Task/Agent tool calls). Do not do their work yourself. When they finish, read the "
+        how = (f"Launch all {len(agents)} of these agents now, in parallel, each as its own subagent with its brief "
+               "as the prompt, in one message with several Task/Agent tool calls: none skipped, none merged into "
+               "another. Do not do their work yourself. When they finish, read the "
                "system-diff `inbox` tool as \"main\" and integrate: resolve what they published, then check the whole "
                "with `system_diff`.")
     else:
@@ -480,9 +548,10 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
             what = ", ".join(g["name"] for g in here)
             steps.append(f"stage {n}: {what}" + (" (in parallel)" if len(here) > 1 else "")
                          + ("" if n == 1 else " once the agents they wait for have finished"))
-        how = ("Run these agents in stages, each as its own subagent with its brief as the prompt; launch the agents of "
-               "one stage together (one message with several Task/Agent tool calls), and the next stage when the "
-               "agents it waits for have finished: " + "; ".join(steps) + ". Do not do their work yourself. At the "
+        how = ("Run these agents in stages, each as its own subagent with its brief as the prompt. Launch every agent "
+               "of a stage together, in one message with several Task/Agent tool calls (none skipped, none merged into "
+               "another), and start no agent of a later stage before every agent of the earlier stage has finished: "
+               + "; ".join(steps) + ". Do not do their work yourself. At the "
                "end, read the system-diff `inbox` tool as \"main\" and integrate, then check the whole with "
                "`system_diff`.")
     at = round(time.time(), 3)
@@ -904,6 +973,9 @@ def workflow(root: Path) -> Dict[str, Any]:
     for g in agents_:
         i = info[g["name"]]
         waits = list(g.get("waits_for") or [])
+        # launched before an agent it waits for had finished (or while that one never ran): it started early
+        early = bool(i["started"]) and any(not info.get(w, {}).get("finished") or info[w]["finished"] > i["started"]
+                                            for w in waits if w in info)
         if i["finished"]:
             status = "done"
         elif i["started"]:
@@ -919,7 +991,8 @@ def workflow(root: Path) -> Dict[str, Any]:
                     "started": i["started"], "finished": i["finished"],
                     "seconds": round(end - i["started"], 1) if i["started"] else 0.0,
                     "edits": i["edits"], "reads": i["reads"], "last": i["last"], "last_at": i["last_at"],
-                    "added": bool(g.get("added")), "has_log": bool(i["transcript"] or i["ids"])})
+                    "added": bool(g.get("added")), "has_log": bool(i["transcript"] or i["ids"]),
+                    "early": early, "launched": bool(i["started"])})
     # the steps extensions add (a saved workflow's, kept with the plan; and those extensions report live)
     steps: Dict[str, Dict[str, Any]] = {}
     for x in pl.get("steps") or []:
@@ -1000,12 +1073,18 @@ def workflow(root: Path) -> Dict[str, Any]:
         a["kind"] = "agent"
     for k, v in steps.items():
         v["stage"] = stage_of.get(k, 1)
+    planned = [a for a in out if not a.get("adhoc")]
+    for a in planned:   # not launched while an agent of its stage or a later one runs or ran: Claude skipped it?
+        a["skipped"] = not a.get("launched") and any(b.get("launched") and b["stage"] >= a["stage"]
+                                                     for b in planned if b is not a)
     top = max([a["stage"] for a in out] + [v["stage"] for v in steps.values()] or [1])
     stages = [[a["name"] for a in out if a["stage"] == n] + [k for k, v in steps.items() if v["stage"] == n]
               for n in range(1, top + 1)]
     return {"task": pl.get("task") or ("" if agents_ or not loose else "Subagents Claude launched on its own"),
             "at": since, "order": pl.get("order") or "parallel", "agents": out,
-            "steps": list(steps.values()), "stages": [s for s in stages if s]}
+            "steps": list(steps.values()), "stages": [s for s in stages if s],
+            "planned": len(planned), "launched": sum(1 for a in planned if a.get("launched")),
+            "skipped": [a["name"] for a in planned if a.get("skipped")]}
 
 
 LOG_MOST = 400
