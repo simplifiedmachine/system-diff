@@ -425,9 +425,18 @@ def handler(studio: Studio):
                     from . import vault
                     return self._json(200, {"keys": vault.listing(self._root(q), studio.folder),
                                             "store": vault.store_name()})
-                if path == "/api/past":
+                if path == "/api/past":   # this project's past conversations, the ones left off first
                     from . import sessions
-                    return self._json(200, {"past": sessions.past(self._root(q))})
+                    root = self._root(q)
+                    m = studio.manager
+                    live = [x.claude_id for x in m.of(root) if x.claude_id and x.status not in ("closed", "failed")] \
+                        if m is not None else []
+                    return self._json(200, {"past": sessions.past(root, live)})
+                if path.startswith("/api/past/") and path.endswith("/history"):   # a past conversation's entries
+                    from . import sessions
+                    before = q.get("before")
+                    return self._json(200, sessions.history(self._root(q), path.split("/")[3],
+                                                            int(before) if before not in (None, "") else None))
                 if path.startswith("/api/sessions/") and path.endswith("/events"):
                     s = studio.sessions().get(path.split("/")[3])
                     since = int(q.get("since") or 0)

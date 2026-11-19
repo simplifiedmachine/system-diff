@@ -135,6 +135,17 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
 .card .q { font-weight:600; } .card .acts { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
 .card .acts input { flex:1 1 140px; }
 .card.done { border-color:var(--line); box-shadow:none; opacity:.7; }
+.past { display:grid; gap:8px; } .past h3 { margin:6px 2px 0; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); }
+.past .pitem { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; align-items:center; padding:9px 12px; border-radius:14px; background:var(--glass-soft); border:1px solid var(--line); }
+.past .pitem.left { background:var(--glass-strong); border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.past .pt { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .past .pm { grid-column:1; color:var(--muted); font-size:12px; }
+.past .pitem button { grid-row:1 / span 2; grid-column:2; } .past input[type=search] { width:100%; }
+.hist { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; opacity:.92; }
+.histsep { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.07em; text-align:center; border-top:1px solid var(--line); padding-top:6px; }
+.spin { display:inline-block; margin-left:8px; color:var(--muted); font-size:12px; } .spin.run::before { content:""; display:inline-block; width:9px; height:9px; margin-right:5px; border:2px solid var(--accent); border-right-color:transparent; border-radius:50%; vertical-align:-1px; animation:spin .8s linear infinite; }
+.spin.ok { color:var(--ok); } .spin.bad { color:var(--bad); }
+@keyframes spin { to { transform:rotate(360deg); } }
+.st .doing { font-weight:600; } .st .quiet { color:var(--warn); font-weight:600; } .st .agent { color:var(--accent-2); }
 .compose { border-top:1px solid var(--line); padding:10px 12px 12px; display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
 .compose .row .st { min-width:0; }
 .compose textarea { width:100%; min-height:64px; max-height:40vh; resize:vertical; border-radius:14px; padding:9px 12px; }
@@ -208,7 +219,7 @@ input[type=password] { background:var(--glass-soft); border:1px solid var(--line
         <label for="effort">Effort</label><select id="effort"></select>
         <label for="mode">Permissions</label><select id="mode"></select>
         <label for="agentpick">Agent</label><select id="agentpick"><option value="">Claude (no saved agent)</option></select>
-        <label for="pastpick">Resume</label><div class="row"><select id="pastpick"><option value="">a past conversation…</option></select><button type="button" id="resume">Resume</button></div>
+        <label for="pastbtn">Resume</label><div class="row"><button type="button" id="pastbtn" title="Claude Code's past conversations of this project, like /resume">Past conversations…</button></div>
         <label>Keys</label><div class="keys" id="keys"><span class="ev meta">…</span></div>
         <span></span><div class="row"><span class="ev meta" id="choicefrom"></span><button type="button" id="ownoff" hidden>Use the all-projects choice</button></div>
         <span></span><div class="row"><button type="button" id="forall" title="These choices for every project (a project's own change still wins there)">Use for all projects</button><button type="button" id="applyopen" hidden title="The model and the permission mode change now in every open session; settings, effort and agent from the next session">Apply to open sessions</button></div>
@@ -421,22 +432,65 @@ async function loadSessions() {
   if (!S.sessions.length) option(sel, "", "none yet: New starts one");
   for (const s of S.sessions) option(sel, s.id, (s.title || "(nothing asked yet)").slice(0, 50) + " · " + s.status);
   const want = S.session && S.sessions.find(s => s.id === S.session.id) ? S.session.id : (S.sessions[0] || {}).id || "";
-  sel.value = want; if (want) follow(want); else { S.session = null; $("feed").replaceChildren(); paintStatus(); foldOptions(true); }
+  sel.value = want; if (want) follow(want); else { S.session = null; S.polling++; paintPast(); paintStatus(); foldOptions(true); }
 }
 $("sesspick").addEventListener("change", () => { if ($("sesspick").value) follow($("sesspick").value); });
 async function loadPast() {
   if (!S.project) return;
-  try { S.past = (await api("api/past?project=" + S.project, undefined, 60000)).past || []; } catch (e) { S.past = []; }
-  const sel = $("pastpick"); sel.replaceChildren(); option(sel, "", S.past.length ? "a past conversation…" : "no past conversations");
-  for (const p of S.past) option(sel, p.id, (p.title || p.summary || p.first_prompt || p.id).slice(0, 70) + (p.modified ? " · " + new Date(p.modified).toLocaleString() : ""));
+  try { S.past = (await api("api/past?project=" + S.project, undefined, 60000)).past || []; S.pastErr = ""; }
+  catch (e) { S.past = []; S.pastErr = e.message; }
+  if (!S.session || S.showingPast) paintPast();
 }
+function agoText(ms) {
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  return s < 90 ? "just now" : s < 5400 ? Math.round(s / 60) + " min ago" : s < 129600 ? Math.round(s / 3600) + " h ago"
+       : new Date(ms).toLocaleDateString();
+}
+// the past conversations, like /resume: the ones the Studio had open when it stopped first, then the rest, searchable
+function paintPast() {
+  const f = $("feed"); f.replaceChildren(); S.cards = {}; S.streaming = null;
+  const box = el("div", null, "past"), list = S.past || [];
+  const top = el("div", null, "row"), nb = el("button", "New session", "primary"); nb.type = "button";
+  nb.addEventListener("click", () => start());
+  top.append(nb);
+  if (S.showingPast && S.session && S.session.id) {
+    const bk = el("button", "Back to the open session"); bk.type = "button";
+    bk.addEventListener("click", () => { S.showingPast = false; follow(S.session.id); }); top.append(bk);
+  }
+  box.append(top);
+  const item = (p, left) => {
+    const row = el("div", null, "pitem" + (left ? " left" : ""));
+    row.append(el("div", (p.title || p.summary || p.first_prompt || "(no prompt)").replace(/\s+/g, " ").slice(0, 120), "pt"));
+    const meta = [p.modified ? agoText(p.modified) : "", p.messages ? (p.rough ? "~" : "") + p.messages + " messages" : "",
+                  p.branch || "", left ? "open when the Studio stopped" : ""].filter(Boolean).join(" · ");
+    row.append(el("div", meta, "pm"));
+    const b = el("button", left ? "Continue" : "Resume", left ? "primary" : ""); b.type = "button";
+    b.title = (p.first_prompt || "") + "\n" + p.id;
+    b.addEventListener("click", () => { S.showingPast = false;
+      start({ resume:p.id, note:left ? "Continued where you left off" : "Resumed a past conversation" }); });
+    row.append(b); return row;
+  };
+  const left = list.filter(p => p.left_off), rest = list.filter(p => !p.left_off);
+  if (left.length) { box.append(el("h3", "Continue where you left off")); for (const p of left) box.append(item(p, true)); }
+  box.append(el("h3", "Past conversations"));
+  if (S.pastErr) box.append(el("div", "Could not list them: " + S.pastErr, "ev err"));
+  if (!rest.length && !S.pastErr) box.append(el("div", S.past ? "None yet in this project." : "Looking…", "ev meta"));
+  if (rest.length) {
+    const q = el("input"); q.type = "search"; q.placeholder = "Search " + rest.length + " conversations"; q.setAttribute("aria-label", "Search past conversations");
+    const ul = el("div", null, "past");
+    const fill = () => { const t = q.value.trim().toLowerCase(); ul.replaceChildren();
+      for (const p of rest) if (!t || [p.title, p.summary, p.first_prompt, p.branch, p.id].join(" ").toLowerCase().includes(t)) ul.append(item(p, false)); };
+    q.addEventListener("input", fill); fill(); box.append(q, ul);
+  }
+  f.append(box);
+}
+$("pastbtn").addEventListener("click", () => { S.showingPast = true; S.polling++; paintPast(); loadPast(); });
 async function start(extra) {
   if (!S.project) { $("sstatus").textContent = "Pick a project first."; return null; }
   try { const s = await api("api/sessions", { ...choice(), ...(extra || {}) }); await loadSessions(); $("sesspick").value = s.id; follow(s.id); return s; }
   catch (e) { $("sstatus").textContent = e.message; return null; }
 }
 $("newsess").addEventListener("click", () => start());
-$("resume").addEventListener("click", () => { const id = $("pastpick").value; if (id) start({ resume:id, note:"Resumed a past conversation" }); });
 $("apply").addEventListener("click", async () => {
   if (!S.session) return;
   try { const s = await api("api/sessions/" + S.session.id + "/switch", choice()); await loadSessions(); $("sesspick").value = s.id; follow(s.id); $("apply").hidden = true; }
@@ -463,13 +517,14 @@ function foldOptions(open) { $("optsbox").open = open; paintOptLine(); }
 function follow(id) {
   foldOptions(false);   // a conversation: the options fold to one line above it
   S.polling++; const mine = S.polling;
+  S.showingPast = false;
   S.session = { id }; S.next = 0; S.streaming = null; S.cards = {}; $("feed").replaceChildren();
   (async () => {
     while (mine === S.polling) {
       try {
         const d = await api("api/sessions/" + id + "/events?since=" + S.next + "&wait=25", undefined, 45000);
         if (mine !== S.polling) return;
-        S.session = d.session; S.next = d.next;
+        S.session = d.session; S.next = d.next; S.nowAt = Date.now();
         for (const ev of d.events) paint(ev);
         paintStatus();
       } catch (e) { if (mine !== S.polling) return; $("sstatus").textContent = e.message; await new Promise(r => setTimeout(r, 2000)); }
@@ -482,12 +537,31 @@ function paintStatus() {
   if (!s || !s.status) { st.textContent = "No session: New starts one with the settings above."; $("stop").disabled = true; return; }
   const busy = s.status === "working" || s.status === "waiting";
   if (busy) st.append(el("span", null, "pulse"));
-  st.append({ starting:"Starting Claude Code…", idle:"Ready", working:"Claude is working", waiting:"Claude asks you (above)",
-              closed:"Closed: New starts another, or Resume this conversation", failed:"Could not start: " + (s.error || "") }[s.status] || s.status);
+  const now = s.now || {};
+  if (busy && now.what) {
+    const gone = Math.max(0, (Date.now() - (S.nowAt || Date.now())) / 1000);
+    const turn = Math.round((now.turn_for || 0) + gone), quiet = Math.round((now.quiet_for || 0) + gone);
+    if (now.agent) st.append(el("span", "Subagent " + now.agent.slice(0, 50) + " · ", "agent"));
+    st.append(el("span", doingText(now, s.status), "doing"));
+    st.append(" · " + clock(turn));
+    if (quiet >= 60 && now.what !== "waiting") st.append(" · ", el("span", "no word from Claude Code for " + clock(quiet) + ": it may be waiting on the model or a slow tool (Interrupt stops the turn)", "quiet"));
+  } else {
+    st.append({ starting:"Starting Claude Code…", idle:"Ready", working:"Claude is working", waiting:"Claude asks you (above)",
+                closed:"Closed: New starts another, or Resume this conversation", failed:"Could not start: " + (s.error || "") }[s.status] || s.status);
+  }
   if (s.model) st.append(" · " + s.model);
   $("stop").disabled = !busy;
   offerApply(); offerFork();
 }
+function clock(sec) { return sec < 60 ? sec + " s" : Math.floor(sec / 60) + " min " + (sec % 60) + " s"; }
+function toolName(n) { const p = String(n || "").split("__"); return n && n.startsWith("mcp__") && p.length > 2 ? p[1] + " › " + p.slice(2).join("__") : n; }
+function doingText(now, status) {
+  if (status === "waiting" || now.what === "waiting") return "Waiting for your answer (above)";
+  if (now.what === "tool") return "Running " + toolName(now.tool) + (now.detail ? ": " + now.detail : "");
+  if (now.what === "writing") return "Writing a reply";
+  return "Thinking";
+}
+setInterval(() => { const s = S.session; if (s && (s.status === "working" || s.status === "waiting")) paintStatus(); }, 1000);
 function scrolled(fn) { const f = $("feed"), end = f.scrollHeight - f.scrollTop - f.clientHeight < 60; fn(); if (end) f.scrollTop = f.scrollHeight; }
 function toolView(v) {
   const box = el("div");
@@ -667,9 +741,31 @@ function histStep(dir) {   // true when it moved (the key is then not the caret'
   ta.setSelectionRange(ta.value.length, ta.value.length);
   return true;
 }
-function paint(ev) {
+function paintHistory(ev, before) {   // a resumed conversation's past entries, above what it says next
+  const f = $("feed"), box = el("div", null, "hist");
+  for (const e of ev.entries || []) paint(e, box);
+  const cid = ev.claude_session || (S.session && S.session.claude_session) || "";
+  if (ev.earlier > 0) {
+    const more = el("button", "Show earlier (" + ev.earlier + ")"); more.type = "button";
+    more.addEventListener("click", async () => {
+      more.disabled = true;
+      try { const d = await api("api/past/" + encodeURIComponent(cid) + "/history?project=" + S.project + "&before=" + ((ev.entries[0] || {}).i || 0));
+            paintHistory({ ...d, claude_session:cid }, box); more.remove(); }
+      catch (e) { more.disabled = false; more.textContent = "Could not load: " + e.message; }
+    });
+    box.prepend(more);
+  }
+  if (before) before.before(box);
+  else { box.append(el("div", "resumed here", "histsep")); f.append(box); f.scrollTop = f.scrollHeight; }
+}
+function settleTools(f, why) {   // the turn ended: a call still marked running did not say how it went
+  for (const sp of f.querySelectorAll(".spin.run")) { sp.className = "spin"; sp.textContent = why; }
+}
+function paint(ev, into) {
+  if (ev.type === "state") { if (S.session) { S.session.now = ev.now; S.nowAt = Date.now(); } return; }
+  if (ev.type === "history" && !into) { paintHistory(ev); return; }
   scrolled(() => {
-    const f = $("feed");
+    const f = into || $("feed");
     if (ev.type === "delta") {
       if (!S.streaming) { S.streaming = el("div", "", "ev text md"); S.streaming.raw = ""; f.append(S.streaming); }
       const box = S.streaming; box.raw += ev.text;
@@ -680,8 +776,18 @@ function paint(ev) {
     if (S.streaming && ev.type !== "status") { S.streaming.remove(); S.streaming = null; }
     if (ev.type === "user") f.append(el("div", ev.text, "ev user"));
     else if (ev.type === "thinking") { const d = el("details", null, "ev tool"); d.append(el("summary", "Thinking")); d.append(el("pre", ev.text)); f.append(d); }
-    else if (ev.type === "tool_use") { const d = el("details", null, "ev tool"); const s = el("summary"); s.append(el("span", ev.name, "nm"), " " + (ev.view.file || ev.view.command || "").slice(0, 80)); d.append(s, toolView(ev.view)); d.dataset.tid = ev.id; f.append(d); }
-    else if (ev.type === "tool_result") { const t = f.querySelector('[data-tid="' + CSS.escape(ev.id) + '"]'); const pre = el("pre", ev.text || "(no output)"); if (ev.error) pre.className = "old"; (t || f).append(pre); }
+    else if (ev.type === "tool_use") {
+      const d = el("details", null, "ev tool"); const s = el("summary");
+      s.append(el("span", toolName(ev.name), "nm"), " " + (ev.label || ev.view.file || ev.view.command || "").slice(0, 90));
+      if (ev.agent) s.title = "by the subagent " + ev.agent;
+      if (!ev.past) s.append(el("span", "running", "spin run"));
+      d.append(s, toolView(ev.view)); d.dataset.tid = ev.id; f.append(d);
+    }
+    else if (ev.type === "tool_result") {
+      const t = f.querySelector('[data-tid="' + CSS.escape(ev.id) + '"]'); const pre = el("pre", ev.text || "(no output)"); if (ev.error) pre.className = "old"; (t || f).append(pre);
+      const sp = t && t.querySelector(".spin");
+      if (sp) { sp.className = "spin " + (ev.error ? "bad" : "ok"); sp.textContent = (ev.error ? "✗ failed" : "✓") + (ev.ms != null ? " " + (ev.ms < 1000 ? ev.ms + " ms" : (ev.ms / 1000).toFixed(1) + " s") : ""); }
+    }
     else if (ev.type === "permission") f.append(askCard(ev));
     else if (ev.type === "permission_done") { const c = S.cards[ev.request]; if (c) { c.classList.add("done"); const a = c.querySelector(".acts"); if (a) a.replaceChildren(el("span", ev.allow ? (ev.always ? "Allowed always" : "Allowed") : "Denied" + (ev.message ? ": " + ev.message : ""))); } }
     else if (ev.type === "result") {
@@ -691,7 +797,8 @@ function paint(ev) {
     }
     else if (ev.type === "error") f.append(el("div", ev.text, "ev err"));
     else if (ev.type === "note") f.append(el("div", ev.text, "ev meta"));
-    else if (ev.type === "interrupt") f.append(el("div", "Interrupted", "ev meta"));
+    else if (ev.type === "interrupt") { settleTools(f, "interrupted"); f.append(el("div", "Interrupted", "ev meta")); }
+    else if (ev.type === "status" && (ev.status === "idle" || ev.status === "closed")) settleTools(f, "no result");
     else if (ev.type === "system" && ev.subtype === "init") {
       f.append(el("div", "Claude Code started · " + (ev.model || "") + " · permissions: " + (ev.permission_mode || "default") + " · " + ev.tools + " tools" + ((ev.mcp || []).length ? " · MCP: " + ev.mcp.join(", ") : ""), "ev meta"));
       if (ev.permission_mode === "auto" && S.choices && S.choices.gateway) {   // every action would be refused: say so, offer the way out

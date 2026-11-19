@@ -269,6 +269,11 @@ class Session:
         self.key_list: List[Dict[str, Any]] = []
         self.masks: List[tuple] = []
         self._held = ""                                  # streamed text held back while it may end in part of a key
+        self.turn_at = 0.0                # when the turn under way began (0: none)
+        self.last_at = time.time()        # when Claude Code last said anything
+        self.doing: Dict[str, Any] = {}   # what it does now: {"what", "tool", "detail", "agent"}
+        self.tools: Dict[str, Dict[str, Any]] = {}   # this turn's tool calls, by id: name, label, when begun
+        self.forget = False               # closed by the person: not offered to continue after a restart
         self._log = self._log_path()
 
     # ── the log ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -338,12 +343,47 @@ class Session:
     def set_status(self, status: str, **extra: Any) -> None:
         self.status = status
         self.emit("status", status=status, **extra)
+        if status == "working":
+            self.turn_at = self.last_at = time.time()
+            self.tools.clear()
+            self.state("thinking")
+        elif status in ("idle", "closed", "failed"):
+            self.turn_at = 0.0
+            self.doing = {}
+        if self.claude_id and not self.forget:
+            note_open(self)
+
+    # -- what it is doing now (the column's status line) --
+    def state(self, what: str, tool: str = "", detail: str = "", agent: str = "") -> None:
+        """What Claude Code does now: thinking, writing (a reply), tool (running one). Said to the page when it
+        changes (not kept in the log)."""
+        now = {"what": what, "tool": tool, "detail": detail[:160], "agent": agent[:120]}
+        if now != self.doing:
+            self.doing = now
+            self.emit("state", keep=False, now=self.now())
+
+    def now(self) -> Dict[str, Any]:
+        """{"what", "tool", "detail", "agent", "turn_for", "quiet_for"} while a turn is under way, else {}. "what" is
+        "waiting" while a question waits for the person."""
+        if not self.turn_at:
+            return {}
+        t = time.time()
+        what = "waiting" if self.pending else (self.doing.get("what") or "thinking")
+        return self._mask({**self.doing, "what": what, "turn_for": round(t - self.turn_at, 1),
+                           "quiet_for": round(t - self.last_at, 1)})   # a command's text may hold a stored value
+
+    def _agent_of(self, msg: Any) -> str:
+        parent = getattr(msg, "parent_tool_use_id", None)
+        if not parent:
+            return ""
+        t = self.tools.get(parent) or {}
+        return t.get("label") or "a subagent"
 
     def head(self) -> Dict[str, Any]:
         return {"id": self.id, "project": str(self.project), "status": self.status, "claude_session": self.claude_id,
                 "mode": getattr(self, "mode", "") or self.options.get("permission_mode") or "",
                 "model": self.model or self.options.get("model") or "", "options": self.public_options(),
-                "title": self.title, "created": self.created, "error": self.error,
+                "title": self.title, "created": self.created, "error": self.error, "now": self.now(),
                 "keys": [k["name"] for k in self.key_list],
                 "pending": [{"request": k, **{x: self._mask(v[x]) for x in ("tool", "view")}}
                             for k, v in self.pending.items()]}
@@ -422,7 +462,12 @@ class Session:
         if said:
             self.emit("note", text="Now: " + ", ".join(said) + " (this session, from here on)")
 
-    def close(self) -> None:
+    def close(self, forget: bool = True) -> None:
+        """End the session. `forget`: the person closed it, so it is not offered to continue after a restart; the
+        Studio stopping (forget=False) keeps it offered."""
+        if forget:
+            self.forget = True
+            forget_open(self)
         if self.status == "closed":
             return
         for req in list(self.pending):
@@ -549,11 +594,27 @@ class Session:
     def record(self, msg: Any) -> None:
         """One SDK message as events."""
         kind = type(msg).__name__
+        self.last_at = time.time()
+        agent = self._agent_of(msg)
         if kind == "StreamEvent":
             ev = getattr(msg, "event", None) or {}
-            delta = (ev.get("delta") or {}) if isinstance(ev, dict) else {}
+            ev = ev if isinstance(ev, dict) else {}
+            delta = ev.get("delta") or {}
             if delta.get("type") == "text_delta" and delta.get("text"):
-                self._delta(delta["text"])
+                if not agent:
+                    self._delta(delta["text"])
+                self.state("writing", agent=agent)
+            elif ev.get("type") == "content_block_start":
+                block = ev.get("content_block") or {}
+                bt = block.get("type") if isinstance(block, dict) else ""
+                if bt in ("thinking", "redacted_thinking"):
+                    self.state("thinking", agent=agent)
+                elif bt == "text":
+                    self.state("writing", agent=agent)
+                elif bt in ("tool_use", "server_tool_use", "mcp_tool_use"):
+                    self.state("tool", tool=str(block.get("name") or ""), detail="preparing the call", agent=agent)
+            elif ev.get("type") == "message_start":
+                self.state("thinking", agent=agent)
             return
         self._held = ""   # the whole text follows (masked): what was held back is not needed
         if kind == "AssistantMessage":
@@ -566,8 +627,11 @@ class Session:
                     if (b.thinking or "").strip():   # often withheld: nothing to show then
                         self.emit("thinking", text=_cut(b.thinking, 6000))
                 elif bk == "ToolUseBlock":
-                    self.emit("tool_use", id=b.id, name=b.name, view=tool_input_view(b.name, b.input),
-                              sub=bool(getattr(msg, "parent_tool_use_id", None)))
+                    label = tool_label(b.name, b.input if isinstance(b.input, dict) else {})
+                    self.tools[b.id] = {"name": b.name, "label": label, "at": time.time()}
+                    self.emit("tool_use", id=b.id, name=b.name, view=tool_input_view(b.name, b.input), label=label,
+                              agent=agent, sub=bool(getattr(msg, "parent_tool_use_id", None)))
+                    self.state("tool", tool=b.name, detail=label, agent=agent)
             return
         if kind == "UserMessage":
             content = getattr(msg, "content", None)
@@ -575,7 +639,16 @@ class Session:
                 if type(b).__name__ == "ToolResultBlock":
                     c = b.content
                     text = c if isinstance(c, str) else " ".join(x.get("text", "") for x in c or [] if isinstance(x, dict))
-                    self.emit("tool_result", id=b.tool_use_id, error=bool(b.is_error), text=_cut(_redact(text or ""), 3000))
+                    began = (self.tools.get(b.tool_use_id) or {}).get("at")
+                    self.emit("tool_result", id=b.tool_use_id, error=bool(b.is_error), text=_cut(_redact(text or ""), 3000),
+                              ms=int((time.time() - began) * 1000) if began else None)
+                    if b.tool_use_id in self.tools:
+                        self.tools[b.tool_use_id]["done"] = True   # kept: a subagent's messages name it by this id
+                    running = [t for t in self.tools.values() if not t.get("done")]
+                    if running:
+                        self.state("tool", tool=running[-1]["name"], detail=running[-1]["label"], agent=agent)
+                    else:
+                        self.state("thinking", agent=agent)
             return
         if kind == "SystemMessage":
             data = getattr(msg, "data", None) or {}
@@ -591,12 +664,16 @@ class Session:
                     self.emit("note", text=f"Claude Code started in {self.mode} (from your settings); now {wanted}, "
                                            "as chosen here")
                     self.mode = wanted
+                if not self.forget:
+                    note_open(self)
                 self.emit("system", subtype="init", model=self.model, claude_session=self.claude_id,
                           tools=len(data.get("tools") or []), permission_mode=self.mode,
                           mcp=[s.get("name") for s in data.get("mcp_servers") or [] if isinstance(s, dict)])
             return
         if kind == "ResultMessage":
             self.claude_id = str(getattr(msg, "session_id", "") or self.claude_id)
+            if not self.forget:
+                note_open(self)
             usage = getattr(msg, "usage", None) or {}
             self.emit("result", cost=getattr(msg, "total_cost_usd", None), usage=usage if isinstance(usage, dict) else {},
                       model=self.model, terminal_reason=str(getattr(msg, "terminal_reason", "") or ""),
@@ -669,6 +746,15 @@ class Manager:
         with self.lock:
             self.sessions[s.id] = s
         s.emit("start", options=s.public_options(), resume=resume, fork=fork)
+        if resume:   # what was said before, so the conversation reads on from there
+            try:
+                got = history(project, resume)
+                if got["entries"]:
+                    s.emit("history", keep=False, claude_session=resume, **got)
+            except Exception:  # noqa: BLE001 - the conversation goes on without it
+                pass
+            if not fork:
+                drop_open(resume)   # continued here: this session is the one offered from now on
         self.call(s.run())
         return s
 
@@ -717,7 +803,7 @@ class Manager:
             return
         self._stopped = True
         for s in list(self.sessions.values()):
-            s.close()
+            s.close(forget=False)   # the Studio stops: each is offered to continue after its restart
         deadline = time.time() + wait
         while time.time() < deadline and any(s.status not in ("closed", "failed") for s in self.sessions.values()):
             time.sleep(0.05)
@@ -736,36 +822,279 @@ class Manager:
         self.thread.join(wait)
 
 
-def past(project: Path) -> List[Dict[str, Any]]:
-    """Claude Code's own past sessions of this repository (its transcripts), newest first, to resume one."""
-    try:
-        from claude_agent_sdk import list_sessions
-        got = list_sessions(str(project), limit=50)
-        return [{"id": x.session_id, "first_prompt": (x.first_prompt or "")[:200], "summary": (x.summary or "")[:200],
-                 "title": x.custom_title or "", "branch": x.git_branch or "", "modified": x.last_modified,
-                 "size": x.file_size} for x in got]
-    except Exception:  # noqa: BLE001 - without the SDK: read the transcripts' folder
-        pass
+# -- past conversations: Claude Code's transcripts of this project, like /resume --
+
+HISTORY_MOST = 200       # the entries of a past conversation shown at once ("show earlier" for more)
+KEEP_PARSED = 4000       # the entries of one transcript kept parsed (the newest)
+FULL_SCAN = 8 << 20      # transcripts bigger than this are listed from a quick count, not parsed
+OPEN_FILE = "open-sessions.json"   # the Studio's sessions not closed by the person: offered after a restart
+_SCANS: Dict[str, Any] = {}        # transcript path -> ((size, mtime), parsed)
+_OPEN_LOCK = threading.Lock()
+
+
+def tool_label(name: str, data: Dict[str, Any]) -> str:
+    """A tool call in a few words: its command, its file, its pattern, what it asks; an MCP tool by its server."""
+    data = data if isinstance(data, dict) else {}
+    for k in ("description", "command", "file_path", "notebook_path", "pattern", "url", "query", "prompt", "path"):
+        v = data.get(k)
+        if isinstance(v, str) and v.strip():
+            v = " ".join(v.split())
+            if k == "file_path" or k == "notebook_path":
+                v = v.replace("\\", "/").rsplit("/", 2)
+                v = "/".join(v[-2:])
+            return v[:140]
+    if name.startswith("mcp__"):
+        parts = name.split("__")
+        return f"{parts[1] if len(parts) > 1 else ''}: {parts[-1]}"
+    return ""
+
+
+def transcripts_dir(project: Path) -> Path:
+    """Where Claude Code keeps this project's transcripts: ~/.claude/projects/<its path, every other character a ->"""
     import re
     slug = re.sub(r"[^A-Za-z0-9]", "-", str(Path(project).resolve()))
-    folder = Path.home() / ".claude" / "projects" / slug
-    out = []
-    for f in sorted(folder.glob("*.jsonl"), key=lambda f: -f.stat().st_mtime)[:50] if folder.is_dir() else []:
-        first = ""
-        try:
-            with open(f, encoding="utf-8") as fh:
-                for line in fh:
-                    try:
-                        d = json.loads(line)
-                    except ValueError:
+    base = Path.home() / ".claude" / "projects"
+    d = base / slug
+    if not d.is_dir() and len(slug) > 200 and base.is_dir():   # a long path: cut, with a hash after it
+        hit = sorted(base.glob(slug[:200] + "*"))
+        if hit:
+            return hit[0]
+    return d
+
+
+def _text_of(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(str(b.get("text") or "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
+def _shown_prompt(text: str) -> str:
+    """A prompt as the person wrote it: Claude Code's own wrappers (commands, caveats, reminders) are not theirs."""
+    t = text.strip()
+    if not t or t.startswith(("<local-command", "<command-", "Caveat:", "<system-reminder>", "[Request interrupted")):
+        return ""
+    return t
+
+
+def _parse(f: Path) -> Dict[str, Any]:
+    """One transcript read: its entries for the feed (the newest KEEP_PARSED), title, first prompt, counts."""
+    entries: List[Dict[str, Any]] = []
+    total = prompts = replies = 0
+    first = title = summary = branch = ""
+    last = ""
+    with open(f, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(d, dict):
+                continue
+            kind = d.get("type")
+            if kind == "summary":
+                summary = str(d.get("summary") or summary)
+                continue
+            if kind in ("custom-title", "title") or d.get("customTitle"):
+                title = str(d.get("customTitle") or d.get("title") or title)
+                continue
+            if kind not in ("user", "assistant") or d.get("isSidechain") or d.get("isMeta"):
+                continue
+            branch = str(d.get("gitBranch") or branch)
+            last = str(d.get("timestamp") or last)
+            m = d.get("message") or {}
+            content = m.get("content")
+            got: List[Dict[str, Any]] = []
+            if kind == "user":
+                said = _shown_prompt(_text_of(content))
+                if said:
+                    got.append({"type": "user", "text": _cut(said, 6000)})
+                    prompts += 1
+                    first = first or said[:200]
+                for b in content if isinstance(content, list) else []:
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        c = b.get("content")
+                        text = c if isinstance(c, str) else _text_of(c)
+                        got.append({"type": "tool_result", "id": str(b.get("tool_use_id") or ""),
+                                    "error": bool(b.get("is_error")), "text": _cut(_redact(text or ""), 600)})
+            else:
+                for b in content if isinstance(content, list) else []:
+                    if not isinstance(b, dict):
                         continue
-                    m = d.get("message") or {}
-                    if d.get("type") == "user" and isinstance(m.get("content"), str):
-                        first = m["content"][:200]
-                        break
+                    if b.get("type") == "text" and str(b.get("text") or "").strip():
+                        got.append({"type": "text", "text": _cut(b["text"], 20000)})
+                        replies += 1
+                    elif b.get("type") == "tool_use":
+                        data = b.get("input") if isinstance(b.get("input"), dict) else {}
+                        got.append({"type": "tool_use", "id": str(b.get("id") or ""), "name": str(b.get("name") or ""),
+                                    "view": tool_input_view(str(b.get("name") or ""), data),
+                                    "label": tool_label(str(b.get("name") or ""), data)})
+            for e in got:
+                e["i"] = total
+                e["past"] = True
+                total += 1
+                entries.append(e)
+            if len(entries) > KEEP_PARSED * 2:
+                del entries[:len(entries) - KEEP_PARSED]
+    return {"entries": entries[-KEEP_PARSED:], "total": total, "prompts": prompts, "replies": replies,
+            "first": first, "title": title, "summary": summary, "branch": branch, "last": last}
+
+
+def _quick(f: Path) -> Dict[str, Any]:
+    """A big transcript listed without parsing it: its first prompt, and its messages counted roughly."""
+    first, n = "", 0
+    with open(f, "rb") as fh:
+        for raw in fh:
+            if b'"type":"assistant"' in raw:
+                n += 1
+            elif not first and b'"type":"user"' in raw:
+                try:
+                    d = json.loads(raw)
+                    first = _shown_prompt(_text_of((d.get("message") or {}).get("content")))[:200]
+                except ValueError:
+                    pass
+    return {"entries": None, "total": 0, "prompts": 0, "replies": n, "first": first, "title": "", "summary": "",
+            "branch": "", "last": "", "rough": True}
+
+
+def scan(f: Path, full: bool = False) -> Dict[str, Any]:
+    """A transcript, read once while its size and time stay the same."""
+    st = f.stat()
+    stamp = (st.st_size, st.st_mtime_ns)
+    got = _SCANS.get(str(f))
+    if got is not None and got[0] == stamp and (got[1]["entries"] is not None or not full):
+        return got[1]
+    parsed = _parse(f) if full or st.st_size <= FULL_SCAN else _quick(f)
+    _SCANS[str(f)] = (stamp, parsed)
+    while len(_SCANS) > 80:
+        del _SCANS[next(iter(_SCANS))]
+    return parsed
+
+
+def history(project: Path, claude_id: str, before: Optional[int] = None, most: int = HISTORY_MOST) -> Dict[str, Any]:
+    """A past conversation's entries for the feed: the newest `most` (before entry number `before`), and how many
+    earlier ones there are. {"entries", "earlier", "total"}."""
+    import re
+    if not re.match(r"^[A-Za-z0-9-]{8,80}$", str(claude_id or "")):
+        raise ValueError("not a conversation id")
+    f = transcripts_dir(project) / f"{claude_id}.jsonl"
+    if not f.is_file():
+        return {"entries": [], "earlier": 0, "total": 0}
+    got = scan(f, full=True)
+    rows = got["entries"] or []
+    if before is not None:
+        rows = [e for e in rows if e["i"] < int(before)]
+    shown = rows[-max(1, min(int(most), 1000)):]
+    earlier = shown[0]["i"] if shown else 0
+    return {"entries": shown, "earlier": earlier, "kept_from": rows[0]["i"] if rows else 0, "total": got["total"]}
+
+
+def _open_path() -> Optional[Path]:
+    try:
+        from .app import state_dir
+        d = state_dir()
+    except Exception:  # noqa: BLE001
+        return None
+    return d / OPEN_FILE if d is not None else None
+
+
+def _open_read() -> Dict[str, Any]:
+    f = _open_path()
+    try:
+        got = json.loads(f.read_text(encoding="utf-8")) if f is not None else {}
+    except (OSError, ValueError):
+        got = {}
+    return got if isinstance(got, dict) else {}
+
+
+def _open_write(got: Dict[str, Any]) -> None:
+    f = _open_path()
+    if f is None:
+        return
+    try:
+        from .app import _write_private
+        _write_private(f, got)
+    except OSError:
+        pass
+
+
+def note_open(s: "Session") -> None:
+    """This session is open (not closed by the person): after a restart of the Studio, it is offered to continue.
+    Keyed by its conversation, so a continued one replaces the entry it came from."""
+    if not s.claude_id:
+        return
+    with _OPEN_LOCK:
+        got = _open_read()
+        was = got.get(s.claude_id) or {}
+        now = {"project": str(s.project), "title": s.title or was.get("title") or "", "studio": s.id,
+               "status": s.status, "at": round(time.time(), 3), "options": s.public_options()}
+        if {k: v for k, v in was.items() if k != "at"} == {k: v for k, v in now.items() if k != "at"} \
+                and time.time() - float(was.get("at") or 0) < 30:
+            return
+        got[s.claude_id] = now
+        _open_write(got)
+
+
+def forget_open(s: "Session") -> None:
+    if s.claude_id:
+        drop_open(s.claude_id)
+
+
+def drop_open(claude_id: str) -> None:
+    with _OPEN_LOCK:
+        got = _open_read()
+        if got.pop(claude_id, None) is not None:
+            _open_write(got)
+
+
+def left_off(project: Path, live: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+    """The conversations of this project the Studio had open when it (or its machine) stopped, by id: not the ones
+    open now (`live`: their conversation ids)."""
+    here = os.path.normcase(str(Path(project).resolve()))
+    out = {}
+    for cid, e in _open_read().items():
+        if not isinstance(e, dict) or cid in (live or []):
+            continue
+        try:
+            if os.path.normcase(str(Path(e.get("project") or "").resolve())) != here:
+                continue
+        except (OSError, ValueError):
+            continue
+        out[cid] = e
+    return out
+
+
+def past(project: Path, live: Optional[List[str]] = None, most: int = 50) -> List[Dict[str, Any]]:
+    """Claude Code's past conversations of this project (its transcripts), newest first, to resume one, each
+    {"id", "first_prompt", "title", "summary", "branch", "modified" (ms), "size", "messages", "left_off" (the
+    Studio had it open when it stopped)}. The ones left off first. Read once while a transcript is unchanged."""
+    folder = transcripts_dir(project)
+    stopped = left_off(project, live)
+    files = sorted(folder.glob("*.jsonl"), key=lambda f: -f.stat().st_mtime) if folder.is_dir() else []
+    out = []
+    for f in files[:most]:
+        try:
+            got = scan(f)
+            st = f.stat()
         except OSError:
             continue
-        st = f.stat()
-        out.append({"id": f.stem, "first_prompt": first, "summary": "", "title": "", "branch": "",
-                    "modified": int(st.st_mtime * 1000), "size": st.st_size})
+        if not got["first"] and not got["replies"] and f.stem not in stopped:
+            continue   # nothing said in it (a session opened and left)
+        out.append({"id": f.stem, "first_prompt": got["first"], "summary": got["summary"][:200],
+                    "title": got["title"] or (stopped.get(f.stem) or {}).get("title", ""), "branch": got["branch"],
+                    "modified": int(st.st_mtime * 1000), "size": st.st_size,
+                    "messages": got["prompts"] + got["replies"], "rough": bool(got.get("rough")),
+                    "left_off": f.stem in stopped, "options": (stopped.get(f.stem) or {}).get("options") or {}})
+    if not out and not files:
+        try:   # no folder where it was looked for: the SDK knows where Claude Code keeps them
+            from claude_agent_sdk import list_sessions
+            for x in list_sessions(str(project), limit=most):
+                out.append({"id": x.session_id, "first_prompt": (x.first_prompt or "")[:200],
+                            "summary": (x.summary or "")[:200], "title": x.custom_title or "",
+                            "branch": x.git_branch or "", "modified": x.last_modified, "size": x.file_size,
+                            "messages": 0, "rough": True, "left_off": x.session_id in stopped, "options": {}})
+        except Exception:  # noqa: BLE001
+            pass
+    out.sort(key=lambda x: (not x["left_off"], -int(x["modified"] or 0)))
     return out
