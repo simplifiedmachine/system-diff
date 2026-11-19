@@ -98,7 +98,7 @@ def detect(root: Path, files: Optional[List[str]] = None, cfg: Optional[Dict[str
     return out
 
 
-EXT_FRESH = 2.0    # seconds an extension's projects (and their progress text) are kept before it is asked again
+EXT_FRESH = 5.0    # seconds an extension's projects (and their progress text) are kept before it is asked again
 
 
 def _has_hook() -> bool:

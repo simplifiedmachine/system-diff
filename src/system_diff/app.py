@@ -154,12 +154,14 @@ class Studio:
         with self.lock:
             if str(root) not in self.added:
                 self.added.append(str(root))
+                self._known = None
                 self._save_projects()
         return {"added": str(root), "id": pid_of(str(root))}
 
     def remove(self, path: str) -> None:
         with self.lock:
             self.added = [p for p in self.added if p != path and pid_of(p) != path]
+            self._known = None
             self._save_projects()
 
     def _save_projects(self) -> None:
@@ -167,7 +169,15 @@ class Studio:
             _write_private(self.folder / PROJECTS, {"projects": self.added})
 
     def projects(self) -> List[Dict[str, Any]]:
-        """The projects: the ones added, then every running engine's; each with its repositories inside."""
+        """The projects: the ones added, then every running engine's; each with its repositories inside. Kept 3 s
+        (the page asks often, and each list asks the engines)."""
+        if getattr(self, "_known", None) is not None and time.monotonic() - getattr(self, "_known_at", 0.0) < 3.0:
+            return self._known
+        self._known = self._projects()
+        self._known_at = time.monotonic()
+        return self._known
+
+    def _projects(self) -> List[Dict[str, Any]]:
         from . import repos
         seen: Dict[str, Dict[str, Any]] = {}
         order: List[str] = list(self.added)
@@ -210,10 +220,19 @@ class Studio:
         """A repository's folder projects: from its engine (which holds the system, and asks the extensions there),
         else worked out here."""
         from . import projects, uitools
-        got = uitools.engine_get(p, "projects/folders", timeout=5)
+        cache = self.__dict__.setdefault("_folder_cache", {})
+        was = cache.get(str(p))
+        if was is not None and time.monotonic() - was[0] < 15.0:
+            return was[1]
+        got = uitools.engine_get(p, "projects/folders", timeout=1.5)
         if isinstance(got, dict) and isinstance(got.get("folders"), list):
-            return got["folders"]
-        return projects.listed(p)
+            out = got["folders"]
+        elif was is not None:   # the engine is busy: what it said last
+            out = was[1]
+        else:
+            out = projects.listed(p)
+        cache[str(p)] = (time.monotonic(), out)
+        return out
 
     def _entry(self, p: Path, kind: str, rel: str = "") -> Dict[str, Any]:
         from . import repos
@@ -226,7 +245,14 @@ class Studio:
                 "waiting": sum(1 for s in live if s["pending"])}
 
     def root_of(self, pid: str) -> Optional[Path]:
-        for e in self.projects():
+        """The folder a project id names: from the list drawn last (every proxied request asks: never a rebuild of
+        the list, which asks each engine), drawn again only for an id it does not have."""
+        known = getattr(self, "_known", None)
+        got = self._find_root(pid, known) if known is not None else None
+        return got if got is not None else self._find_root(pid, self.projects())
+
+    def _find_root(self, pid: str, listed: List[Dict[str, Any]]) -> Optional[Path]:
+        for e in listed:
             if e["id"] == pid:
                 return Path(e["path"])
             for k in e.get("kids") or []:
