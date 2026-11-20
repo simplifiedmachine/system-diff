@@ -166,7 +166,9 @@ pre.old { border-left:3px solid var(--bad); } pre.new { border-left:3px solid va
 .past .pitem .pacts { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; } .past input[type=search] { width:100%; }
 .hist { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; opacity:.92; }
 .histsep { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.07em; text-align:center; border-top:1px solid var(--line); padding-top:6px; }
-.spin { display:inline-block; margin-left:8px; color:var(--muted); font-size:12px; } .spin.wait { font-style:italic; } .spin.run::before { content:""; display:inline-block; width:9px; height:9px; margin-right:5px; border:2px solid var(--accent); border-right-color:transparent; border-radius:50%; vertical-align:-1px; animation:spin .8s linear infinite; }
+.spin { display:inline-block; margin-left:8px; color:var(--muted); font-size:12px; } .spin.wait { font-style:italic; }
+details.tool > summary .tail { margin-left:8px; color:var(--muted); font:11.5px var(--mono, ui-monospace, monospace); opacity:.85; }
+details.tool > pre.live { max-height:240px; overflow:auto; border-left:2px solid var(--accent); } .spin.run::before { content:""; display:inline-block; width:9px; height:9px; margin-right:5px; border:2px solid var(--accent); border-right-color:transparent; border-radius:50%; vertical-align:-1px; animation:spin .8s linear infinite; }
 .spin.ok { color:var(--ok); } .spin.bad { color:var(--bad); }
 @keyframes spin { to { transform:rotate(360deg); } }
 .st .doing { font-weight:600; } .st .quiet { color:var(--warn); font-weight:600; } .st .agent { color:var(--accent-2); }
@@ -861,6 +863,30 @@ function paintHistory(ev, before) {   // a resumed conversation's past entries, 
 // A subagent is one line in the feed: its task, what it does now, its counts, its time; a click shows its own calls
 const SUB_TOOLS = ["Task", "Agent"], SUB_READS = ["Read", "Grep", "Glob", "LS", "NotebookRead", "WebFetch", "WebSearch"],
       SUB_EDITS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+// a command's output as it runs (copied by the Studio to a log; Claude Code hands it over only at the end): its last
+// line beside it, all of it when the row is open
+S.live = {};
+setInterval(async () => {
+  const s = S.session; if (!s || document.hidden) return;
+  for (const [tid, lv] of Object.entries(S.live).slice(0, 6)) {
+    if (!lv.row.isConnected || lv.row.dataset.result || lv.row.dataset.done || lv.busy) { if (!lv.busy) delete S.live[tid]; continue; }
+    lv.busy = true;
+    try {
+      const d = await api("api/sessions/" + s.id + "/log?tid=" + encodeURIComponent(tid) + "&from=" + lv.from);
+      if (d.text) {
+        lv.from = d.next;
+        let pre = lv.row.querySelector(":scope > pre.live"); if (!pre) { pre = el("pre", "", "live"); lv.row.append(pre); }
+        pre.textContent = (pre.textContent + d.text).slice(-60000);
+        const last = pre.textContent.trimEnd().split("\n").pop() || "";
+        let tail = lv.row.querySelector(":scope > summary .tail"); if (!tail) { tail = el("span", "", "tail"); lv.row.querySelector(":scope > summary").append(tail); }
+        tail.textContent = last.slice(0, 90);
+        if (lv.row.open) pre.scrollTop = pre.scrollHeight;
+      }
+      if (d.done) delete S.live[tid];
+    } catch (e) { delete S.live[tid]; }
+    lv.busy = false;
+  }
+}, 1000);
 // every call still running says for how long ("running · 23 s"), each on its own row: two at once are both visible
 setInterval(() => {
   for (const sp of document.querySelectorAll("#feed .spin.run[data-at]"))
@@ -947,7 +973,7 @@ function paint(ev, into) {
       if (ev.agent) s.title = "by the subagent " + ev.agent;
       // asked for: "queued" until Claude Code starts it (calls made together can wait their turn), then running
       if (!ev.past) { const sp = el("span", "queued", "spin wait"); sp.title = "Asked for; Claude Code has not started it yet"; s.append(sp); }
-      d.append(s, toolView(ev.view)); d.dataset.tid = ev.id;
+      d.append(s, toolView(ev.view)); d.dataset.tid = ev.id; d.dataset.tool = ev.name || "";
       const ln = ev.parent ? subOf(f, ev.parent) : null;   // a subagent's own call: inside its one line
       if (ln) { ln.querySelector(".subcalls").append(d); subCount(ln, ev.name, ev.label || ev.view.file || ev.view.command || ""); }
       else f.append(d);
@@ -961,10 +987,12 @@ function paint(ev, into) {
     else if (ev.type === "tool_start" || ev.type === "tool_done") {   // one call of several: its own start, its own end
       const t = f.querySelector('[data-tid="' + CSS.escape(ev.id) + '"]'), sp = t && t.querySelector(".spin");
       if (t && sp && !t.dataset.result) {
-        if (ev.type === "tool_start") { sp.className = "spin run"; sp.textContent = "running"; sp.dataset.at = String(ev.at * 1000); }
+        if (ev.type === "tool_start") { sp.className = "spin run"; sp.textContent = "running"; sp.dataset.at = String(ev.at * 1000);
+          if (t.dataset.tool === "Bash" && !ev.past) S.live[ev.id] = S.live[ev.id] || { from:0, row:t }; }
         else {
           let pre = t.querySelector(":scope > pre.out"); if (!pre) { pre = el("pre", "", "out"); t.append(pre); }
           pre.textContent = ev.text || "(no output)"; t.dataset.done = "1";
+          for (const x of t.querySelectorAll(":scope > pre.live, :scope > summary .tail")) x.remove();
           sp.className = "spin ok"; sp.textContent = "✓" + (ev.ms != null ? " " + (ev.ms < 1000 ? ev.ms + " ms" : (ev.ms / 1000).toFixed(1) + " s") : "");
         }
       }
@@ -974,7 +1002,7 @@ function paint(ev, into) {
       let pre = t && t.querySelector(":scope > pre.out");
       if (!pre) { pre = el("pre", "", "out"); (t || f).append(pre); }
       pre.textContent = ev.text || "(no output)"; pre.classList.toggle("old", !!ev.error);
-      if (t) t.dataset.result = "1";
+      if (t) { t.dataset.result = "1"; for (const x of t.querySelectorAll(":scope > pre.live, :scope > summary .tail")) x.remove(); }
       const sp = t && t.querySelector(".spin");
       if (sp && (ev.error || !t.dataset.done || ev.ms != null)) { sp.className = "spin " + (ev.error ? "bad" : "ok"); sp.textContent = (ev.error ? "✗ failed" : "✓") + (ev.ms != null ? " " + (ev.ms < 1000 ? ev.ms + " ms" : (ev.ms / 1000).toFixed(1) + " s") : ""); }
     }

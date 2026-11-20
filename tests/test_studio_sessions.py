@@ -219,3 +219,44 @@ def test_each_call_says_queued_running_and_done_on_its_own():
     assert sessions._response_text({"stdout": "quick", "stderr": ""}) == "quick"
     assert sessions._response_text("x") == "x" and sessions._response_text(None) == ""
     assert '"pacts"' in p   # the open sessions' Open and Close side by side
+
+
+def _a_bash():
+    import os
+    import shutil
+    if os.name == "nt":   # Git's own bash, as Claude Code uses it on Windows (never WSL's bash.exe)
+        for p in (r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files\Git\usr\bin\bash.exe"):
+            if os.path.exists(p):
+                return p
+        return None
+    return shutil.which("bash")
+
+
+def test_a_commands_output_is_copied_live_and_handed_back_whole(tmp_path):
+    """The Studio shows a command's output as it runs: it goes to a log, and at the end the shell prints the log
+    back, so Claude gets the same output and exit code; a cd still carries on to what runs after it."""
+    import subprocess
+    import pytest
+    from system_diff import sessions
+    bash = _a_bash()
+    if bash is None:
+        pytest.skip("no bash here")
+    log = (tmp_path / "run.log").as_posix()
+
+    def run(cmd):
+        p = subprocess.run([bash, "-c", sessions.live_prefix(log) + "\n" + cmd + f'\npwd -P > "{tmp_path.as_posix()}/cwd.txt"'],
+                           capture_output=True, text=True, cwd=tmp_path)
+        return p.returncode, p.stdout.replace("\r\n", "\n"), p.stderr
+    assert run("echo quick") == (0, "quick\n", "")
+    rc, out, _err = run("echo out; echo err >&2; exit 3")
+    assert rc == 3 and out == "out\nerr\n"
+    assert run("true") == (0, "", "")
+    (tmp_path / "sub").mkdir()
+    assert run("cd sub && echo in")[1] == "in\n" and (tmp_path / "cwd.txt").read_text().strip().endswith("sub")
+    assert open(log).read().strip() == "in"   # what the page read while it ran
+
+
+def test_the_card_shows_the_command_as_claude_wrote_it():
+    from system_diff import sessions
+    cmd = sessions.LIVE_MARK + sessions.live_prefix("/tmp/x.log") + "\n" + "git status"
+    assert sessions.tool_input_view("Bash", {"command": cmd})["command"] == "git status"

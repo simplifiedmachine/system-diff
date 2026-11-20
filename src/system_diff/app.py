@@ -565,6 +565,13 @@ def handler(studio: Studio):
                     before = q.get("before")
                     return self._json(200, sessions.history(self._root(q), path.split("/")[3],
                                                             int(before) if before not in (None, "") else None))
+                if path.startswith("/api/sessions/") and path.endswith("/log"):   # a command's output as it runs
+                    s = studio.sessions().get(path.split("/")[3])
+                    try:
+                        start = max(0, int(q.get("from") or 0))
+                    except ValueError:
+                        start = 0
+                    return self._json(200, s.read_log(str(q.get("tid") or "")[:120], start))
                 if path.startswith("/api/sessions/") and path.endswith("/events"):
                     s = studio.sessions().get(path.split("/")[3])
                     since = int(q.get("since") or 0)

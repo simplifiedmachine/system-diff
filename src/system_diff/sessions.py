@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import tempfile
 import os
 import sys
 import threading
@@ -236,6 +237,22 @@ def asked_why(project: Path, tool: str, options: Dict[str, Any]) -> str:
             "outside the files system-diff reads, or a check Claude Code keeps in every mode.")
 
 
+LIVE_MARK = "# system-diff: the Studio shows this command's output as it runs\n"
+
+
+def live_prefix(log: str) -> str:
+    """The line run before a command so the Studio can show its output as it comes: its output (and errors) go to
+    `log` while it runs, and when it ends (or exits, or is stopped) the shell prints that file back, so Claude gets
+    the same output and exit code. No program is started for it (a program start costs seconds on some machines),
+    and nothing runs on after the command. A shell that cannot do it runs the command as it is (eval fails, : goes
+    on). Not for a background command (Claude Code keeps its output itself)."""
+    body = (f'exec 8>&1 9>&2 >"{log}" 2>&1; '
+            '__sd_end() { __sd_rc=$?; trap - EXIT TERM INT; exec 1>&8 2>&9 8>&- 9>&-; '
+            f'if [ -s "{log}" ]; then if [ -n "$BASH_VERSION$ZSH_VERSION" ]; then printf "%s\\n" "$(<"{log}")"; '
+            f'else cat "{log}"; fi; fi; exit $__sd_rc; }}; trap __sd_end EXIT TERM INT')
+    return f"eval '{body}' || :"
+
+
 def _response_text(got: Any) -> str:
     """What a tool gave back, as the PostToolUse hook has it: a command's output, a text, else its JSON."""
     if isinstance(got, str):
@@ -258,6 +275,8 @@ def _response_text(got: Any) -> str:
 def tool_input_view(name: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """What the page shows of a tool call: its file and, for an edit, what changes; a command; else the input, cut."""
     data = data if isinstance(data, dict) else {"input": data}
+    if isinstance(data.get("command"), str) and data["command"].startswith(LIVE_MARK):   # as Claude wrote it
+        data = {**data, "command": data["command"][len(LIVE_MARK):].split("\n", 1)[-1]}
     out: Dict[str, Any] = {}
     if data.get("file_path"):
         out["file"] = str(data["file_path"])
@@ -309,6 +328,7 @@ class Session:
         self.last_at = time.time()        # when Claude Code last said anything
         self.doing: Dict[str, Any] = {}   # what it does now: {"what", "tool", "detail", "agent"}
         self.tool_began: Dict[str, float] = {}   # when each call began (PreToolUse), by its id
+        self.logs: Dict[str, Path] = {}          # the log each running Bash command's output is copied to
         self.tools: Dict[str, Dict[str, Any]] = {}
         self.subs: Dict[str, Dict[str, Any]] = {}   # its subagents, by the id of the Task call that started each   # this turn's tool calls, by id: name, label, when begun
         self.forget = False               # closed by the person: not offered to continue after a restart
@@ -610,6 +630,14 @@ class Session:
             self.emit("note", text="Now: " + ", ".join(said) + " (this session, from here on)")
 
     def close(self, forget: bool = True) -> None:
+        try:   # the logs of commands that never said they ended
+            import shutil
+            shutil.rmtree(self.log_path("x").parent, ignore_errors=True)
+        except Exception:  # noqa: BLE001
+            pass
+        self._close(forget)
+
+    def _close(self, forget: bool = True) -> None:
         """End the session. `forget`: the person closed it, so it is not offered to continue after a restart; the
         Studio stopping (forget=False) keeps it offered."""
         if forget:
@@ -669,6 +697,60 @@ class Session:
             self.set_status("waiting")
         return await fut
 
+    # ── a command's output as it runs ──────────────────────────────────────────────────────────────────────────────
+    def log_path(self, tool_use_id: str) -> Path:
+        base = getattr(self.manager, "vault_folder", None) or Path(tempfile.gettempdir()) / "system-diff"
+        return Path(base) / "runs" / self.id / (re.sub(r"[^A-Za-z0-9_-]", "", tool_use_id)[:80] + ".log")
+
+    def live_output(self, hook_input: Dict[str, Any], tool_use_id: str) -> Dict[str, Any]:
+        """A Bash command run so its output is also copied, as it comes, to a log the page shows while it runs
+        (Claude Code hands output over only at the end). The command, its exit code and what Claude gets are as they
+        were; a shell that cannot copy (no process substitution) runs it as it is. Off with SYSTEM_DIFF_LIVE_OUTPUT=0."""
+        if os.environ.get("SYSTEM_DIFF_LIVE_OUTPUT", "1") == "0" or not tool_use_id:
+            return {}
+        inp = hook_input.get("tool_input") if isinstance(hook_input.get("tool_input"), dict) else {}
+        cmd = str(inp.get("command") or "")
+        if hook_input.get("tool_name") != "Bash" or not cmd.strip() or inp.get("run_in_background") \
+                or cmd.startswith(LIVE_MARK):
+            return {}
+        try:
+            log = self.log_path(tool_use_id)
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_bytes(b"")
+        except OSError:
+            return {}
+        path = log.as_posix()
+        if any(c in path for c in "\"'$`\\\n"):
+            return {}   # a path the shell would need quoting for: the command runs as it is
+        self.logs[tool_use_id] = log
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                       "updatedInput": {**inp, "command": LIVE_MARK + live_prefix(path) + "\n" + cmd}}}
+
+    def read_log(self, tool_use_id: str, start: int = 0, most: int = 64000) -> Dict[str, Any]:
+        """What a running command printed so far, from byte `start`: {"text", "next", "done"} (keys masked)."""
+        log = self.logs.get(tool_use_id)
+        if log is None:
+            return {"text": "", "next": start, "done": True}
+        try:
+            with open(log, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                start = max(start, size - most) if start < size - most else start
+                f.seek(start)
+                data = f.read(most)
+        except OSError:
+            return {"text": "", "next": start, "done": tool_use_id not in self.tool_began}
+        text = data.decode("utf-8", "replace")
+        return {"text": self._mask(text), "next": start + len(data), "done": tool_use_id not in self.tool_began}
+
+    def drop_log(self, tool_use_id: str) -> None:
+        log = self.logs.pop(tool_use_id, None)
+        if log is not None:
+            try:
+                log.unlink()
+            except OSError:
+                pass
+
     def hooks(self) -> Dict[str, Any]:
         """The SDK's hooks: the plugin's own hook code, run for this session (the engine marks the turn, sees edits,
         and Claude gets the same context)."""
@@ -681,9 +763,10 @@ class Session:
                 if tool_use_id:
                     self.tool_began[tool_use_id] = time.time()
                     self.emit("tool_start", keep=False, id=tool_use_id, at=round(time.time(), 3))
-                return {}
+                return self.live_output(dict(hook_input), tool_use_id or "")
             if event == "PostToolUse" and tool_use_id:   # it ended now, with its output: before the calls made with it
                 began = self.tool_began.pop(tool_use_id, None)
+                self.drop_log(tool_use_id)
                 self.emit("tool_done", keep=False, id=tool_use_id, text=_cut(_redact(_response_text(
                     dict(hook_input).get("tool_response"))), 600),
                     ms=int((time.time() - began) * 1000) if began else None)
