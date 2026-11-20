@@ -57,7 +57,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 1592,
+   "lines": 1594,
    "hub": false,
    "quiet": false
   },
@@ -153,7 +153,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 304,
+   "lines": 325,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 749,
+   "lines": 764,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 3559,
+   "lines": 3562,
    "hub": false,
    "quiet": false
   }
@@ -528,7 +528,7 @@
   "doctor>extract": 1,
   "doctor>live": 2,
   "doctor>panel": 1,
-  "doctor>sources": 3,
+  "doctor>sources": 4,
   "doctor>src/system_diff": 3,
   "doctor>watch": 1,
   "explain>architecture": 1,
@@ -809,10 +809,10 @@
   "agents>src/system_diff": [
    "context",
    "load",
+   "applies",
    "failed",
    "read",
-   "for_project",
-   "match"
+   "for_project"
   ],
   "architecture>design": [
    "kinds"
@@ -2146,6 +2146,7 @@
    "os": 1,
    "pathlib": 1,
    "pydantic": 1,
+   "time": 1,
    "typing": 1
   },
   "names": {
@@ -2568,6 +2569,7 @@
    "os": 1,
    "pathlib": 1,
    "pydantic": 1,
+   "time": 1,
    "typing": 1
   },
   "names": {

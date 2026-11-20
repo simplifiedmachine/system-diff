@@ -164,3 +164,20 @@ def test_the_page_and_the_studio_lead_to_the_board_while_a_team_works():
     from system_diff import app_page, watch
     assert '"agents" : "now"' in watch.PAGE and 'id="teamchip"' in watch.PAGE and 'e.data.studio !== "view"' in watch.PAGE
     assert "function paintTeam(" in app_page.PAGE and 'studio:"view", view:"agents"' in app_page.PAGE
+
+
+def test_an_extension_that_does_not_apply_is_not_asked_for_steps(repo, monkeypatch):
+    """resume_plan ran 3 min in a software repository: the board asked research-diff (installed, not applying) for
+    its steps, and it read the repository to answer. Only extensions that apply are asked."""
+    from system_diff import agents, extensions
+    asked = []
+
+    class Ext:
+        NAME = "research"
+        def workflow(self, ctx):
+            asked.append(1)
+            return {"steps": []}
+    monkeypatch.setattr(extensions, "load", lambda: [Ext()])
+    monkeypatch.setattr(extensions, "applies", lambda ext, root: False)
+    agents._ext_steps(repo)
+    assert asked == []

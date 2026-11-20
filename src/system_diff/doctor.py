@@ -121,6 +121,26 @@ def launch_line() -> str:
             "closed\"): pip install \"system-diff[mcp]\" (or pipx) puts it there")
 
 
+def slow_tools_report(root: Path, say) -> None:
+    """system-diff's MCP tools that took more than 5 s lately (mcp-slow.log): which, how long, and whether the engine
+    answered or the tool server read the repository itself."""
+    import json
+    from .sources import git_dir
+    try:
+        lines = (git_dir(root) / "mcp-slow.log").read_text(encoding="utf-8").splitlines()[-8:]
+    except OSError:
+        return
+    got = []
+    for ln in lines:
+        try:
+            got.append(json.loads(ln))
+        except ValueError:
+            continue
+    if got:
+        say("slow tool calls: " + " · ".join(f"{g['tool']} {g['seconds']}s ({'engine' if g.get('where') == 'engine' else 'read here, no engine answered'}) "
+                                              f"{_ago(g.get('at'))}" for g in got[-5:]))
+
+
 def hooks_report(root: Path, say) -> None:
     """Whether the hooks ran lately, how long they took and how they reached the engine (agent.note_hook)."""
     from . import agent
@@ -287,6 +307,7 @@ def main(root: Path) -> int:
     engine_report(root, say, doing)
     log_report(root, say)
     hooks_report(root, say)
+    slow_tools_report(root, say)
 
     try:
         from . import activity, watch

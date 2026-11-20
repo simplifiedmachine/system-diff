@@ -6,7 +6,9 @@ exact text (headline, plan) for the model to explain from, and the picture's pat
 """
 from __future__ import annotations
 
+import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -163,10 +165,23 @@ def _via_engine(name: str, args: Dict[str, Any], here: Any) -> Dict[str, Any]:
     with none, read here, for a bounded time (a large repository on a slow machine takes minutes: never a hung
     tool)."""
     from . import uitools
+    t = time.monotonic()
     got = uitools.engine_post(_root(), "tool", {"tool": name, "args": args}, timeout=90)
-    if isinstance(got, dict) and "result" in got:
-        return got["result"]
-    return uitools.within(90, here, name)
+    out = got["result"] if isinstance(got, dict) and "result" in got else uitools.within(90, here, name)
+    _note_slow(name, time.monotonic() - t, "engine" if isinstance(got, dict) and "result" in got else "here")
+    return out
+
+
+def _note_slow(tool: str, seconds: float, where: str) -> None:
+    """A tool call that took more than 5 s, kept for the doctor (mcp-slow.log under .git/system-diff)."""
+    if seconds < 5:
+        return
+    try:
+        with open(git_dir(_root()) / "mcp-slow.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"at": round(time.time(), 3), "tool": tool, "seconds": round(seconds, 2),
+                                "where": where}) + "\n")
+    except OSError:
+        pass
 
 
 def tool_map(root: Path, ref: str = ".", diagram: bool = False) -> Dict[str, Any]:
@@ -371,13 +386,13 @@ def build() -> Server:
         running, interrupted, failed, not launched), its attempts and latest note, and for each one not done a
         resume_brief (its brief, what it did so far: notes, files edited, unread messages, last answer). `how` says
         which to relaunch together now: launch them with their resume briefs as their prompts."""
-        return agents.resume_plan(_root())
+        return _via_engine("resume_plan", {}, lambda: agents.resume_plan(_root()))
 
     @_read_only(server)
     def workflow() -> Dict[str, Any]:
         """The team's workflow as it runs: its stages, and each agent and extension step with who it waits for and
         its status (queued, waiting, running, paused, done, failed), times, files read and edited, last action."""
-        return agents.workflow(_root())
+        return _via_engine("workflow", {}, lambda: agents.workflow(_root()))
 
     @_read_only(server)
     def agent_log(name: str) -> Dict[str, Any]:

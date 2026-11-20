@@ -904,6 +904,8 @@ def _ext_steps(root: Path) -> List[Dict[str, Any]]:
             continue
         by = str(getattr(ext, "NAME", "") or "extension")
         try:
+            if not extensions.applies(ext, Path(root)):
+                continue   # research-diff in a software repository: nothing to add, and asking it reads the repository
             got = fn(extensions.context(root, "", ""))
         except Exception as exc:  # noqa: BLE001 - its steps are missing, nothing else
             extensions.failed(by + " workflow", exc)

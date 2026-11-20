@@ -2730,7 +2730,10 @@ def handler(w: Watcher):
                     body = json.loads(self.rfile.read(n).decode("utf-8") or "{}") if 0 < n <= 65536 else {}
                     from . import mcp_server
                     name, a = str(body.get("tool") or ""), body.get("args") if isinstance(body.get("args"), dict) else {}
-                    fn = {"diff": mcp_server.tool_diff, "map": mcp_server.tool_map, "explain": mcp_server.tool_explain}[name]
+                    am = agents_mod()
+                    fn = {"diff": mcp_server.tool_diff, "map": mcp_server.tool_map, "explain": mcp_server.tool_explain,
+                          "resume_plan": lambda root: am.resume_plan(root), "workflow": lambda root: am.workflow(root),
+                          "agent_log": lambda root, name="": am.agent_log(root, name)}[name]
                     return self._json(200, {"result": fn(w.root, **{str(k): v for k, v in a.items()})})
                 except (KeyError, TypeError, ValueError, UnicodeDecodeError) as exc:
                     return self._json(400, {"error": f"{type(exc).__name__}: {exc}"})
