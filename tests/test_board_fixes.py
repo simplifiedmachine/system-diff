@@ -203,3 +203,9 @@ def test_a_new_task_while_a_team_works_joins_its_plan(repo):
     assert any(names[0] in w for w in waits.values()) or not any(set(g["blocks"]) & set(first["agents"][0]["blocks"]) for g in second["agents"])
     third = agents.plan(repo, c, "start over", 2, fresh=True)
     assert not third.get("joined") and [g["name"] for g in agents._load(repo)["plan"]["agents"]] == [g["name"] for g in third["agents"]]
+
+
+def test_a_long_headline_is_its_first_sentence_with_the_rest_folded():
+    from system_diff import watch
+    p = watch.PAGE
+    assert 'id="headmore"' in p and "full.length > 160" in p and '$("headline").dataset.base = cut' in p

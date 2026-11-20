@@ -127,6 +127,9 @@ pre.lines { white-space:pre-wrap; overflow-wrap:anywhere; }
              display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
 .card > h2 .aside { text-transform:none; letter-spacing:0; font-weight:400; }
 .headline { font-size:18px; font-weight:600; margin:0; }
+.headmore { margin-top:4px; max-width:110ch; } .headmore p { margin:0; color:var(--ink2); font-size:13.5px; line-height:1.5;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.headmore.open p { display:block; } .headmore button { margin-top:2px; border:0; background:none; padding:0; color:var(--work); font-size:12.5px; cursor:pointer; }
 .teamchip { margin-top:4px; border-radius:999px; padding:2px 10px; font-size:12.5px; border:1px solid var(--work); color:var(--work); background:var(--work-bg); cursor:pointer; }
 .extprog { display:flex; align-items:center; gap:10px; margin-top:4px; color:var(--muted); font-size:13px; }
 .extprog i { display:block; width:160px; height:6px; border-radius:3px; background:var(--line); overflow:hidden; }
@@ -476,7 +479,7 @@ form.send .about button { border:0; background:transparent; padding:0 5px; color
 <div class="withnav">
 <nav id="leftnav" aria-label="Repositories and lists" hidden></nav>
 <main>
-  <div><p class="headline" id="headline">Reading the code…</p><button type="button" class="teamchip" id="teamchip" hidden></button><div class="extprog" id="extprog" hidden><span></span><i><b></b></i></div><div class="filters" id="filters" hidden></div><div class="error" id="error"></div></div>
+  <div><p class="headline" id="headline">Reading the code…</p><div class="headmore" id="headmore" hidden><p></p><button type="button" id="headmorebtn">Show all</button></div><button type="button" class="teamchip" id="teamchip" hidden></button><div class="extprog" id="extprog" hidden><span></span><i><b></b></i></div><div class="filters" id="filters" hidden></div><div class="error" id="error"></div></div>
   <section class="card" id="status" hidden></section>
   <div id="before" style="display:grid;gap:16px"></div>
   <section class="card dia" id="diacard" hidden><h2 id="diatitle"></h2>
@@ -1746,7 +1749,12 @@ function render(d) {
     }
   }
   if (changed("head", [d.title, d.headline])) {
-    $("headline").textContent = d.headline || d.title || "";
+    // a long one (a team's whole task): its first sentence as the headline, the rest in plain text below, folded
+    const full = String(d.headline || d.title || ""), more = $("headmore");
+    const cut = full.length > 160 ? (/^(.{20,140}?[.!?:])\s/.exec(full) || [null, full.slice(0, 120).replace(/\s+\S*$/, "") + "…"])[1] : full;
+    $("headline").textContent = cut; $("headline").dataset.base = cut;
+    more.hidden = cut === full; more.classList.remove("open");
+    if (cut !== full) more.firstChild.textContent = full.slice(cut.replace(/…$/, "").length).trim();
     document.title = "System diff" + (d.title ? " · " + d.title : "");
   }
   const st = d.status;
@@ -1885,14 +1893,14 @@ async function load(wait) {
       ui.version = -1;
       $("error").textContent = "";
       $("headline").dataset.updating = "1";
-      $("headline").textContent = (ui.data.headline || ui.data.title || "") + "  · updating…";
+      $("headline").textContent = ($("headline").dataset.base || ui.data.headline || ui.data.title || "") + "  · updating…";
       return true;
     }
     if ($("headline").dataset.updating) { delete $("headline").dataset.updating; ui.last.head = undefined; }
     render(d);
     if (d.stale) {   // the page drawn before, shown at once: the current one follows (the next ask waits for it)
       $("headline").dataset.updating = "1";
-      $("headline").textContent = (d.headline || d.title || "") + "  · updating…";
+      $("headline").textContent = ($("headline").dataset.base || d.headline || d.title || "") + "  · updating…";
     }
     return true;
   } catch (e) {
@@ -1902,6 +1910,7 @@ async function load(wait) {
   } finally { if (polling === ctl) polling = null; }
 }
 $("teamchip").onclick = () => go("agents", "");
+$("headmorebtn").onclick = () => { const m = $("headmore"); m.classList.toggle("open"); $("headmorebtn").textContent = m.classList.contains("open") ? "Show less" : "Show all"; };
 // the Studio asks for a view (its strip's "Open the board")
 addEventListener("message", e => {
   if (e.origin !== location.origin || !e.data || e.data.studio !== "view" || !VIEWS.includes(e.data.view)) return;
