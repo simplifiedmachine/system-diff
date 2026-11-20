@@ -164,3 +164,10 @@ def test_the_agents_tab_never_says_no_such_session_and_keys_show_what_was_stored
     finally:
         up["server"].shutdown()
         m.stop()
+
+
+def test_the_agents_tab_is_drawn_off_the_page_and_swapped_in():
+    """It reloads every 5 s while Claude works: emptied first, it went blank for as long as the data took."""
+    from system_diff import app_page
+    p = app_page.PAGE
+    assert "async function drawAgents(box)" in p and "shown.replaceChildren(...box.childNodes)" in p

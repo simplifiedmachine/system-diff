@@ -1468,8 +1468,15 @@ setInterval(() => {   // while Claude works, the Agents tab follows its subagent
   if (box.hidden || !S.session || S.session.status !== "working" || box.contains(document.activeElement)) return;
   loadAgents();
 }, 5000);
-async function loadAgents() {
-  const box = $("agentsbox"); box.replaceChildren();
+async function loadAgents() {   // drawn off the page, then swapped in whole: the tab never goes blank while it reloads
+  const seq = S.agentsSeq = (S.agentsSeq || 0) + 1, shown = $("agentsbox");
+  const box = el("div");
+  await drawAgents(box);
+  if (seq !== S.agentsSeq) return;   // a newer reload is under way: it draws the tab
+  if (shown.contains(document.activeElement) && shown.childNodes.length) return;   // the person is in a form there
+  shown.replaceChildren(...box.childNodes);
+}
+async function drawAgents(box) {
   if (!S.project) { box.append(el("div", "Pick a project first.", "ev meta")); return; }
   await loadWorkflows(box);
   let lib; try { lib = await api("api/agents?project=" + S.project); } catch (e) { box.append(el("div", e.message, "ev err")); return; }
