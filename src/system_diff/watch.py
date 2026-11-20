@@ -2759,7 +2759,7 @@ def handler(w: Watcher):
                                                 order=body.get("order") if body.get("order") in ("parallel", "staged")
                                                 else "parallel",
                                                 after={str(k): [str(x) for x in v] for k, v in after.items()
-                                                       if isinstance(v, list)})
+                                                       if isinstance(v, list)}, fresh=bool(body.get("fresh")))
                 except (ValueError, TypeError, UnicodeDecodeError) as exc:
                     return self._json(400, {"error": str(exc)})
                 if w.engine is not None:

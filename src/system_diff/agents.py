@@ -442,7 +442,8 @@ def stages_of(waits: Dict[str, set]) -> Dict[str, int]:
 
 
 def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str] = (), order: str = "parallel",
-         after: Optional[Dict[str, List[str]]] = None, preset: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+         after: Optional[Dict[str, List[str]]] = None, preset: Optional[List[Dict[str, Any]]] = None,
+         fresh: bool = False) -> Dict[str, Any]:
     """Split `task` across agents by the system's blocks: the areas (containers, else parts) the task names or that
     `focus` gives, one agent each (at most `most`, the rest joining the closest), each with the blocks it claims, the
     blocks it depends on (its subscriptions) and a brief; and how to run them. Saved, and the claims made.
@@ -552,6 +553,10 @@ def plan(root: Path, c, task: str, most: int = MOST_AGENTS, focus: Iterable[str]
                "end, read the system-diff `inbox` tool as \"main\" and integrate, then check the whole with "
                "`system_diff`.")
     at = round(time.time(), 3)
+    if not fresh:   # a team at work: the new task joins its plan, never wiping the agents still running
+        joined = _join_running(root, task, agents)
+        if joined is not None:
+            return joined
     publish(root, "all", f"Plan: {len(agents)} agent{'' if len(agents) == 1 else 's'} for: {task}", sender=MAIN,
             kind="plan")
     # a new plan starts a clean team: the last plan's agents, claims, ids and warnings go ("main" stays as it was);
@@ -625,6 +630,59 @@ def record_run(root: Path, event: str, agent_id: str, agent_type: str = "", tran
             activity._replace(f, "\n".join(keep) + "\n")
     except OSError:
         pass
+
+
+def _join_running(root: Path, task: str, agents: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """While the plan has agents not done (a feature asked for while a team works): the new agents join it, beside
+    the running ones, under names of their own; one whose blocks a running agent holds waits for that agent (two on
+    one file would overwrite each other). None when no agent is unfinished: a new plan starts clean."""
+    t = team_brief(root)
+    if not t.get("agents") or not t.get("unfinished"):
+        return None
+    status = {a["name"]: a["status"] for st in t["stages"] for a in st}
+    if not any(v in ("running", "done", "interrupted", "failed") for v in status.values()):
+        return None   # a plan nobody started: the new one takes its place
+    data = _load(root)
+    pl = data.get("plan") or {}
+    stage_of = {str(g.get("name")): int(g.get("stage") or 1) for g in pl.get("agents") or []}
+    taken = set(stage_of)
+    rename: Dict[str, str] = {}
+    for g in agents:
+        n, i = g["name"], 2
+        while n in taken:
+            n, i = f"{g['name']}-{i}", i + 1
+        rename[g["name"]] = n
+        taken.add(n)
+    added = []
+    for g in agents:
+        g = dict(g)
+        g["name"] = rename[g["name"]]
+        g["waits_for"] = [rename.get(w, w) for w in g.get("waits_for") or []]
+        held = sorted({data["claims"][b] for b in g.get("blocks") or [] if data["claims"].get(b) in status
+                       and status[data["claims"][b]] != "done"})
+        g["waits_for"] = sorted(set(g["waits_for"]) | set(held))
+        g["stage"] = int(g.get("stage") or 1) + max([stage_of.get(w, 0) for w in held] or [0])
+        a = _agent(data, g["name"])
+        a["brief"] = g.get("brief", "")
+        a["blocks"] = list(g.get("blocks") or [])
+        a["topics"] = sorted(set(g.get("subscribes") or []) | {f"agent:{g['name']}"})
+        for b in g.get("blocks") or []:
+            data["claims"].setdefault(b, g["name"])
+        added.append(g)
+    pl["agents"] = list(pl.get("agents") or []) + [{k: v for k, v in g.items() if k != "brief"} for g in added]
+    pl["task"] = (str(pl.get("task") or "") + " · then: " + task)[:2000]
+    data["plan"] = pl
+    _save(root, data)
+    names = ", ".join(g["name"] for g in added)
+    publish(root, "all", f"Added to the plan: {names} (for: {task})", sender=MAIN, kind="plan")
+    now = [g["name"] for g in added if not g["waits_for"]]
+    later = [f"{g['name']} (after {', '.join(g['waits_for'])})" for g in added if g["waits_for"]]
+    how = (f"A team is at work ({t['running']} running, {t['unfinished']} not done): these agents JOIN its plan, "
+           "nothing it runs is stopped. " + (f"Launch now, together, each with its brief: {', '.join(now)}. " if now else "")
+           + (f"Launch later, when the agents they wait for are done: {'; '.join(later)}. " if later else "")
+           + "Keep orchestrating the agents already running as before. plan_agents(..., fresh=True) starts a new "
+             "plan instead, only when the person asks for it.")
+    return {"task": task, "agents": added, "how": how, "joined": True}
 
 
 def team_brief(root: Path) -> Dict[str, Any]:

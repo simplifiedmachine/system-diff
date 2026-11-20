@@ -339,12 +339,13 @@ def build() -> Server:
 
     @server.tool()
     def plan_agents(task: str, most: int = 4, focus: List[str] = [], order: str = "parallel",  # noqa: B006
-                    after: Dict[str, List[str]] = {}) -> Dict[str, Any]:  # noqa: B006
+                    after: Dict[str, List[str]] = {}, fresh: bool = False) -> Dict[str, Any]:  # noqa: B006
         """Split a task across a team of agents by the system's blocks: one agent per area the task touches (a
         container, else a part), at most `most`, each with the blocks it owns, the blocks it depends on (it is
         subscribed to them on the bus) and a brief to launch it with. `focus`: block ids to include. Claims the
         blocks. `order`: "parallel" (all at once) or "staged" (an agent whose blocks use another agent's starts after
-        that one finishes); `after`: waits by name, {"web": ["api"]}. Each agent gets its stage; launch the agents of
+        that one finishes); `after`: waits by name, {"web": ["api"]}. While a team is at work, the new agents join its plan (the running ones go on;
+        one needing a block a running agent holds waits for it); fresh=True starts a new plan instead. Each agent gets its stage; launch the agents of
         a stage together as subagents, each with its brief as its prompt, as `how` says. The person watches the
         workflow (who runs, who waits, each one's log) on the system-diff page's Agents tab."""
         root = _root()
@@ -353,11 +354,11 @@ def build() -> Server:
         from . import uitools
         # the running engine holds the system: it plans at once; else read here, for a bounded time
         got = uitools.engine_post(root, "agents/plan", {"task": task, "most": most, "focus": list(focus or []),
-                                                        "order": order, "after": after}, timeout=45)
+                                                        "order": order, "after": after, "fresh": bool(fresh)}, timeout=45)
         if got is not None:
             return got
         return uitools.within(60, lambda: agents.plan(root, cmp.compare(root, "checkpoint", "."), task, most, focus,
-                                                      order=order, after=after), "plan_agents")
+                                                      order=order, after=after, fresh=bool(fresh)), "plan_agents")
 
     @server.tool()
     def add_agent(name: str, brief: str = "", blocks: List[str] = [], waits_for: List[str] = [],  # noqa: B006

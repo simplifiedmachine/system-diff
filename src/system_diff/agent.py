@@ -458,7 +458,9 @@ def team_context(root: Path) -> str:
     return ("system-diff: a team plan is under way" + (f" ({t['task'][:160]})" if t["task"] else "") + ". " + stages +
             ". You orchestrate it: keep the work in the agents. Launch the agents of the next stage together (with "
             "their briefs: resume_plan or workflow) once the stage before has finished; pass the person's questions "
-            "and changes to the agent concerned (SendMessage), or add one (add_agent); answer how it is going from "
+            "and changes to the agent concerned (SendMessage); for a new feature or task, plan_agents adds its agents "
+            "to this plan (nothing running stops; launch the ones it says to now), or add_agent for one; answer how "
+            "it is going from "
             "the workflow tool, never from memory; do an agent's work yourself only if the person asks. The person "
             "follows it on the Agents board.")
 
