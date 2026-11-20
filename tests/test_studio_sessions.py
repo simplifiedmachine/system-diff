@@ -260,3 +260,12 @@ def test_the_card_shows_the_command_as_claude_wrote_it():
     from system_diff import sessions
     cmd = sessions.LIVE_MARK + sessions.live_prefix("/tmp/x.log") + "\n" + "git status"
     assert sessions.tool_input_view("Bash", {"command": cmd})["command"] == "git status"
+
+
+def test_a_session_with_agents_at_work_is_not_restarted_for_a_key():
+    """Saving a key restarted the open session (to give it the key), and that stopped its agents running in the
+    background: a restart (or settings switch) is refused while one of its subagents runs."""
+    import inspect
+    from system_diff import app
+    src = inspect.getsource(app)
+    assert 'if act in ("restart", "switch"):' in src and 'x.get("status") == "running"' in src

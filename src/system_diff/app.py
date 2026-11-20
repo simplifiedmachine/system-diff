@@ -699,6 +699,13 @@ def handler(studio: Studio):
                     t = studio.sessions().start(s.project, opts, resume=s.claude_id, fork=True)
                     t.emit("note", text=f"A fork of session {s.id}: the same conversation so far, going its own way")
                     return self._json(200, t.head())
+                if act in ("restart", "switch"):   # both end this Claude Code, and the subagents still at work with it
+                    busy = [x["name"] for x in s.subagents() if x.get("status") == "running"]
+                    if busy:
+                        raise ValueError(f"{len(busy)} agent{'s are' if len(busy) > 1 else ' is'} still working in this "
+                                         f"session ({', '.join(busy[:4])}): restarting it now would stop "
+                                         f"{'them' if len(busy) > 1 else 'it'}. Restart when they are done; new "
+                                         "sessions get the key now.")
                 if act == "restart":   # the same choices, the same conversation, and the keys stored since
                     if s.status in ("working", "waiting"):
                         raise ValueError("Claude is working: restart it when this turn is done")
