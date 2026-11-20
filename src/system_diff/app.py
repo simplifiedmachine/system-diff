@@ -317,6 +317,31 @@ class Studio:
     CHOICES = ("settings_profile", "model", "effort", "permission_mode", "setting_sources")
 
     # ── cards asking the person for a secret's value (Claude's ask_for_secret): kept in memory, an hour at most ──
+    MARKS = "conversations.json"   # the person's names and stars for conversations: {claude id: {"name", "star"}}
+
+    def marks(self) -> Dict[str, Dict[str, Any]]:
+        got = _read(self.folder / self.MARKS) if self.folder is not None else None
+        return got if isinstance(got, dict) else {}
+
+    def mark(self, conversation: str, name: Optional[str] = None, star: Optional[bool] = None) -> Dict[str, Any]:
+        """Rename a conversation (its name in the Sessions list; "" goes back to what was asked) or star it."""
+        conversation = str(conversation or "").strip()[:80]
+        if not conversation:
+            raise ValueError("which conversation?")
+        with self.lock:
+            marks = self.marks()
+            m = dict(marks.get(conversation) or {})
+            if name is not None:
+                m["name"] = str(name).strip()[:120]
+            if star is not None:
+                m["star"] = bool(star)
+            marks[conversation] = {k: v for k, v in m.items() if v}
+            if not marks[conversation]:
+                marks.pop(conversation)
+            if self.folder is not None:
+                _write_private(self.folder / self.MARKS, marks)
+        return marks.get(conversation, {})
+
     def ask_secret(self, b: Dict[str, Any]) -> Dict[str, Any]:
         from . import vault
         name = vault.check_name(str(b.get("name") or ""))
@@ -559,7 +584,11 @@ def handler(studio: Studio):
                     m = studio.manager
                     live = [x.claude_id for x in m.of(root) if x.claude_id and x.status not in ("closed", "failed")] \
                         if m is not None else []
-                    return self._json(200, {"past": sessions.past(root, live)})
+                    marks = studio.marks()   # the person's own names and stars, by conversation
+                    past = [{**x, **({"name": marks[x["id"]]["name"]} if marks.get(x["id"], {}).get("name") else {}),
+                             "star": bool(marks.get(x["id"], {}).get("star"))} for x in sessions.past(root, live)]
+                    past.sort(key=lambda x: (not x["star"],))   # starred first, the rest as they were
+                    return self._json(200, {"past": past, "marks": marks})
                 if path.startswith("/api/past/") and path.endswith("/history"):   # a past conversation's entries
                     from . import sessions
                     before = q.get("before")
@@ -642,6 +671,10 @@ def handler(studio: Studio):
                 root = self._root({"project": str(b.get("project") or "")})
                 got = studio.engine(root, wait=float(b.get("wait") or 0))
                 return self._json(200, {"port": got.get("port") or 0, "starting": not got})
+            if path == "/api/conversations/mark":   # the person's name or star for a conversation
+                return self._json(200, studio.mark(str(b.get("id") or ""),
+                                                   name=b.get("name") if "name" in b else None,
+                                                   star=b.get("star") if "star" in b else None))
             if path == "/api/sessions":
                 root = self._root({"project": str(b.get("project") or "")})
                 opts = profiles.options_for(root, b)

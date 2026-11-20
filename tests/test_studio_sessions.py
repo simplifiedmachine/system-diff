@@ -269,3 +269,17 @@ def test_a_session_with_agents_at_work_is_not_restarted_for_a_key():
     from system_diff import app
     src = inspect.getsource(app)
     assert 'if act in ("restart", "switch"):' in src and 'x.get("status") == "running"' in src
+
+
+def test_conversations_can_be_renamed_and_starred(tmp_path):
+    import threading as _th
+    from system_diff import app, app_page
+    st = app.Studio.__new__(app.Studio)
+    st.lock, st.folder = _th.Lock(), tmp_path
+    assert st.mark("abc", name="Control Center fix") == {"name": "Control Center fix"}
+    assert st.mark("abc", star=True) == {"name": "Control Center fix", "star": True}
+    assert st.marks()["abc"]["star"] is True
+    st.mark("abc", name="", star=False)
+    assert "abc" not in st.marks()
+    p = app_page.PAGE
+    assert "function markButtons(" in p and '"Starred"' in p and "#optsbox[open] > .opts { max-height" in p

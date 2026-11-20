@@ -109,6 +109,10 @@ details.subline .subcalls { margin:6px 0 2px 14px; padding-left:10px; border-lef
 .tabs { display:flex; gap:2px; margin:10px 10px 4px; padding:3px; background:var(--code); border-radius:999px; }
 .tabs button { flex:1; border:0; box-shadow:none; background:transparent; border-radius:999px; padding:5px 10px; color:var(--muted); font-weight:500; }
 .tabs button[aria-selected="true"] { background:var(--glass-strong); color:var(--ink); box-shadow:0 1px 4px rgba(0,0,0,.12), inset 0 1px 0 var(--hair); }
+#optsbox[open] > .opts { max-height:min(62vh, 640px); overflow-y:auto; overscroll-behavior:contain; }
+.marks { display:inline-flex; gap:2px; margin-right:6px; vertical-align:middle; }
+.marks .mark { border:0; background:transparent; box-shadow:none; padding:0 3px; font-size:14px; color:var(--muted); cursor:pointer; }
+.marks .mark.on { color:#e0a800; } .pt input.rename { width:100%; font:inherit; }
 .opts { display:grid; grid-template-columns:auto minmax(0,1fr); gap:7px 10px; align-items:center; padding:8px 12px 10px; border-bottom:1px solid var(--line); font-size:13px; }
 .opts label { color:var(--muted); } .opts .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; min-width:0; }
 .opts .row > * { flex:1 1 0; min-width:0; } .opts .row > button { flex:0 0 auto; }
@@ -472,7 +476,7 @@ async function loadSessions() {
 $("sesspick").addEventListener("change", () => { if ($("sesspick").value) follow($("sesspick").value); });
 async function loadPast() {
   if (!S.project) return;
-  try { S.past = (await api("api/past?project=" + S.project, undefined, 60000)).past || []; S.pastErr = ""; }
+  try { const d = await api("api/past?project=" + S.project, undefined, 60000); S.past = d.past || []; S.marks = d.marks || {}; S.pastErr = ""; }
   catch (e) { S.past = []; S.pastErr = e.message; }
   if (!S.session || S.showingPast) paintPast();
 }
@@ -482,6 +486,23 @@ function agoText(ms) {
        : new Date(ms).toLocaleDateString();
 }
 // the past conversations, like /resume: the ones the Studio had open when it stopped first, then the rest, searchable
+// a conversation's star (kept first in the list) and its name (yours, instead of what was asked)
+function markButtons(id, name, star, label) {
+  const box = el("span", null, "marks");
+  const st = el("button", star ? "★" : "☆", "mark" + (star ? " on" : "")); st.type = "button";
+  st.title = star ? "Unstar" : "Star it: starred conversations come first";
+  st.addEventListener("click", async e => { e.stopPropagation(); try { await api("api/conversations/mark", { id, star:!star }); } catch (x) { alert(x.message); } await loadPast(); paintPast(); });
+  const rn = el("button", "✎", "mark"); rn.type = "button"; rn.title = "Rename it";
+  rn.addEventListener("click", e => {
+    e.stopPropagation();
+    const input = el("input"); input.type = "text"; input.value = name || label; input.className = "rename"; input.setAttribute("aria-label", "Its name");
+    const done = async keepIt => { if (keepIt) { try { await api("api/conversations/mark", { id, name:input.value.trim() }); } catch (x) { alert(x.message); } } await loadPast(); paintPast(); };
+    input.addEventListener("keydown", k => { if (k.key === "Enter") done(true); if (k.key === "Escape") done(false); });
+    input.addEventListener("blur", () => done(true));
+    box.closest(".pt").replaceChildren(input); input.focus(); input.select();
+  });
+  box.append(st, rn); return box;
+}
 function paintPast() {
   const f = $("feed"); f.replaceChildren(); S.cards = {}; S.streaming = null;
   const box = el("div", null, "past"), list = S.past || [];
@@ -498,7 +519,9 @@ function paintPast() {
     box.append(el("h3", "Open now (" + open.length + ")" + (open.length > 1 ? " · each works on its own: two on one task edit the same files" : "")));
     for (const x of open) {
       const row = el("div", null, "pitem");
-      row.append(el("div", (x.title || "(nothing asked yet)").replace(/\s+/g, " ").slice(0, 120), "pt"));
+      const mk = (S.marks || {})[x.claude_session] || {}, nm = (mk.name || x.title || "(nothing asked yet)").replace(/\s+/g, " ");
+      const pt = el("div", null, "pt"); if (x.claude_session) pt.append(markButtons(x.claude_session, mk.name || "", !!mk.star, nm));
+      pt.append(nm.slice(0, 120)); row.append(pt);
       const doing = x.now && x.now.what ? doingText(x.now, x.status)
                   : ({ idle:"Ready", working:"Working", waiting:"Asks you", starting:"Starting" }[x.status] || x.status);
       row.append(el("div", [doing, String(x.claude_session || "").slice(0, 8)].filter(Boolean).join(" · "), "pm"));
@@ -513,8 +536,9 @@ function paintPast() {
   }
   const item = (p, left) => {
     const row = el("div", null, "pitem" + (left ? " left" : ""));
-    const label = (p.label || p.title || p.summary || p.first_prompt || "(no prompt)").replace(/\s+/g, " ");
-    row.append(el("div", label.slice(0, 120), "pt"));
+    const label = (p.name || p.label || p.title || p.summary || p.first_prompt || "(no prompt)").replace(/\s+/g, " ");
+    const pt = el("div", null, "pt"); pt.append(markButtons(p.id, p.name || "", !!p.star, label), label.slice(0, 120));
+    row.append(pt);
     if (p.last_prompt && p.last_prompt.replace(/\s+/g, " ") !== label)
       row.append(el("div", "Last: " + p.last_prompt.replace(/\s+/g, " ").slice(0, 140), "pl"));
     const size = p.size ? (p.size > 1048576 ? (p.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(p.size / 1024)) + " KB") : "";
@@ -528,7 +552,9 @@ function paintPast() {
     row.append(b); return row;
   };
   const opened = new Set(open.map(x => x.claude_session).filter(Boolean));   // listed above: not offered again
-  const left = list.filter(p => p.left_off && !opened.has(p.id)), rest = list.filter(p => !p.left_off && !opened.has(p.id));
+  const starred = list.filter(p => p.star && !opened.has(p.id));
+  const left = list.filter(p => p.left_off && !p.star && !opened.has(p.id)), rest = list.filter(p => !p.left_off && !p.star && !opened.has(p.id));
+  if (starred.length) { box.append(el("h3", "Starred")); for (const p of starred) box.append(item(p, false)); }
   if (left.length) { box.append(el("h3", "Continue where you left off")); for (const p of left) box.append(item(p, true)); }
   box.append(el("h3", "Past conversations"));
   if (S.pastErr) box.append(el("div", "Could not list them: " + S.pastErr, "ev err"));
