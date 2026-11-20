@@ -582,6 +582,39 @@ class Session:
             self.record(msg)
         return True
 
+    def _read_between_turns(self) -> Optional["asyncio.Task[None]"]:
+        """Between turns, Claude Code keeps talking: background agents work on, and every tool call they make asks
+        this session's hooks first. The SDK reads those questions in the same stream as the messages and holds at most
+        100 unread messages, so a session that stopped reading at the end of its turn stopped answering its hooks once
+        the agents had said 100 things: each of their tool calls then waited 10 minutes and failed ("PreToolUse hook
+        did not respond before its timeout"). So the session reads on while idle, and shows what the agents do."""
+        receive = getattr(self.client, "receive_messages", None)
+        if receive is None:
+            return None
+
+        async def read() -> None:
+            try:
+                async for msg in receive():
+                    try:
+                        self.record(msg)
+                    except Exception as exc:  # noqa: BLE001 - one message shown badly never stops the reading
+                        self.emit("system", text=f"could not show a message: {type(exc).__name__}: {exc}", keep=False)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 - the connection ended: the next turn says so
+                pass
+        return asyncio.get_running_loop().create_task(read())
+
+    @staticmethod
+    async def _stop_reading(task: Optional["asyncio.Task[None]"]) -> None:
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+
     async def _put(self, text: str) -> None:
         if self.queue is None:
             self.queue = asyncio.Queue()
@@ -967,7 +1000,11 @@ class Session:
         self.set_status("idle")
         try:
             while True:
-                text = await self.queue.get()
+                drain = self._read_between_turns()
+                try:
+                    text = await self.queue.get()
+                finally:
+                    await self._stop_reading(drain)
                 if text is None:
                     break
                 self.set_status("working")

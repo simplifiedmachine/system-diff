@@ -142,3 +142,51 @@ def test_keep_agent_lists_them_when_several_match_and_never_guesses(repo):
     assert not (repo / ".claude" / "agents").exists()
     none = agentlib.keep_ran(repo, "nothing like this")
     assert not none["kept"] and none["ran"]
+
+
+def test_an_idle_session_keeps_reading_so_background_agents_hooks_are_answered(tmp_path, monkeypatch):
+    """The SDK holds 100 unread messages, then stops reading Claude Code, hooks included: background agents' tool
+    calls then waited 10 minutes each. Between turns the session reads on, shows what they do, and stops reading
+    when the person's next turn starts (that turn reads its own)."""
+    monkeypatch.setenv("SYSTEM_DIFF_APP_STATE", str(tmp_path / "state"))
+    import time
+
+    class Talking:
+        def __init__(self, session):
+            self.prompts, self.between = [], 0
+
+        async def connect(self):
+            pass
+
+        async def disconnect(self):
+            pass
+
+        async def query(self, text):
+            self.prompts.append(text)
+
+        async def receive_messages(self):   # a background agent at work while nobody asked anything
+            for i in range(150):
+                self.between += 1
+                yield AssistantMessage([TextBlock(f"agent step {i}")], parent="task-1")
+                await asyncio.sleep(0)
+            await asyncio.sleep(3600)
+
+        async def receive_response(self):
+            yield AssistantMessage([TextBlock("hi back")])
+            from test_studio import ResultMessage
+            yield ResultMessage()
+
+    m = sessions.Manager(client_factory=Talking)
+    try:
+        s = m.start(tmp_path, {})
+        deadline = time.time() + 10
+        while time.time() < deadline and getattr(s.client, "between", 0) < 150:
+            time.sleep(0.02)
+        assert s.client.between == 150 and s.status == "idle"   # all read, none left in the SDK's buffer
+        s.send("hello")
+        deadline = time.time() + 10
+        while time.time() < deadline and not any(e["type"] == "result" for e in s.events):
+            time.sleep(0.02)
+        assert s.client.prompts == ["hello"] and any(e["type"] == "result" for e in s.events)
+    finally:
+        m.stop()
