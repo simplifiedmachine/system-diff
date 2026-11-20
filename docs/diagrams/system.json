@@ -153,7 +153,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 325,
+   "lines": 328,
    "hub": false,
    "quiet": false
   },
@@ -285,7 +285,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 764,
+   "lines": 809,
    "hub": false,
    "quiet": false
   },
@@ -441,7 +441,7 @@
    "container": "",
    "declared": true,
    "files": 1,
-   "lines": 3562,
+   "lines": 3563,
    "hub": false,
    "quiet": false
   }
@@ -1873,7 +1873,8 @@
    "XDG_CONFIG_HOME"
   ],
   "mcp": [
-   "SYSTEM_DIFF_EXT_TOOLS_OFF"
+   "SYSTEM_DIFF_EXT_TOOLS_OFF",
+   "SYSTEM_DIFF_TOOL_LIMIT"
   ],
   "narrate": [
    "PYTEST_CURRENT_TEST",
@@ -2137,7 +2138,8 @@
    "urllib": 1
   },
   "mcp": {
-   "anyio": 1,
+   "asyncio": 1,
+   "concurrent": 1,
    "functools": 1,
    "http": 1,
    "inspect": 1,
@@ -2146,7 +2148,10 @@
    "os": 1,
    "pathlib": 1,
    "pydantic": 1,
+   "sys": 1,
+   "threading": 1,
    "time": 1,
+   "traceback": 1,
    "typing": 1
   },
   "names": {
@@ -2558,7 +2563,8 @@
    "urllib.parse": 1
   },
   "mcp": {
-   "anyio.to_thread": 1,
+   "asyncio": 1,
+   "concurrent.futures": 1,
    "functools": 1,
    "http.client": 1,
    "inspect": 1,
@@ -2569,7 +2575,10 @@
    "os": 1,
    "pathlib": 1,
    "pydantic": 1,
+   "sys": 1,
+   "threading": 1,
    "time": 1,
+   "traceback": 1,
    "typing": 1
   },
   "names": {

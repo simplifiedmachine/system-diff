@@ -136,6 +136,9 @@ def slow_tools_report(root: Path, say) -> None:
             got.append(json.loads(ln))
         except ValueError:
             continue
+    for g in got[-3:]:
+        if g.get("stuck_at"):
+            say(f"  {g['tool']} was at: " + " › ".join(g["stuck_at"]))
     if got:
         say("slow tool calls: " + " · ".join(f"{g['tool']} {g['seconds']}s ({'engine' if g.get('where') == 'engine' else 'read here, no engine answered'}) "
                                               f"{_ago(g.get('at'))}" for g in got[-5:]))

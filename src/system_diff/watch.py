@@ -2733,7 +2733,8 @@ def handler(w: Watcher):
                     am = agents_mod()
                     fn = {"diff": mcp_server.tool_diff, "map": mcp_server.tool_map, "explain": mcp_server.tool_explain,
                           "resume_plan": lambda root: am.resume_plan(root), "workflow": lambda root: am.workflow(root),
-                          "agent_log": lambda root, name="": am.agent_log(root, name)}[name]
+                          "agent_log": lambda root, name="": am.agent_log(root, name),
+                          "saved_agents": lambda root: __import__("system_diff.agentlib", fromlist=["x"]).library(root)}[name]
                     return self._json(200, {"result": fn(w.root, **{str(k): v for k, v in a.items()})})
                 except (KeyError, TypeError, ValueError, UnicodeDecodeError) as exc:
                     return self._json(400, {"error": f"{type(exc).__name__}: {exc}"})

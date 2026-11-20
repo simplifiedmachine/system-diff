@@ -166,3 +166,25 @@ def test_a_slow_tool_never_holds_the_other_tools_up():
     tools = {t.name: t for t in server._tool_manager.list_tools()}
     assert inspect.iscoroutinefunction(tools["resume_plan"].fn) and callable(tools["resume_plan"].fn.__wrapped__)
     assert "properties" in tools["save_setting"].parameters and "name" in tools["save_setting"].parameters["properties"]
+
+
+def test_a_tool_never_keeps_claude_waiting_past_the_limit(monkeypatch):
+    """saved_agents ran 24 min with no word: past the limit Claude gets an answer at once, saying where it was."""
+    import asyncio
+    import json as _j
+    from system_diff import agentlib, mcp_server
+    pytest = __import__("pytest")
+    try:
+        server = mcp_server.build()
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"no MCP SDK here: {exc}")
+
+    def stuck_somewhere(root):
+        time.sleep(3)
+        return {}
+    monkeypatch.setattr(agentlib, "library", stuck_somewhere)
+    monkeypatch.setattr(mcp_server, "TOOL_LIMIT", 0.5)
+    t = time.monotonic()
+    got = asyncio.run(server.call_tool("saved_agents", {}))
+    text = _j.dumps(got, default=str)
+    assert time.monotonic() - t < 2.5 and "still running after" in text and "stuck_somewhere" in text

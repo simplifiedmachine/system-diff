@@ -172,14 +172,15 @@ def _via_engine(name: str, args: Dict[str, Any], here: Any) -> Dict[str, Any]:
     return out
 
 
-def _note_slow(tool: str, seconds: float, where: str) -> None:
-    """A tool call that took more than 5 s, kept for the doctor (mcp-slow.log under .git/system-diff)."""
+def _note_slow(tool: str, seconds: float, where: str, at: Optional[List[str]] = None) -> None:
+    """A tool call that took more than 5 s, kept for the doctor (mcp-slow.log under .git/system-diff), with the
+    steps it was at when it ran over the limit."""
     if seconds < 5:
         return
     try:
         with open(git_dir(_root()) / "mcp-slow.log", "a", encoding="utf-8") as f:
             f.write(json.dumps({"at": round(time.time(), 3), "tool": tool, "seconds": round(seconds, 2),
-                                "where": where}) + "\n")
+                                "where": where, **({"stuck_at": at} if at else {})}) + "\n")
     except OSError:
         pass
 
@@ -570,7 +571,7 @@ def build() -> Server:
         and finished), and the roles worth keeping: planned or finished twice, or a standing role (reviewer, tester)
         that finished once, not saved yet."""
         from . import agentlib
-        return agentlib.library(_root())
+        return _via_engine("saved_agents", {}, lambda: agentlib.library(_root()))
 
     @server.tool()
     def save_agent(name: str, description: str, prompt: str, tools: str = "", model: str = "",
@@ -722,6 +723,51 @@ def _safe(fn) -> Dict[str, Any]:
         return {"error": str(exc)}
 
 
+TOOL_LIMIT = float(os.environ.get("SYSTEM_DIFF_TOOL_LIMIT") or 60)   # seconds a tool may keep Claude waiting
+_POOL = None
+
+
+async def _bounded(name: str, call: Any) -> Any:
+    """A tool in a worker thread, for at most TOOL_LIMIT seconds: past that, Claude gets an answer at once (it goes
+    on in the background) saying where the call is (its file and function), and the doctor keeps it. Never a call
+    Claude waits on for minutes with no word."""
+    import asyncio
+    import concurrent.futures
+    import threading
+    global _POOL
+    if _POOL is None:
+        _POOL = concurrent.futures.ThreadPoolExecutor(max_workers=16, thread_name_prefix="system-diff tool")
+    box: Dict[str, Any] = {}
+
+    def go() -> Any:
+        box["thread"] = threading.get_ident()
+        return call()
+    t = time.monotonic()
+    fut = asyncio.get_running_loop().run_in_executor(_POOL, go)
+    try:
+        return await asyncio.wait_for(asyncio.shield(fut), TOOL_LIMIT)
+    except asyncio.TimeoutError:
+        where = _where(box.get("thread"))
+        _note_slow(name, time.monotonic() - t, "here", where)
+        return {"error": f"{name} is still running after {int(TOOL_LIMIT)} s in system-diff's tool server (it goes on "
+                         "in the background). Go on without it, and tell the person it is slow; system-diff doctor "
+                         "keeps where it was.", "where": where}
+    finally:
+        _note_slow(name, time.monotonic() - t, "here") if fut.done() else None
+
+
+def _where(thread: Optional[int]) -> List[str]:
+    """The innermost steps a worker thread is at (system-diff's and its extensions' own), for a call that is slow."""
+    import sys
+    import traceback
+    frame = sys._current_frames().get(thread) if thread else None
+    if frame is None:
+        return []
+    steps = [f"{Path(f.filename).name}:{f.lineno} {f.name}" for f in traceback.extract_stack(frame)
+             if "system_diff" in f.filename or "research_diff" in f.filename or "site-packages" not in f.filename]
+    return steps[-6:]
+
+
 def _threaded_tools(server) -> None:
     """Every tool runs in a worker thread: one that takes long (a large repository read here) never holds the others
     up. The MCP SDK 1.x runs a plain function in its one event loop, so a slow call made every later one wait, and
@@ -739,8 +785,7 @@ def _threaded_tools(server) -> None:
 
             @functools.wraps(fn)   # the same name, arguments and description (the signature follows __wrapped__)
             async def run(*args: Any, **kwargs: Any) -> Any:
-                import anyio.to_thread
-                return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+                return await _bounded(fn.__name__, functools.partial(fn, *args, **kwargs))
             deco(run)
             return fn
         return wrap
