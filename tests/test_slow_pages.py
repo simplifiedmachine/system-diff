@@ -179,12 +179,14 @@ def test_a_tool_never_keeps_claude_waiting_past_the_limit(monkeypatch):
     except Exception as exc:  # noqa: BLE001
         pytest.skip(f"no MCP SDK here: {exc}")
 
-    def stuck_somewhere(root):
+    from system_diff import agents
+
+    def stuck_somewhere(root, agent):
         time.sleep(3)
-        return {}
-    monkeypatch.setattr(agentlib, "library", stuck_somewhere)
+        return []
+    monkeypatch.setattr(agents, "inbox", stuck_somewhere)
     monkeypatch.setattr(mcp_server, "TOOL_LIMIT", 0.5)
     t = time.monotonic()
-    got = asyncio.run(server.call_tool("saved_agents", {}))
+    got = asyncio.run(server.call_tool("inbox", {}))
     text = _j.dumps(got, default=str)
     assert time.monotonic() - t < 2.5 and "still running after" in text and "stuck_somewhere" in text
