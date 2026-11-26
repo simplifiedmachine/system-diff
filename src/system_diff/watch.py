@@ -866,7 +866,8 @@ function frame(s) {
   const c = card(s.title, s.aside), src = String((s.items && s.items[0] && s.items[0].src) || "");
   if (!src.startsWith("/x/")) return c;
   const f = el("iframe", null, "ext-frame");
-  f.src = src; f.loading = "lazy"; f.style.width = "100%"; f.style.border = "0";
+  f.src = src.slice(1);   // relative: /x/… on the engine's own page, /p/<project>/x/… in the Studio (its base)
+  f.loading = "lazy"; f.style.width = "100%"; f.style.border = "0";
   f.style.height = ((s.items[0].height | 0) || 720) + "px";
   c.append(f);
   return c;

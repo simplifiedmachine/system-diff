@@ -701,3 +701,20 @@ def test_bypass_is_honoured_when_claude_code_asks_anyway(tmp_path):
     assert type(got).__name__ == "PermissionResultAllow"
     assert s.events and "an ask rule" in s.events[0][1]["text"]
     assert "AskUserQuestion" in sessions.ASKS_THE_PERSON
+
+
+def test_an_extensions_frame_loads_inside_the_studio(studio, repo, monkeypatch):
+    """research-diff's Read tab is a frame of /x/research/read: in the Studio the page sits under /p/<project>/, so the
+    frame loads relative (its base makes it /p/<project>/x/…), and the Studio passes its GET and POST to the engine."""
+    from system_diff import extensions, watch
+    from test_extensions import fake_extension
+    monkeypatch.setattr(extensions, "_LOADED", [fake_extension([])])
+    assert "f.src = src.slice(1);" in watch.PAGE
+    url, tok = studio["url"], studio["studio"].token
+    pid = call(url + "api/projects", {"path": str(repo)}, {"X-Token": tok, "Origin": url.rstrip("/")})["id"]
+    inside = url + f"p/{pid}/"
+    assert call(inside + "x/fake/graph?a=1", headers={"Referer": inside}) == "GET graph "
+    assert call(inside + "x/fake/act", {"ask": 1}, {"Origin": url.rstrip("/")}).startswith("POST act")
+    with pytest.raises(urllib.error.HTTPError) as no:
+        call(inside + "x/fake/graph")                       # not from the Studio's page: refused, as its data is
+    assert no.value.code == 403
